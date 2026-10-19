@@ -1,0 +1,83 @@
+{
+  "dimensions": {
+    "height": 300,
+    "width": 400
+  },
+  "negative_cases": {
+    "collinear": [
+      {
+        "image_x": 50,
+        "image_y": 50,
+        "latitude": 40.76,
+        "longitude": -73.98
+      },
+      {
+        "image_x": 200,
+        "image_y": 150,
+        "latitude": 40.73,
+        "longitude": -73.94
+      },
+      {
+        "image_x": 350,
+        "image_y": 250,
+        "latitude": 40.7,
+        "longitude": -73.9
+      }
+    ],
+    "insufficient": [
+      {
+        "image_x": 50,
+        "image_y": 50,
+        "latitude": 40.76,
+        "longitude": -73.98
+      }
+    ],
+    "invalid_latitude": [
+      {
+        "image_x": 50,
+        "image_y": 50,
+        "latitude": 115,
+        "longitude": -73.98
+      }
+    ],
+    "out_of_bounds": [
+      {
+        "image_x": 5000,
+        "image_y": 50,
+        "latitude": 40.76,
+        "longitude": -73.98
+      }
+    ]
+  },
+  "source_image": "unreferenced_park.png",
+  "valid_affine_points": [
+    {
+      "image_x": 50,
+      "image_y": 50,
+      "latitude": 40.76,
+      "longitude": -73.98,
+      "name": "TL"
+    },
+    {
+      "image_x": 350,
+      "image_y": 50,
+      "latitude": 40.76,
+      "longitude": -73.9,
+      "name": "TR"
+    },
+    {
+      "image_x": 350,
+      "image_y": 250,
+      "latitude": 40.7,
+      "longitude": -73.9,
+      "name": "BR"
+    },
+    {
+      "image_x": 50,
+      "image_y": 250,
+      "latitude": 40.7,
+      "longitude": -73.98,
+      "name": "BL"
+    }
+  ]
+}

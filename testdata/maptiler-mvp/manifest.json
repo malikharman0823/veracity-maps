@@ -1,0 +1,78 @@
+{
+  "fixtures": [
+    {
+      "expected_georeferenced": false,
+      "expected_validation": "VALID",
+      "filename": "ordinary_grid.png",
+      "format": "png",
+      "height": 300,
+      "intended_test_case": "Ordinary PNG upload and display without georeferencing sidecars",
+      "width": 400
+    },
+    {
+      "expected_georeferenced": false,
+      "expected_validation": "VALID",
+      "filename": "ordinary_photo.jpg",
+      "format": "jpeg",
+      "height": 300,
+      "intended_test_case": "Ordinary JPEG upload and decoding",
+      "width": 400
+    },
+    {
+      "expected_bounds": [
+        -73.985,
+        40.6,
+        -73.785,
+        40.75
+      ],
+      "expected_crs": "EPSG:4326",
+      "expected_georeferenced": true,
+      "expected_validation": "VALID",
+      "filename": "georeferenced_campus.png",
+      "format": "png",
+      "height": 300,
+      "intended_test_case": "Pre-georeferenced raster with world file (.pgw) and projection (.prj)",
+      "width": 400
+    },
+    {
+      "expected_georeferenced": true,
+      "expected_validation": "VALID",
+      "filename": "valid_bundle.zip",
+      "format": "zip",
+      "intended_test_case": "ZIP bundle containing raster and sidecars"
+    },
+    {
+      "expected_validation": "VALID",
+      "filename": "multi_images.zip",
+      "format": "zip",
+      "intended_test_case": "ZIP containing multiple floor images"
+    },
+    {
+      "expected_validation": "REJECT",
+      "filename": "zip_slip_malicious.zip",
+      "format": "zip",
+      "intended_test_case": "Security check: path traversal in ZIP archive"
+    },
+    {
+      "expected_validation": "REJECT",
+      "filename": "truncated.png",
+      "format": "png",
+      "intended_test_case": "Corrupted PNG upload handling"
+    },
+    {
+      "expected_validation": "REJECT",
+      "filename": "text_as_png.png",
+      "format": "text/png",
+      "intended_test_case": "MIME spoofing rejection"
+    },
+    {
+      "expected_georeferenced": false,
+      "filename": "unreferenced_park.png",
+      "format": "png",
+      "height": 300,
+      "intended_test_case": "Interactive control-point georeferencing source",
+      "width": 400
+    }
+  ],
+  "schema_version": "1.0.0"
+}
