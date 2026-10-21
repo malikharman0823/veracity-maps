@@ -500,6 +500,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 			memberCopy["floor_label"] = memberCopy["name"]
 		}
 
+		iconPoints, _ := h.repo.ListIconPoints(sessionID, ds.ID, "")
 		memberCopy["sublayers"] = []map[string]interface{}{
 			{
 				"kind":  "raster",
@@ -514,7 +515,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 			{
 				"kind":  "icon_point",
 				"label": "Icon Points",
-				"count": 0,
+				"count": len(iconPoints),
 			},
 		}
 

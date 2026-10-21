@@ -334,6 +334,7 @@ function BuildingGroup({
 
 function SortableMember({
   member,
+  records = [],
   selectedDatasetId,
   selectedKind,
   onSelect,
@@ -472,6 +473,9 @@ function SortableMember({
             const Icon = SUBLAYER_ICONS[sublayer.kind] || Image
             const field = VISIBILITY_FIELDS[sublayer.kind]
             const selected = selectedDatasetId === member.dataset_id && selectedKind === sublayer.kind
+            const liveCount = (records && records.length > 0 && sublayer.kind !== "raster")
+              ? records.filter((r) => r.kind === sublayer.kind && (r.dataset_id === member.dataset_id || (!r.dataset_id && member.is_primary))).length
+              : (sublayer.count ?? 0)
             return (
               <div key={sublayer.kind} className={`workspace-sublayer${selected ? " is-selected" : ""}`}>
                 <LayerCheckbox
@@ -482,7 +486,7 @@ function SortableMember({
                 <button type="button" onClick={() => onSelect(member.dataset_id, sublayer.kind)}>
                   <Icon />
                   <span>{sublayer.label}</span>
-                  {sublayer.kind !== "raster" && <small>{sublayer.count}</small>}
+                  {sublayer.kind !== "raster" && <small>{liveCount}</small>}
                 </button>
                 {sublayer.kind === "raster" && (
                   <div className="flex items-center gap-1">
@@ -521,6 +525,7 @@ function SortableMember({
 
 export default function WorkspaceLayerPanel({
   members = [],
+  records = [],
   selectedDatasetId,
   selectedKind,
   onSelect,
@@ -618,6 +623,7 @@ export default function WorkspaceLayerPanel({
                   <SortableMember
                     key={id}
                     member={member}
+                    records={records}
                     selectedDatasetId={selectedDatasetId}
                     selectedKind={selectedKind}
                     onSelect={onSelect}

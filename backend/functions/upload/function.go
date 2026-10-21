@@ -160,6 +160,7 @@ func (h *Handler) ImportArchiveSelected(w http.ResponseWriter, r *http.Request) 
 
 	var req struct {
 		ArchiveToken string                             `json:"archive_token"`
+		Token        string                             `json:"token"`
 		Selections   []*services.DatasetImportSelection `json:"selections"`
 	}
 
@@ -168,7 +169,12 @@ func (h *Handler) ImportArchiveSelected(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	res, err := h.datasetService.ImportArchiveSelected(sessionID, req.ArchiveToken, req.Selections)
+	token := req.ArchiveToken
+	if token == "" {
+		token = req.Token
+	}
+
+	res, err := h.datasetService.ImportArchiveSelected(sessionID, token, req.Selections)
 	if err != nil {
 		models.WriteError(w, http.StatusBadRequest, "IMPORT_FAILED", err.Error(), nil, nil)
 		return

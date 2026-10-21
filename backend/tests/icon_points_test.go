@@ -195,6 +195,38 @@ func TestAPI_IconPointsCRUD(t *testing.T) {
 		t.Fatalf("expected at least 1 icon point record in workspace, got %d", recDoc.Data.Total)
 	}
 
+	// 7b. Verify workspace manifest sublayer has icon_point count > 0
+	wsReq, _ := http.NewRequest(http.MethodGet, server.URL+"/datasets/"+datasetID+"/workspace", nil)
+	wsReq.Header.Set("X-Session-ID", sessionID)
+	wsResp, err := client.Do(wsReq)
+	if err != nil {
+		t.Fatalf("failed getting workspace manifest: %v", err)
+	}
+	defer wsResp.Body.Close()
+	var wsDoc struct {
+		Data struct {
+			Members []map[string]interface{} `json:"members"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(wsResp.Body).Decode(&wsDoc)
+	foundIconSublayer := false
+	for _, m := range wsDoc.Data.Members {
+		if sublayers, ok := m["sublayers"].([]interface{}); ok {
+			for _, sl := range sublayers {
+				if slm, ok := sl.(map[string]interface{}); ok && slm["kind"] == "icon_point" {
+					foundIconSublayer = true
+					countVal, _ := slm["count"].(float64)
+					if int(countVal) < 1 {
+						t.Fatalf("expected icon_point sublayer count >= 1, got %v", slm["count"])
+					}
+				}
+			}
+		}
+	}
+	if !foundIconSublayer {
+		t.Fatalf("expected icon_point sublayer in workspace manifest")
+	}
+
 	// 8. Delete IconPoint
 	delReq, _ := http.NewRequest(http.MethodDelete, server.URL+"/icon-points/"+ptID, nil)
 	delReq.Header.Set("X-Session-ID", sessionID)

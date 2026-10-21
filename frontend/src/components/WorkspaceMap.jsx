@@ -230,6 +230,24 @@ export default function WorkspaceMap({
     activeFloorLevelRef.current = activeFloorLevel
   }, [activeFloorLevel])
 
+  // Proactively register selected icon
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map || !selectedIconId) return
+    if (!map.hasImage(selectedIconId)) {
+      const img = new window.Image()
+      img.crossOrigin = "anonymous"
+      img.onload = () => {
+        if (mapRef.current && !mapRef.current.hasImage(selectedIconId)) {
+          try {
+            mapRef.current.addImage(selectedIconId, img)
+          } catch {}
+        }
+      }
+      img.src = getIconUrl(selectedIconId)
+    }
+  }, [ready, selectedIconId])
+
   // Initialize MapLibre Map
   useEffect(() => {
     if (!containerRef.current) return undefined
@@ -631,6 +649,25 @@ export default function WorkspaceMap({
 
       const controlData = pointCollection(memberRecords, "control_point", selectedRecordId)
       const iconData = pointCollection(memberRecords, "icon_point", selectedRecordId)
+
+      // Proactively ensure map has images for icon features
+      if (iconData?.features) {
+        iconData.features.forEach((f) => {
+          const iconId = f.properties?.icon_key || f.properties?.icon_id
+          if (iconId && !map.hasImage(iconId)) {
+            const img = new window.Image()
+            img.crossOrigin = "anonymous"
+            img.onload = () => {
+              if (mapRef.current && !mapRef.current.hasImage(iconId)) {
+                try {
+                  mapRef.current.addImage(iconId, img)
+                } catch {}
+              }
+            }
+            img.src = getIconUrl(iconId)
+          }
+        })
+      }
 
       const definitions = [
         {

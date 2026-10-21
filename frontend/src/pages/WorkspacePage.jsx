@@ -397,6 +397,7 @@ export default function WorkspacePage() {
         <div className="workspace-desktop-layers">
           <WorkspaceLayerPanel
             members={workspace.manifest.members}
+            records={workspace.mapRecords}
             selectedDatasetId={workspace.filters.datasetId}
             selectedKind={workspace.filters.kind}
             onSelect={selectLayer}
@@ -417,6 +418,7 @@ export default function WorkspacePage() {
             <div className="workspace-sheet-backdrop" onClick={() => setLayersOpen(false)} />
             <WorkspaceLayerPanel
               members={workspace.manifest.members}
+              records={workspace.mapRecords}
               selectedDatasetId={workspace.filters.datasetId}
               selectedKind={workspace.filters.kind}
               onSelect={selectLayer}
@@ -452,7 +454,7 @@ export default function WorkspacePage() {
               }}
               activeFloorLevel={activeFloorLevel}
               onActiveFloorChange={setActiveFloorLevel}
-              onRecordsRefresh={() => Promise.all([workspace.refreshRecords(), workspace.refreshMapRecords()])}
+              onRecordsRefresh={() => Promise.all([workspace.refreshRecords(), workspace.refreshMapRecords(), workspace.refreshManifest()])}
               primaryDatasetId={id}
             />
           ) : (
@@ -466,7 +468,7 @@ export default function WorkspacePage() {
               selectedRecordId={workspace.selectedRecordId}
               onSelectRecord={workspace.setSelectedRecordId}
               onMemberUpdate={workspace.updateMember}
-              onRecordsRefresh={() => Promise.all([workspace.refreshRecords(), workspace.refreshMapRecords()])}
+              onRecordsRefresh={() => Promise.all([workspace.refreshRecords(), workspace.refreshMapRecords(), workspace.refreshManifest()])}
               onDirtyChange={setDirty}
               workspaceId={id}
               onAddDataset={() => setAddOpen(true)}

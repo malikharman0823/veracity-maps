@@ -745,6 +745,7 @@ export async function inspectArchive(file, { onUploadProgress } = {}) {
 
 export async function importArchiveSelected(token, selections) {
   const response = await client.post("/datasets/import-archive-selected", {
+    archive_token: token,
     token,
     selections,
   })
