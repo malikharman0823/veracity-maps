@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -272,17 +273,100 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 					Name          string                 `json:"name"`
 					Configuration map[string]interface{} `json:"configuration"`
 				} `json:"project"`
+				Dataset struct {
+					Filename           string                 `json:"filename"`
+					GeoreferenceStatus string                 `json:"georeference_status"`
+					ExtractedMetadata  map[string]interface{} `json:"extracted_metadata"`
+					MapLayer           map[string]interface{} `json:"map_layer"`
+				} `json:"dataset"`
 				ControlPoints []*models.ControlPoint `json:"control_points"`
 			}
 			if err := json.Unmarshal(data, &doc); err == nil {
+				if doc.Dataset.ExtractedMetadata != nil {
+					for k, v := range doc.Dataset.ExtractedMetadata {
+						dataset.ExtractedMetadata[k] = v
+					}
+				}
+				if doc.Dataset.MapLayer != nil {
+					dataset.MapLayer = doc.Dataset.MapLayer
+				}
+				if doc.Dataset.GeoreferenceStatus != "" {
+					dataset.GeoreferenceStatus = doc.Dataset.GeoreferenceStatus
+				}
+
 				if len(doc.ControlPoints) > 0 {
+					for _, p := range doc.ControlPoints {
+						p.DatasetID = datasetID
+					}
 					_ = s.repo.SetControlPoints(sessionID, datasetID, doc.ControlPoints)
 					dataset.GeoreferenceStatus = "completed"
 					if dataset.GeoreferencedPath == "" {
 						dataset.GeoreferencedPath = primaryRaster
 					}
+
+					// If transform/bounds not yet set, compute georeference from control points
+					if dataset.ExtractedMetadata["transform"] == nil && len(doc.ControlPoints) >= 2 && meta.Width > 0 && meta.Height > 0 {
+						if res, err := gis.CalculateGeoreference(doc.ControlPoints, meta.Width, meta.Height, ""); err == nil && res != nil {
+							dataset.ExtractedMetadata["bounds"] = res.Bounds
+							dataset.ExtractedMetadata["transform"] = res.Transform
+							dataset.ExtractedMetadata["crs"] = "EPSG:4326"
+							dataset.ExtractedMetadata["georeference_source"] = "control_points"
+
+							a, b, c := res.Transform[0], -res.Transform[1], res.Transform[2]
+							d, e, f := res.Transform[3], -res.Transform[4], res.Transform[5]
+							project := func(ix, iy float64) []float64 {
+								return []float64{
+									a*ix + b*(-iy) + c,
+									d*ix + e*(-iy) + f,
+								}
+							}
+							wF := float64(meta.Width)
+							hF := float64(meta.Height)
+							coordinates := [][]float64{
+								project(0, 0),
+								project(wF, 0),
+								project(wF, hF),
+								project(0, hF),
+							}
+							dataset.MapLayer = map[string]interface{}{
+								"id":          "lyr_" + datasetID,
+								"name":        dataset.Filename,
+								"type":        "raster",
+								"bounds":      res.Bounds,
+								"bounds_crs":  "EPSG:4326",
+								"coordinates": coordinates,
+							}
+							// Also write world file next to primary raster
+							baseExt := strings.ToLower(filepath.Ext(primaryRaster))
+							worldExt := ".wld"
+							switch baseExt {
+							case ".png":
+								worldExt = ".pgw"
+							case ".jpg", ".jpeg":
+								worldExt = ".jgw"
+							}
+							worldPath := filepath.Join(filepath.Dir(primaryRaster), strings.TrimSuffix(filepath.Base(primaryRaster), baseExt)+worldExt)
+							_ = gis.WriteWorldFile(worldPath, res.Transform)
+						}
+					}
 				}
+
 				if doc.Project.Configuration != nil {
+					// Remap all members to new datasetID
+					if rawMembers, ok := doc.Project.Configuration["members"].([]interface{}); ok {
+						for _, rm := range rawMembers {
+							if m, ok := rm.(map[string]interface{}); ok {
+								m["dataset_id"] = datasetID
+								m["name"] = dataset.Filename
+								if dataset.MapLayer != nil {
+									m["map_layer"] = dataset.MapLayer
+								}
+								if dataset.ExtractedMetadata["bounds"] != nil {
+									m["bounds"] = dataset.ExtractedMetadata["bounds"]
+								}
+							}
+						}
+					}
 					_ = s.repo.SaveMapProject(sessionID, &models.MapProject{
 						ID:            "proj_" + datasetID,
 						DatasetID:     datasetID,
@@ -296,55 +380,43 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		}
 	}
 
-	datasetJSONPath := filepath.Join(extractDir, "dataset.json")
-	if fileExists(datasetJSONPath) {
-		if data, err := os.ReadFile(datasetJSONPath); err == nil {
-			var savedDS models.Dataset
-			if err := json.Unmarshal(data, &savedDS); err == nil {
-				if savedDS.ExtractedMetadata != nil {
-					for k, v := range savedDS.ExtractedMetadata {
-						dataset.ExtractedMetadata[k] = v
+	// 2. Check metadata.json for bounds fallback
+	metaJSONPath := filepath.Join(extractDir, "metadata.json")
+	if fileExists(metaJSONPath) {
+		if data, err := os.ReadFile(metaJSONPath); err == nil {
+			var mDoc struct {
+				Bounds []float64 `json:"bounds"`
+			}
+			if err := json.Unmarshal(data, &mDoc); err == nil && len(mDoc.Bounds) == 4 {
+				west, south, east, north := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
+				if east > west && north > south {
+					if dataset.ExtractedMetadata["bounds"] == nil {
+						dataset.ExtractedMetadata["bounds"] = map[string]interface{}{
+							"min_x": west,
+							"min_y": south,
+							"max_x": east,
+							"max_y": north,
+						}
 					}
-				}
-				if savedDS.MapLayer != nil {
-					dataset.MapLayer = savedDS.MapLayer
-				}
-				if savedDS.GeoreferenceStatus != "" {
-					dataset.GeoreferenceStatus = savedDS.GeoreferenceStatus
-				}
-			}
-		}
-	}
-
-	cpJSONPath := filepath.Join(extractDir, "control_points.json")
-	if fileExists(cpJSONPath) {
-		if data, err := os.ReadFile(cpJSONPath); err == nil {
-			var points []*models.ControlPoint
-			if err := json.Unmarshal(data, &points); err == nil && len(points) > 0 {
-				_ = s.repo.SetControlPoints(sessionID, datasetID, points)
-				dataset.GeoreferenceStatus = "completed"
-				if dataset.GeoreferencedPath == "" {
-					dataset.GeoreferencedPath = primaryRaster
+					if dataset.MapLayer == nil {
+						dataset.MapLayer = map[string]interface{}{
+							"id":         "lyr_" + datasetID,
+							"name":       dataset.Filename,
+							"type":       "raster",
+							"bounds":     dataset.ExtractedMetadata["bounds"],
+							"bounds_crs": "EPSG:4326",
+							"coordinates": [][]float64{
+								{west, north},
+								{east, north},
+								{east, south},
+								{west, south},
+							},
+						}
+					}
+					dataset.GeoreferenceStatus = "completed"
 				}
 			}
 		}
-	}
-
-	extractedProcessed := filepath.Join(extractDir, "processed")
-	destProcessed := filepath.Join(datasetDir, "processed")
-	if info, err := os.Stat(extractedProcessed); err == nil && info.IsDir() {
-		_ = os.MkdirAll(destProcessed, 0755)
-		if entries, err := os.ReadDir(extractedProcessed); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					_ = storage.CopyFile(filepath.Join(extractedProcessed, entry.Name()), filepath.Join(destProcessed, entry.Name()))
-				}
-			}
-		}
-	}
-	transparentPNG := filepath.Join(destProcessed, "processed_transparent.png")
-	if fileExists(transparentPNG) {
-		dataset.ProcessedPath = transparentPNG
 	}
 
 	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {
@@ -382,4 +454,22 @@ func (s *DatasetService) DeleteDataset(sessionID, datasetID string) error {
 	}
 
 	return s.repo.DeleteDataset(sessionID, datasetID)
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }

@@ -121,15 +121,23 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 			"configuration": projectConfig,
 		},
 		"dataset": map[string]interface{}{
-			"filename":     dataset.Filename,
-			"content_type": dataset.ContentType,
-			"source_asset": "assets/source/" + filepath.Base(dataset.StoragePath),
+			"filename":            dataset.Filename,
+			"content_type":        dataset.ContentType,
+			"source_asset":        "assets/source/" + filepath.Base(dataset.StoragePath),
+			"georeference_status": dataset.GeoreferenceStatus,
+			"extracted_metadata":  dataset.ExtractedMetadata,
+			"map_layer":           dataset.MapLayer,
 		},
 		"control_points": points,
 	}
 	projBytes, _ := json.MarshalIndent(projectDoc, "", "  ")
 	projWriter, _ := archive.Create("mapstudio.json")
 	_, _ = projWriter.Write(projBytes)
+
+	// dataset.json document
+	dsBytes, _ := json.MarshalIndent(dataset, "", "  ")
+	dsWriter, _ := archive.Create("dataset.json")
+	_, _ = dsWriter.Write(dsBytes)
 
 	// HTML Viewers
 	viewers := generateViewers(projectName, boundsList)
@@ -145,6 +153,36 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		assetWriter, err := archive.Create("assets/source/" + filepath.Base(dataset.StoragePath))
 		if err == nil {
 			_, _ = io.Copy(assetWriter, srcFile)
+		}
+	}
+
+	// World file sidecar if present
+	baseExt := strings.ToLower(filepath.Ext(dataset.Filename))
+	worldExt := ".wld"
+	switch baseExt {
+	case ".png":
+		worldExt = ".pgw"
+	case ".jpg", ".jpeg":
+		worldExt = ".jgw"
+	}
+	srcWorldFile := filepath.Join(filepath.Dir(dataset.StoragePath), strings.TrimSuffix(filepath.Base(dataset.Filename), baseExt)+worldExt)
+	if fileExists(srcWorldFile) {
+		if wf, err := os.Open(srcWorldFile); err == nil {
+			defer wf.Close()
+			if ww, err := archive.Create("assets/source/" + filepath.Base(srcWorldFile)); err == nil {
+				_, _ = io.Copy(ww, wf)
+			}
+		}
+	}
+
+	// Processed transparent raster if present
+	transparentPNG := filepath.Join(filepath.Dir(dataset.StoragePath), "processed", "processed_transparent.png")
+	if fileExists(transparentPNG) {
+		if tf, err := os.Open(transparentPNG); err == nil {
+			defer tf.Close()
+			if tw, err := archive.Create("processed/processed_transparent.png"); err == nil {
+				_, _ = io.Copy(tw, tf)
+			}
 		}
 	}
 

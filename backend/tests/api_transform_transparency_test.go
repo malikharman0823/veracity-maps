@@ -499,9 +499,9 @@ func TestMapProject_ImportEndpoint(t *testing.T) {
 	// 3. Add Control Points
 	points := []map[string]interface{}{
 		{"image_x": 0.0, "image_y": 0.0, "latitude": 37.78, "longitude": -122.42},
-		{"image_x": 200.0, "image_y": 0.0, "latitude": 37.78, "longitude": -122.40},
-		{"image_x": 200.0, "image_y": 200.0, "latitude": 37.76, "longitude": -122.40},
-		{"image_x": 0.0, "image_y": 200.0, "latitude": 37.76, "longitude": -122.42},
+		{"image_x": 199.0, "image_y": 0.0, "latitude": 37.78, "longitude": -122.40},
+		{"image_x": 199.0, "image_y": 199.0, "latitude": 37.76, "longitude": -122.40},
+		{"image_x": 0.0, "image_y": 199.0, "latitude": 37.76, "longitude": -122.42},
 	}
 	for _, p := range points {
 		pBytes, _ := json.Marshal(p)

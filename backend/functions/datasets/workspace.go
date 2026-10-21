@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
 )
 
@@ -118,6 +119,20 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 				}
 			}
 		}
+
+		rawMembers, _ := project.Configuration["members"].([]interface{})
+		for _, rm := range rawMembers {
+			if m, ok := rm.(map[string]interface{}); ok {
+				memDsID, _ := m["dataset_id"].(string)
+				if memDsID != "" && memDsID != datasetID {
+					if _, err := h.repo.GetDataset(sessionID, memDsID); err != nil {
+						m["dataset_id"] = datasetID
+						m["name"] = dataset.Filename
+						_ = h.repo.SaveMapProject(sessionID, project)
+					}
+				}
+			}
+		}
 	}
 
 	return project, dataset, nil
@@ -127,7 +142,75 @@ func ensureDatasetMapLayer(ds *models.Dataset) {
 	if ds == nil || ds.MapLayer != nil {
 		return
 	}
-	if ds.GeoreferenceStatus != "completed" && (ds.ExtractedMetadata == nil || ds.ExtractedMetadata["bounds"] == nil) {
+
+	if ds.ExtractedMetadata == nil {
+		ds.ExtractedMetadata = make(map[string]interface{})
+	}
+
+	// 1. If bounds or transform is missing, attempt to restore from metadata.json or mapstudio.json in dataset folder
+	if ds.ExtractedMetadata["bounds"] == nil || ds.ExtractedMetadata["transform"] == nil {
+		datasetDir := filepath.Dir(ds.StoragePath)
+		candidates := []string{
+			filepath.Join(datasetDir, "metadata.json"),
+			filepath.Join(datasetDir, "extracted", "metadata.json"),
+			filepath.Join(datasetDir, "..", "metadata.json"),
+			filepath.Join(datasetDir, "..", "extracted", "metadata.json"),
+			filepath.Join(datasetDir, "..", "..", "metadata.json"),
+			filepath.Join(datasetDir, "..", "..", "extracted", "metadata.json"),
+		}
+		for _, c := range candidates {
+			if data, err := os.ReadFile(c); err == nil {
+				var mDoc struct {
+					Bounds []float64 `json:"bounds"`
+				}
+				if err := json.Unmarshal(data, &mDoc); err == nil && len(mDoc.Bounds) == 4 {
+					minX, minY, maxX, maxY := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
+					if maxX > minX && maxY > minY {
+						ds.ExtractedMetadata["bounds"] = map[string]interface{}{
+							"min_x": minX,
+							"min_y": minY,
+							"max_x": maxX,
+							"max_y": maxY,
+						}
+						ds.GeoreferenceStatus = "completed"
+						break
+					}
+				}
+			}
+		}
+
+		studioCandidates := []string{
+			filepath.Join(datasetDir, "mapstudio.json"),
+			filepath.Join(datasetDir, "extracted", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "extracted", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "..", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "..", "extracted", "mapstudio.json"),
+		}
+		for _, c := range studioCandidates {
+			if data, err := os.ReadFile(c); err == nil {
+				var doc struct {
+					ControlPoints []*models.ControlPoint `json:"control_points"`
+				}
+				if err := json.Unmarshal(data, &doc); err == nil && len(doc.ControlPoints) >= 2 {
+					wInt, _ := toFloat64(ds.ExtractedMetadata["width"])
+					hInt, _ := toFloat64(ds.ExtractedMetadata["height"])
+					if wInt > 0 && hInt > 0 {
+						if res, err := gis.CalculateGeoreference(doc.ControlPoints, int(wInt), int(hInt), ""); err == nil && res != nil {
+							ds.ExtractedMetadata["bounds"] = res.Bounds
+							ds.ExtractedMetadata["transform"] = res.Transform
+							ds.ExtractedMetadata["crs"] = "EPSG:4326"
+							ds.ExtractedMetadata["georeference_source"] = "control_points"
+							ds.GeoreferenceStatus = "completed"
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if ds.GeoreferenceStatus != "completed" && ds.ExtractedMetadata["bounds"] == nil {
 		return
 	}
 
@@ -260,7 +343,14 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 
 		ds, err := h.repo.GetDataset(sessionID, datasetID)
-		if err == nil && ds != nil {
+		if err != nil || ds == nil {
+			if datasetID == primaryDataset.ID || len(rawMembers) == 1 {
+				ds = primaryDataset
+				datasetID = primaryDataset.ID
+				memberCopy["dataset_id"] = primaryDataset.ID
+			}
+		}
+		if ds != nil {
 			ensureDatasetMapLayer(ds)
 			memberCopy["dataset"] = ds
 			if memberCopy["bounds"] == nil && ds.ExtractedMetadata != nil {
