@@ -96,7 +96,13 @@ function RecordEditor({
       record?.kind === "raster"
         ? { alias: member?.alias || member?.dataset?.filename || "" }
         : record?.kind === "icon_point"
-        ? { icon_key: record.icon_key || "", description: record.description || "" }
+        ? {
+            name: record.name || "",
+            icon_key: record.icon_id || record.icon_key || "",
+            description: record.description || "",
+            scope: record.scope || "floor",
+            floor_level: record.floor_level ?? 0,
+          }
         : {}
     )
     setError(null)
@@ -126,8 +132,12 @@ function RecordEditor({
         await onMemberSave(record.dataset_id, { alias: draft.alias })
       } else if (record.kind === "icon_point") {
         await updateIconPoint(record.id, {
+          name: draft.name || record.name,
           icon_key: draft.icon_key || null,
+          icon_id: draft.icon_key || null,
           description: draft.description || null,
+          scope: draft.scope || record.scope || "floor",
+          floor_level: Number(draft.floor_level ?? record.floor_level ?? 0),
           latitude: record.latitude,
           longitude: record.longitude,
         })
@@ -203,6 +213,46 @@ function RecordEditor({
 
         {record.kind === "icon_point" && (
           <div className="space-y-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-[#1d1d1f]">Point Name</span>
+              <input
+                className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+                value={draft.name || ""}
+                onChange={(event) => update("name", event.target.value)}
+                placeholder="Point name"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-[#1d1d1f]">Scope</span>
+                <select
+                  className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+                  value={draft.scope || "floor"}
+                  onChange={(event) => update("scope", event.target.value)}
+                >
+                  <option value="floor">Floor Specific</option>
+                  <option value="building">Building-wide</option>
+                  <option value="dataset">Dataset Only</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-[#1d1d1f]">Floor</span>
+                <select
+                  className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none disabled:opacity-50"
+                  disabled={draft.scope === "building"}
+                  value={draft.floor_level ?? 0}
+                  onChange={(event) => update("floor_level", Number(event.target.value))}
+                >
+                  <option value={-2}>Basement 2 (-2)</option>
+                  <option value={-1}>Basement 1 (-1)</option>
+                  <option value={0}>Ground Floor (0)</option>
+                  <option value={1}>Floor 1 (1)</option>
+                  <option value={2}>Floor 2 (2)</option>
+                  <option value={3}>Floor 3 (3)</option>
+                  <option value={4}>Floor 4 (4)</option>
+                </select>
+              </label>
+            </div>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-[#1d1d1f]">Icon Marker</span>
               <select

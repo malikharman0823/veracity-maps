@@ -23,6 +23,7 @@ import {
   downloadProjectExport,
   uploadDataset,
   listIcons,
+  inspectArchive,
   readableApiError,
 } from "../api"
 import WorkspaceTable from "../components/WorkspaceTable"
@@ -30,19 +31,21 @@ import WorkspaceLayerPanel from "../components/WorkspaceLayerPanel"
 import WorkspaceMap from "../components/WorkspaceMap"
 import useWorkspace from "../hooks/useWorkspace"
 import EndSessionDialog from "../components/EndSessionDialog"
-
+import ZipImportReview from "../components/ZipImportReview"
 
 function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
   const inputRef = useRef(null)
   const [state, setState] = useState("confirm")
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
+  const [archiveInspection, setArchiveInspection] = useState(null)
 
   useEffect(() => {
     if (open) {
       setState("confirm")
       setProgress(0)
       setError(null)
+      setArchiveInspection(null)
     }
   }, [open])
 
@@ -61,6 +64,27 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
       })
       return
     }
+
+    // If single zip file, try staged inspection first
+    if (files.length === 1 && (files[0].name || "").toLowerCase().endsWith(".zip")) {
+      setState("uploading")
+      setError(null)
+      try {
+        const inspection = await inspectArchive(files[0], {
+          onUploadProgress: (ev) => {
+            if (ev.total) setProgress(Math.round((ev.loaded / ev.total) * 100))
+          },
+        })
+        if (inspection && inspection.datasets?.length > 0) {
+          setArchiveInspection(inspection)
+          setState("confirm")
+          return
+        }
+      } catch (inspectErr) {
+        console.warn("inspectArchive fallback to legacy zip:", inspectErr)
+      }
+    }
+
     setState("uploading")
     setError(null)
     try {
@@ -128,6 +152,22 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
           onChange={selectFile}
         />
       </section>
+
+      {archiveInspection && (
+        <ZipImportReview
+          inspectionResult={archiveInspection}
+          onClose={() => setArchiveInspection(null)}
+          onImportComplete={async (importRes) => {
+            setArchiveInspection(null)
+            onClose()
+            for (const r of importRes.results || []) {
+              if (r.status === "success" && r.dataset_id) {
+                await onUploaded({ id: r.dataset_id, name: r.name, is_georeferenced: true })
+              }
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -412,6 +452,8 @@ export default function WorkspacePage() {
               }}
               activeFloorLevel={activeFloorLevel}
               onActiveFloorChange={setActiveFloorLevel}
+              onRecordsRefresh={() => Promise.all([workspace.refreshRecords(), workspace.refreshMapRecords()])}
+              primaryDatasetId={id}
             />
           ) : (
             <WorkspaceTable

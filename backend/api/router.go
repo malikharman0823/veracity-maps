@@ -157,6 +157,14 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		rt.uploadH.UploadFile(w, r)
 		return
 	}
+	if path == "/datasets/inspect-archive" || path == "/api/datasets/inspect-archive" {
+		rt.uploadH.InspectArchive(w, r)
+		return
+	}
+	if path == "/datasets/import-archive-selected" || path == "/api/datasets/import-archive-selected" {
+		rt.uploadH.ImportArchiveSelected(w, r)
+		return
+	}
 
 	// 4. Datasets collection
 	if path == "/datasets" || path == "/api/datasets" {
@@ -173,6 +181,23 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 		if r.Method == http.MethodDelete {
 			rt.georefH.DeleteControlPoint(w, r, pointID)
+			return
+		}
+	}
+
+	// 5b. Icon points direct routes
+	if strings.HasPrefix(path, "/icon-points/") {
+		pointID := strings.TrimPrefix(path, "/icon-points/")
+		if r.Method == http.MethodGet {
+			rt.datasetsH.GetIconPoint(w, r, pointID)
+			return
+		}
+		if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			rt.datasetsH.UpdateIconPoint(w, r, pointID)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			rt.datasetsH.DeleteIconPoint(w, r, pointID)
 			return
 		}
 	}
@@ -216,6 +241,15 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				}
 				if r.Method == http.MethodPost {
 					rt.georefH.CreateControlPoint(w, r, datasetID)
+					return
+				}
+			case "icon-points":
+				if r.Method == http.MethodGet {
+					rt.datasetsH.ListIconPoints(w, r, datasetID)
+					return
+				}
+				if r.Method == http.MethodPost {
+					rt.datasetsH.CreateIconPoint(w, r, datasetID)
 					return
 				}
 			case "workspace":
@@ -305,6 +339,63 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			layerID := parts[2]
 			rt.datasetsH.UpdateLayer(w, r, datasetID, layerID)
 			return
+		}
+	}
+
+	// 6b. Buildings & Floors collection and resources
+	if path == "/buildings" || path == "/api/buildings" {
+		if r.Method == http.MethodGet {
+			rt.datasetsH.ListBuildings(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			rt.datasetsH.CreateBuilding(w, r)
+			return
+		}
+	}
+
+	cleanBldPath := path
+	if strings.HasPrefix(cleanBldPath, "/api/buildings/") {
+		cleanBldPath = strings.TrimPrefix(cleanBldPath, "/api")
+	}
+	if strings.HasPrefix(cleanBldPath, "/buildings/") {
+		trimmed := strings.TrimPrefix(cleanBldPath, "/buildings/")
+		parts := strings.Split(trimmed, "/")
+		buildingID := parts[0]
+
+		if len(parts) == 1 {
+			if r.Method == http.MethodGet {
+				rt.datasetsH.GetBuilding(w, r, buildingID)
+				return
+			}
+			if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+				rt.datasetsH.UpdateBuilding(w, r, buildingID)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				rt.datasetsH.DeleteBuilding(w, r, buildingID)
+				return
+			}
+		}
+
+		if len(parts) >= 2 && parts[1] == "floors" {
+			if len(parts) == 2 {
+				if r.Method == http.MethodPost {
+					rt.datasetsH.AddBuildingFloor(w, r, buildingID)
+					return
+				}
+			}
+			if len(parts) == 3 {
+				floorID := parts[2]
+				if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+					rt.datasetsH.UpdateBuildingFloor(w, r, buildingID, floorID)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					rt.datasetsH.DeleteBuildingFloor(w, r, buildingID, floorID)
+					return
+				}
+			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 package datasets
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -865,6 +866,76 @@ func (h *Handler) GetWorkspaceRecords(w http.ResponseWriter, r *http.Request, pr
 				}
 			}
 		}
+
+		// 3. Icon points records for this dataset
+		if filterKind == "" || filterKind == "icon_point" {
+			iconPoints, _ := h.repo.ListIconPoints(sessionID, ds.ID, "")
+			for _, ip := range iconPoints {
+				if filterSearch == "" || strings.Contains(strings.ToLower(ip.Name), filterSearch) || strings.Contains(strings.ToLower(ip.Description), filterSearch) {
+					allRecords = append(allRecords, map[string]interface{}{
+						"id":           ip.ID,
+						"dataset_id":   ds.ID,
+						"dataset_name": dsName,
+						"building_id":  ip.BuildingID,
+						"floor_level":  ip.FloorLevel,
+						"floor_label":  ip.FloorLabel,
+						"scope":        ip.Scope,
+						"name":         ip.Name,
+						"description":  ip.Description,
+						"kind":         "icon_point",
+						"status":       "placed",
+						"icon_id":      ip.IconID,
+						"icon_key":     ip.IconID,
+						"icon_path":    ip.IconPath,
+						"longitude":    ip.Longitude,
+						"latitude":     ip.Latitude,
+						"visible":      true,
+						"updated_at":   ip.UpdatedAt,
+					})
+				}
+			}
+		}
+	}
+
+	// 4. Building-wide or session-scoped icon points
+	if filterKind == "" || filterKind == "icon_point" {
+		allIPs, _ := h.repo.ListIconPoints(sessionID, "", "")
+		existingRecordIDs := make(map[string]bool)
+		for _, r := range allRecords {
+			if id, ok := r["id"].(string); ok {
+				existingRecordIDs[id] = true
+			}
+		}
+		for _, ip := range allIPs {
+			if existingRecordIDs[ip.ID] {
+				continue
+			}
+			if filterDataset != "" && ip.DatasetID != filterDataset && ip.Scope != "building" {
+				continue
+			}
+			if filterSearch == "" || strings.Contains(strings.ToLower(ip.Name), filterSearch) || strings.Contains(strings.ToLower(ip.Description), filterSearch) {
+				allRecords = append(allRecords, map[string]interface{}{
+					"id":           ip.ID,
+					"dataset_id":   ip.DatasetID,
+					"dataset_name": "Building Point",
+					"building_id":  ip.BuildingID,
+					"floor_level":  ip.FloorLevel,
+					"floor_label":  ip.FloorLabel,
+					"scope":        ip.Scope,
+					"name":         ip.Name,
+					"description":  ip.Description,
+					"kind":         "icon_point",
+					"status":       "placed",
+					"icon_id":      ip.IconID,
+					"icon_key":     ip.IconID,
+					"icon_path":    ip.IconPath,
+					"longitude":    ip.Longitude,
+					"latitude":     ip.Latitude,
+					"visible":      true,
+					"updated_at":   ip.UpdatedAt,
+				})
+			}
+		}
 	}
 
 	sortField := q.Get("sort")
@@ -920,35 +991,688 @@ func (h *Handler) ListIcons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	manifestPaths := []string{
+		filepath.Join("frontend", "public", "icons", "manifest.json"),
+		filepath.Join("..", "frontend", "public", "icons", "manifest.json"),
+		filepath.Join("..", "..", "frontend", "public", "icons", "manifest.json"),
+	}
+
+	var catalog []map[string]interface{}
+	var categories []string
+	var iconIDs []string
+
+	for _, p := range manifestPaths {
+		if data, err := os.ReadFile(p); err == nil {
+			data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+			var doc struct {
+				Categories []string                 `json:"categories"`
+				Icons      []map[string]interface{} `json:"icons"`
+			}
+			if json.Unmarshal(data, &doc) == nil && len(doc.Icons) > 0 {
+				categories = doc.Categories
+				catalog = doc.Icons
+				for _, icon := range doc.Icons {
+					if id, ok := icon["id"].(string); ok && id != "" {
+						iconIDs = append(iconIDs, id)
+					}
+				}
+				break
+			}
+		}
+	}
+
+	if len(iconIDs) == 0 {
+		iconIDs = defaultIcons
+		for _, name := range defaultIcons {
+			catalog = append(catalog, map[string]interface{}{
+				"id":        name,
+				"name":      strings.Title(strings.ReplaceAll(name, "-", " ")),
+				"category":  "Security & Access",
+				"filename":  name + ".png",
+				"path":      "/icons/" + name + ".png",
+				"file_type": "png",
+			})
+		}
+		categories = []string{"Security & Access"}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"icons":   defaultIcons,
+		"success":    true,
+		"icons":      iconIDs,
+		"catalog":    catalog,
+		"categories": categories,
 		"data": map[string]interface{}{
-			"icons": defaultIcons,
+			"icons":      iconIDs,
+			"catalog":    catalog,
+			"categories": categories,
 		},
 	})
 }
 
 func (h *Handler) GetIcon(w http.ResponseWriter, r *http.Request, iconName string) {
 	cleanName := filepath.Base(iconName)
-	if !strings.HasSuffix(cleanName, ".png") {
-		cleanName += ".png"
+	ext := strings.ToLower(filepath.Ext(cleanName))
+
+	var candidates []string
+	if ext != "" {
+		candidates = append(candidates, cleanName)
+	} else {
+		candidates = append(candidates,
+			cleanName+".png",
+			cleanName+".svg",
+			cleanName+".webp",
+			cleanName+".ico",
+			cleanName+".jpg",
+			cleanName+".jpeg",
+		)
 	}
 
-	searchPaths := []string{
-		filepath.Join("..", "frontend", "public", "icons", cleanName),
-		filepath.Join("frontend", "public", "icons", cleanName),
+	searchDirs := []string{
+		filepath.Join("frontend", "public", "icons"),
+		filepath.Join("..", "frontend", "public", "icons"),
+		filepath.Join("..", "..", "frontend", "public", "icons"),
 	}
 
-	for _, p := range searchPaths {
-		if _, err := os.Stat(p); err == nil {
-			w.Header().Set("Content-Type", "image/png")
-			http.ServeFile(w, r, p)
-			return
+	for _, dir := range searchDirs {
+		for _, candidate := range candidates {
+			p := filepath.Join(dir, candidate)
+			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+				cExt := strings.ToLower(filepath.Ext(candidate))
+				contentType := "image/png"
+				switch cExt {
+				case ".svg":
+					contentType = "image/svg+xml"
+				case ".webp":
+					contentType = "image/webp"
+				case ".ico":
+					contentType = "image/x-icon"
+				case ".jpg", ".jpeg":
+					contentType = "image/jpeg"
+				}
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				http.ServeFile(w, r, p)
+				return
+			}
 		}
 	}
 
 	models.WriteError(w, http.StatusNotFound, "ICON_NOT_FOUND", "Icon not found: "+iconName, nil, nil)
+}
+
+// IconPoint Handlers
+func (h *Handler) CreateIconPoint(w http.ResponseWriter, r *http.Request, datasetID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	var req struct {
+		Name        string                 `json:"name"`
+		Description string                 `json:"description"`
+		IconID      string                 `json:"icon_id"`
+		IconPath    string                 `json:"icon_path"`
+		Longitude   *float64               `json:"longitude"`
+		Latitude    *float64               `json:"latitude"`
+		BuildingID  string                 `json:"building_id"`
+		FloorLevel  int                    `json:"floor_level"`
+		FloorLabel  string                 `json:"floor_label"`
+		Scope       string                 `json:"scope"`
+		Properties  map[string]interface{} `json:"properties"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	if req.Longitude == nil || req.Latitude == nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_COORDINATES", "Longitude and latitude are required", nil, nil)
+		return
+	}
+
+	lng := *req.Longitude
+	lat := *req.Latitude
+	if lng < -180 || lng > 180 || lat < -90 || lat > 90 {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_COORDINATES", "Coordinates outside valid geographic bounds [-180, 180], [-90, 90]", nil, nil)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = "Icon Point"
+	}
+
+	iconID := strings.TrimSpace(req.IconID)
+	if iconID == "" {
+		iconID = "pin"
+	}
+
+	scope := req.Scope
+	if scope == "" {
+		if req.BuildingID != "" {
+			scope = "floor"
+		} else {
+			scope = "dataset"
+		}
+	}
+
+	pt := &models.IconPoint{
+		SessionID:   sessionID,
+		DatasetID:   datasetID,
+		BuildingID:  req.BuildingID,
+		FloorLevel:  req.FloorLevel,
+		FloorLabel:  req.FloorLabel,
+		Scope:       scope,
+		Name:        name,
+		Description: req.Description,
+		IconID:      iconID,
+		IconPath:    req.IconPath,
+		Longitude:   lng,
+		Latitude:    lat,
+		Properties:  req.Properties,
+	}
+
+	created, err := h.repo.CreateIconPoint(sessionID, pt)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "CREATE_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) ListIconPoints(w http.ResponseWriter, r *http.Request, datasetID string) {
+	if r.Method != http.MethodGet {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	q := r.URL.Query()
+	buildingID := q.Get("building_id")
+
+	points, err := h.repo.ListIconPoints(sessionID, datasetID, buildingID)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "LIST_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, points)
+}
+
+func (h *Handler) GetIconPoint(w http.ResponseWriter, r *http.Request, pointID string) {
+	sessionID := models.GetSessionID(r)
+	var pt *models.IconPoint
+	var err error
+
+	if sessionID != "" {
+		pt, err = h.repo.GetIconPoint(sessionID, pointID)
+	} else {
+		pt, _, err = h.repo.FindIconPoint(pointID)
+	}
+
+	if err != nil || pt == nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Icon point not found", nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, pt)
+}
+
+func (h *Handler) UpdateIconPoint(w http.ResponseWriter, r *http.Request, pointID string) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT or PATCH method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	var existing *models.IconPoint
+	var err error
+
+	if sessionID != "" {
+		existing, err = h.repo.GetIconPoint(sessionID, pointID)
+	} else {
+		var sID string
+		existing, sID, err = h.repo.FindIconPoint(pointID)
+		sessionID = sID
+	}
+
+	if err != nil || existing == nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Icon point not found", nil, nil)
+		return
+	}
+
+	var req struct {
+		Name        *string                `json:"name"`
+		Description *string                `json:"description"`
+		IconID      *string                `json:"icon_id"`
+		IconKey     *string                `json:"icon_key"` // alias
+		IconPath    *string                `json:"icon_path"`
+		Longitude   *float64               `json:"longitude"`
+		Latitude    *float64               `json:"latitude"`
+		BuildingID  *string                `json:"building_id"`
+		FloorLevel  *int                   `json:"floor_level"`
+		FloorLabel  *string                `json:"floor_label"`
+		Scope       *string                `json:"scope"`
+		Properties  map[string]interface{} `json:"properties"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	if req.Name != nil {
+		existing.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.IconID != nil && *req.IconID != "" {
+		existing.IconID = *req.IconID
+	} else if req.IconKey != nil && *req.IconKey != "" {
+		existing.IconID = *req.IconKey
+	}
+	if req.IconPath != nil {
+		existing.IconPath = *req.IconPath
+	}
+	if req.Longitude != nil {
+		lng := *req.Longitude
+		if lng < -180 || lng > 180 {
+			models.WriteError(w, http.StatusBadRequest, "INVALID_COORDINATES", "Longitude out of bounds [-180, 180]", nil, nil)
+			return
+		}
+		existing.Longitude = lng
+	}
+	if req.Latitude != nil {
+		lat := *req.Latitude
+		if lat < -90 || lat > 90 {
+			models.WriteError(w, http.StatusBadRequest, "INVALID_COORDINATES", "Latitude out of bounds [-90, 90]", nil, nil)
+			return
+		}
+		existing.Latitude = lat
+	}
+	if req.BuildingID != nil {
+		existing.BuildingID = *req.BuildingID
+	}
+	if req.FloorLevel != nil {
+		existing.FloorLevel = *req.FloorLevel
+	}
+	if req.FloorLabel != nil {
+		existing.FloorLabel = *req.FloorLabel
+	}
+	if req.Scope != nil {
+		existing.Scope = *req.Scope
+	}
+	if req.Properties != nil {
+		existing.Properties = req.Properties
+	}
+
+	updated, err := h.repo.UpdateIconPoint(sessionID, pointID, existing)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "UPDATE_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeleteIconPoint(w http.ResponseWriter, r *http.Request, pointID string) {
+	if r.Method != http.MethodDelete {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only DELETE method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		_, sID, err := h.repo.FindIconPoint(pointID)
+		if err != nil {
+			models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Icon point not found", nil, nil)
+			return
+		}
+		sessionID = sID
+	}
+
+	removed, err := h.repo.DeleteIconPoint(sessionID, pointID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"deleted": true,
+		"point":   removed,
+	})
+}
+
+// Building & Floor Handlers
+func (h *Handler) CreateBuilding(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	var req struct {
+		Name              string                 `json:"name"`
+		Description       string                 `json:"description"`
+		DefaultFloorLevel int                    `json:"default_floor_level"`
+		Bounds            map[string]interface{} `json:"bounds"`
+		DisplayOrder      int                    `json:"display_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = "Building"
+	}
+
+	b := &models.Building{
+		SessionID:         sessionID,
+		Name:              name,
+		Description:       req.Description,
+		DefaultFloorLevel: req.DefaultFloorLevel,
+		Bounds:            req.Bounds,
+		DisplayOrder:      req.DisplayOrder,
+		Floors:            []*models.BuildingFloor{},
+	}
+
+	created, err := h.repo.CreateBuilding(sessionID, b)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "CREATE_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) ListBuildings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	buildings, err := h.repo.ListBuildings(sessionID)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "LIST_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, buildings)
+}
+
+func (h *Handler) GetBuilding(w http.ResponseWriter, r *http.Request, buildingID string) {
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	b, err := h.repo.GetBuilding(sessionID, buildingID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Building not found", nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, b)
+}
+
+func (h *Handler) UpdateBuilding(w http.ResponseWriter, r *http.Request, buildingID string) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT or PATCH method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	existing, err := h.repo.GetBuilding(sessionID, buildingID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Building not found", nil, nil)
+		return
+	}
+
+	var req struct {
+		Name              *string                `json:"name"`
+		Description       *string                `json:"description"`
+		DefaultFloorLevel *int                   `json:"default_floor_level"`
+		Bounds            map[string]interface{} `json:"bounds"`
+		DisplayOrder      *int                   `json:"display_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		existing.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.DefaultFloorLevel != nil {
+		existing.DefaultFloorLevel = *req.DefaultFloorLevel
+	}
+	if req.Bounds != nil {
+		existing.Bounds = req.Bounds
+	}
+	if req.DisplayOrder != nil {
+		existing.DisplayOrder = *req.DisplayOrder
+	}
+
+	updated, err := h.repo.UpdateBuilding(sessionID, buildingID, existing)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "UPDATE_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeleteBuilding(w http.ResponseWriter, r *http.Request, buildingID string) {
+	if r.Method != http.MethodDelete {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only DELETE method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	removed, err := h.repo.DeleteBuilding(sessionID, buildingID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"deleted":  true,
+		"building": removed,
+	})
+}
+
+func (h *Handler) AddBuildingFloor(w http.ResponseWriter, r *http.Request, buildingID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	var req struct {
+		Level        int      `json:"level"`
+		Name         string   `json:"name"`
+		DatasetIDs   []string `json:"dataset_ids"`
+		DisplayOrder int      `json:"display_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		switch req.Level {
+		case -2:
+			name = "Basement 2"
+		case -1:
+			name = "Basement 1"
+		case 0:
+			name = "Ground Floor"
+		case 1:
+			name = "First Floor"
+		case 2:
+			name = "Second Floor"
+		case 3:
+			name = "Third Floor"
+		default:
+			if req.Level < 0 {
+				name = fmt.Sprintf("Basement %d", -req.Level)
+			} else {
+				name = fmt.Sprintf("Floor %d", req.Level)
+			}
+		}
+	}
+
+	floor := &models.BuildingFloor{
+		Level:        req.Level,
+		Name:         name,
+		DatasetIDs:   req.DatasetIDs,
+		DisplayOrder: req.DisplayOrder,
+	}
+
+	added, err := h.repo.AddFloor(sessionID, buildingID, floor)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "ADD_FLOOR_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusCreated, added)
+}
+
+func (h *Handler) UpdateBuildingFloor(w http.ResponseWriter, r *http.Request, buildingID, floorID string) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT or PATCH method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	var req struct {
+		Level        *int     `json:"level"`
+		Name         *string  `json:"name"`
+		DatasetIDs   []string `json:"dataset_ids"`
+		DisplayOrder *int     `json:"display_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to parse JSON body", err.Error(), nil)
+		return
+	}
+
+	b, err := h.repo.GetBuilding(sessionID, buildingID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Building not found", nil, nil)
+		return
+	}
+
+	var target *models.BuildingFloor
+	for _, f := range b.Floors {
+		if f.ID == floorID {
+			target = f
+			break
+		}
+	}
+
+	if target == nil {
+		models.WriteError(w, http.StatusNotFound, "FLOOR_NOT_FOUND", "Floor not found", nil, nil)
+		return
+	}
+
+	if req.Level != nil {
+		target.Level = *req.Level
+	}
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		target.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.DatasetIDs != nil {
+		target.DatasetIDs = req.DatasetIDs
+	}
+	if req.DisplayOrder != nil {
+		target.DisplayOrder = *req.DisplayOrder
+	}
+
+	updated, err := h.repo.UpdateFloor(sessionID, buildingID, floorID, target)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "UPDATE_FLOOR_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeleteBuildingFloor(w http.ResponseWriter, r *http.Request, buildingID, floorID string) {
+	if r.Method != http.MethodDelete {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only DELETE method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	if err := h.repo.DeleteFloor(sessionID, buildingID, floorID); err != nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"deleted": true,
+	})
 }

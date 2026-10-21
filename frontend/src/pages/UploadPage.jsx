@@ -1,9 +1,10 @@
 import React, { useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { importDatasetZip, uploadDataset, readableApiError } from "../api"
+import { importDatasetZip, uploadDataset, inspectArchive, readableApiError } from "../api"
 import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
 import UploadStatus from "../components/UploadStatus"
 import TopHeader from "../components/TopHeader"
+import ZipImportReview from "../components/ZipImportReview"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
@@ -25,6 +26,7 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [archiveInspection, setArchiveInspection] = useState(null)
 
   function selectFile(nextFile) {
     setFile(nextFile)
@@ -32,12 +34,14 @@ export default function UploadPage() {
     setProgress(0)
     setResult(null)
     setError(null)
+    setArchiveInspection(null)
   }
 
   function removeFile() {
     setFile(null)
     setState("idle")
     setProgress(0)
+    setArchiveInspection(null)
   }
 
   async function upload() {
@@ -46,6 +50,25 @@ export default function UploadPage() {
     setProgress(0)
     try {
       const isZip = (file.name || "").toLowerCase().endsWith(".zip")
+
+      // Feature C: Staged multi-dataset ZIP inspection
+      if (isZip) {
+        try {
+          const inspection = await inspectArchive(file, {
+            onUploadProgress: (event) => {
+              if (event.total) setProgress(Math.round((event.loaded / event.total) * 100))
+            },
+          })
+          if (inspection && inspection.datasets?.length > 0) {
+            setArchiveInspection(inspection)
+            setState("idle")
+            return
+          }
+        } catch (inspectErr) {
+          console.warn("inspectArchive fallback to legacy zip import:", inspectErr)
+        }
+      }
+
       const uploadFn = isZip ? importDatasetZip : uploadDataset
       const uploaded = await uploadFn(file, (event) => {
         if (event.total) setProgress(Math.round((event.loaded / event.total) * 100))
@@ -228,6 +251,22 @@ export default function UploadPage() {
             </div>
           </section>
         </div>
+      )}
+
+      {archiveInspection && (
+        <ZipImportReview
+          inspectionResult={archiveInspection}
+          onClose={() => setArchiveInspection(null)}
+          onImportComplete={(importRes) => {
+            setArchiveInspection(null)
+            const firstSuccess = importRes.results?.find((r) => r.status === "success" && r.dataset_id)
+            if (firstSuccess) {
+              navigate(`/datasets/${firstSuccess.dataset_id}/workspace?view=map`)
+            } else {
+              navigate("/")
+            }
+          }}
+        />
       )}
     </div>
   )

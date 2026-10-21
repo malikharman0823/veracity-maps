@@ -302,6 +302,13 @@ export async function removeIconPoint(iconPointId) {
   return response.data.data
 }
 
+export const deleteIconPoint = removeIconPoint
+
+export async function getIconPoint(pointId) {
+  const response = await client.get(`/icon-points/${encodeURIComponent(pointId)}`)
+  return response.data.data
+}
+
 export async function getMapProject(datasetId, signal) {
   const response = await client.get(`/datasets/${encodeURIComponent(datasetId)}/project`, { signal })
   return response.data
@@ -489,9 +496,41 @@ const DEFAULT_ICONS = [
 export async function listIcons(signal) {
   try {
     const response = await client.get(`/icons`, { signal })
-    return response.data?.icons || response.data?.data?.icons || DEFAULT_ICONS
+    const body = response.data?.data || response.data || {}
+    const iconList = body.icons || DEFAULT_ICONS
+    const catalog = body.catalog || iconList.map((id) => ({ id, name: id, path: `/icons/${id}.png` }))
+    const categories = body.categories || ["General"]
+    return {
+      icons: iconList,
+      catalog,
+      categories,
+      data: { icons: iconList, catalog, categories },
+      [Symbol.iterator]: function* () {
+        for (const item of iconList) yield item
+      },
+      map: (...args) => iconList.map(...args),
+      filter: (...args) => iconList.filter(...args),
+      forEach: (...args) => iconList.forEach(...args),
+      find: (...args) => iconList.find(...args),
+      some: (...args) => iconList.some(...args),
+      length: iconList.length,
+    }
   } catch {
-    return DEFAULT_ICONS
+    return {
+      icons: DEFAULT_ICONS,
+      catalog: DEFAULT_ICONS.map((id) => ({ id, name: id, path: `/icons/${id}.png` })),
+      categories: ["Security & Access"],
+      data: { icons: DEFAULT_ICONS },
+      [Symbol.iterator]: function* () {
+        for (const item of DEFAULT_ICONS) yield item
+      },
+      map: (...args) => DEFAULT_ICONS.map(...args),
+      filter: (...args) => DEFAULT_ICONS.filter(...args),
+      forEach: (...args) => DEFAULT_ICONS.forEach(...args),
+      find: (...args) => DEFAULT_ICONS.find(...args),
+      some: (...args) => DEFAULT_ICONS.some(...args),
+      length: DEFAULT_ICONS.length,
+    }
   }
 }
 
@@ -635,3 +674,80 @@ export function readableApiError(error, fallbackMessage) {
     details: "The request could not be completed.",
   }
 }
+
+// -------------------------------------------------------------
+// Icon Catalog & Icon Points API
+// -------------------------------------------------------------
+
+export function getIconUrl(iconId) {
+  if (!iconId) return ""
+  if (iconId.startsWith("/") || iconId.startsWith("http")) return iconId
+  return `${API_URL}/icons/${encodeURIComponent(iconId)}`
+}
+
+// -------------------------------------------------------------
+// Building & Floor Management API
+// -------------------------------------------------------------
+
+export async function listBuildings() {
+  const response = await client.get("/buildings")
+  return response.data.data || []
+}
+
+export async function createBuilding(data) {
+  const response = await client.post("/buildings", data)
+  return response.data.data
+}
+
+export async function getBuilding(buildingId) {
+  const response = await client.get(`/buildings/${encodeURIComponent(buildingId)}`)
+  return response.data.data
+}
+
+export async function updateBuilding(buildingId, data) {
+  const response = await client.put(`/buildings/${encodeURIComponent(buildingId)}`, data)
+  return response.data.data
+}
+
+export async function deleteBuilding(buildingId) {
+  const response = await client.delete(`/buildings/${encodeURIComponent(buildingId)}`)
+  return response.data.data
+}
+
+export async function addBuildingFloor(buildingId, floorData) {
+  const response = await client.post(`/buildings/${encodeURIComponent(buildingId)}/floors`, floorData)
+  return response.data.data
+}
+
+export async function updateBuildingFloor(buildingId, floorId, floorData) {
+  const response = await client.put(`/buildings/${encodeURIComponent(buildingId)}/floors/${encodeURIComponent(floorId)}`, floorData)
+  return response.data.data
+}
+
+export async function deleteBuildingFloor(buildingId, floorId) {
+  const response = await client.delete(`/buildings/${encodeURIComponent(buildingId)}/floors/${encodeURIComponent(floorId)}`)
+  return response.data.data
+}
+
+// -------------------------------------------------------------
+// Multi-Dataset ZIP Inspection & Import API
+// -------------------------------------------------------------
+
+export async function inspectArchive(file, { onUploadProgress } = {}) {
+  const formData = new FormData()
+  formData.append("file", file)
+  const response = await client.post("/datasets/inspect-archive", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress,
+  })
+  return response.data.data
+}
+
+export async function importArchiveSelected(token, selections) {
+  const response = await client.post("/datasets/import-archive-selected", {
+    token,
+    selections,
+  })
+  return response.data.data
+}
+

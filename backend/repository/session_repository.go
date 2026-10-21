@@ -20,6 +20,9 @@ var (
 	ErrDatasetNotFound      = errors.New("DATASET_NOT_FOUND")
 	ErrControlPointNotFound = errors.New("CONTROL_POINT_NOT_FOUND")
 	ErrLayerNotFound        = errors.New("LAYER_NOT_FOUND")
+	ErrIconPointNotFound    = errors.New("ICON_POINT_NOT_FOUND")
+	ErrBuildingNotFound     = errors.New("BUILDING_NOT_FOUND")
+	ErrFloorNotFound        = errors.New("FLOOR_NOT_FOUND")
 )
 
 type Session struct {
@@ -31,6 +34,8 @@ type Session struct {
 	Layers        map[string][]*models.Layer        // datasetID -> layers
 	MapProjects   map[string]*models.MapProject     // datasetID -> project
 	MapConfig     map[string]interface{}
+	IconPoints    map[string]*models.IconPoint // pointID -> icon point
+	Buildings     map[string]*models.Building  // buildingID -> building
 }
 
 type SessionRepository struct {
@@ -78,6 +83,18 @@ func GenerateLayerID() string {
 	return generateID("lyr")
 }
 
+func GenerateIconPointID() string {
+	return generateID("ip")
+}
+
+func GenerateBuildingID() string {
+	return generateID("bld")
+}
+
+func GenerateFloorID() string {
+	return generateID("flr")
+}
+
 func (r *SessionRepository) CreateSession() *Session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -93,6 +110,8 @@ func (r *SessionRepository) CreateSession() *Session {
 		Layers:        make(map[string][]*models.Layer),
 		MapProjects:   make(map[string]*models.MapProject),
 		MapConfig:     make(map[string]interface{}),
+		IconPoints:    make(map[string]*models.IconPoint),
+		Buildings:     make(map[string]*models.Building),
 	}
 	r.sessions[id] = sess
 	return sess
@@ -508,6 +527,302 @@ func (r *SessionRepository) SaveMapProject(sessionID string, project *models.Map
 	return nil
 }
 
+// IconPoint Operations
+func (r *SessionRepository) CreateIconPoint(sessionID string, pt *models.IconPoint) (*models.IconPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+
+	if pt.ID == "" {
+		pt.ID = GenerateIconPointID()
+	}
+	pt.SessionID = sessionID
+	now := time.Now()
+	if pt.CreatedAt.IsZero() {
+		pt.CreatedAt = now
+	}
+	pt.UpdatedAt = now
+
+	if sess.IconPoints == nil {
+		sess.IconPoints = make(map[string]*models.IconPoint)
+	}
+	sess.IconPoints[pt.ID] = pt
+	sess.LastActiveAt = now
+	r.saveIconPointsLocked(sessionID)
+	return pt, nil
+}
+
+func (r *SessionRepository) GetIconPoint(sessionID, pointID string) (*models.IconPoint, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	pt, ok := sess.IconPoints[pointID]
+	if !ok {
+		return nil, ErrIconPointNotFound
+	}
+	return pt, nil
+}
+
+func (r *SessionRepository) FindIconPoint(pointID string) (*models.IconPoint, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for sID, sess := range r.sessions {
+		if pt, ok := sess.IconPoints[pointID]; ok {
+			return pt, sID, nil
+		}
+	}
+	return nil, "", ErrIconPointNotFound
+}
+
+func (r *SessionRepository) ListIconPoints(sessionID, datasetID, buildingID string) ([]*models.IconPoint, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+
+	res := make([]*models.IconPoint, 0, len(sess.IconPoints))
+	for _, pt := range sess.IconPoints {
+		if datasetID != "" && pt.DatasetID != "" && pt.DatasetID != datasetID {
+			continue
+		}
+		if buildingID != "" && pt.BuildingID != "" && pt.BuildingID != buildingID {
+			continue
+		}
+		res = append(res, pt)
+	}
+	return res, nil
+}
+
+func (r *SessionRepository) UpdateIconPoint(sessionID, pointID string, updated *models.IconPoint) (*models.IconPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	pt, ok := sess.IconPoints[pointID]
+	if !ok {
+		return nil, ErrIconPointNotFound
+	}
+
+	updated.ID = pointID
+	updated.SessionID = sessionID
+	updated.CreatedAt = pt.CreatedAt
+	updated.UpdatedAt = time.Now()
+	sess.IconPoints[pointID] = updated
+	sess.LastActiveAt = time.Now()
+	r.saveIconPointsLocked(sessionID)
+	return updated, nil
+}
+
+func (r *SessionRepository) DeleteIconPoint(sessionID, pointID string) (*models.IconPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	pt, ok := sess.IconPoints[pointID]
+	if !ok {
+		return nil, ErrIconPointNotFound
+	}
+	delete(sess.IconPoints, pointID)
+	sess.LastActiveAt = time.Now()
+	r.saveIconPointsLocked(sessionID)
+	return pt, nil
+}
+
+// Building Operations
+func (r *SessionRepository) CreateBuilding(sessionID string, b *models.Building) (*models.Building, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+
+	if b.ID == "" {
+		b.ID = GenerateBuildingID()
+	}
+	b.SessionID = sessionID
+	now := time.Now()
+	if b.CreatedAt.IsZero() {
+		b.CreatedAt = now
+	}
+	b.UpdatedAt = now
+
+	if sess.Buildings == nil {
+		sess.Buildings = make(map[string]*models.Building)
+	}
+	sess.Buildings[b.ID] = b
+	sess.LastActiveAt = now
+	r.saveBuildingsLocked(sessionID)
+	return b, nil
+}
+
+func (r *SessionRepository) GetBuilding(sessionID, buildingID string) (*models.Building, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return nil, ErrBuildingNotFound
+	}
+	return b, nil
+}
+
+func (r *SessionRepository) ListBuildings(sessionID string) ([]*models.Building, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+
+	res := make([]*models.Building, 0, len(sess.Buildings))
+	for _, b := range sess.Buildings {
+		res = append(res, b)
+	}
+	return res, nil
+}
+
+func (r *SessionRepository) UpdateBuilding(sessionID, buildingID string, updated *models.Building) (*models.Building, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return nil, ErrBuildingNotFound
+	}
+
+	updated.ID = buildingID
+	updated.SessionID = sessionID
+	updated.CreatedAt = b.CreatedAt
+	updated.UpdatedAt = time.Now()
+	sess.Buildings[buildingID] = updated
+	sess.LastActiveAt = time.Now()
+	r.saveBuildingsLocked(sessionID)
+	return updated, nil
+}
+
+func (r *SessionRepository) DeleteBuilding(sessionID, buildingID string) (*models.Building, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return nil, ErrBuildingNotFound
+	}
+	delete(sess.Buildings, buildingID)
+	sess.LastActiveAt = time.Now()
+	r.saveBuildingsLocked(sessionID)
+	return b, nil
+}
+
+func (r *SessionRepository) AddFloor(sessionID, buildingID string, floor *models.BuildingFloor) (*models.BuildingFloor, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return nil, ErrBuildingNotFound
+	}
+
+	if floor.ID == "" {
+		floor.ID = GenerateFloorID()
+	}
+	floor.BuildingID = buildingID
+	b.Floors = append(b.Floors, floor)
+	b.UpdatedAt = time.Now()
+	sess.LastActiveAt = time.Now()
+	r.saveBuildingsLocked(sessionID)
+	return floor, nil
+}
+
+func (r *SessionRepository) UpdateFloor(sessionID, buildingID, floorID string, updated *models.BuildingFloor) (*models.BuildingFloor, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return nil, ErrBuildingNotFound
+	}
+
+	for i, f := range b.Floors {
+		if f.ID == floorID {
+			updated.ID = floorID
+			updated.BuildingID = buildingID
+			b.Floors[i] = updated
+			b.UpdatedAt = time.Now()
+			sess.LastActiveAt = time.Now()
+			r.saveBuildingsLocked(sessionID)
+			return updated, nil
+		}
+	}
+	return nil, ErrFloorNotFound
+}
+
+func (r *SessionRepository) DeleteFloor(sessionID, buildingID, floorID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return ErrSessionNotFound
+	}
+	b, ok := sess.Buildings[buildingID]
+	if !ok {
+		return ErrBuildingNotFound
+	}
+
+	for i, f := range b.Floors {
+		if f.ID == floorID {
+			b.Floors = append(b.Floors[:i], b.Floors[i+1:]...)
+			b.UpdatedAt = time.Now()
+			sess.LastActiveAt = time.Now()
+			r.saveBuildingsLocked(sessionID)
+			return nil
+		}
+	}
+	return ErrFloorNotFound
+}
+
 // Disk persistence and hydration helpers
 func saveJSONFile(path string, v interface{}) {
 	data, err := json.MarshalIndent(v, "", "  ")
@@ -545,6 +860,36 @@ func (r *SessionRepository) saveProjectLocked(sessionID string, project *models.
 	saveJSONFile(filepath.Join(r.storageDir, sessionID, "datasets", project.DatasetID, "project.json"), project)
 }
 
+func (r *SessionRepository) saveIconPointsLocked(sessionID string) {
+	if r.storageDir == "" {
+		return
+	}
+	sess := r.sessions[sessionID]
+	if sess == nil {
+		return
+	}
+	list := make([]*models.IconPoint, 0, len(sess.IconPoints))
+	for _, pt := range sess.IconPoints {
+		list = append(list, pt)
+	}
+	saveJSONFile(filepath.Join(r.storageDir, sessionID, "icon_points.json"), list)
+}
+
+func (r *SessionRepository) saveBuildingsLocked(sessionID string) {
+	if r.storageDir == "" {
+		return
+	}
+	sess := r.sessions[sessionID]
+	if sess == nil {
+		return
+	}
+	list := make([]*models.Building, 0, len(sess.Buildings))
+	for _, b := range sess.Buildings {
+		list = append(list, b)
+	}
+	saveJSONFile(filepath.Join(r.storageDir, sessionID, "buildings.json"), list)
+}
+
 func (r *SessionRepository) hydrateAllLocked() {
 	if r.storageDir == "" {
 		return
@@ -579,6 +924,28 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 		Layers:        make(map[string][]*models.Layer),
 		MapProjects:   make(map[string]*models.MapProject),
 		MapConfig:     make(map[string]interface{}),
+		IconPoints:    make(map[string]*models.IconPoint),
+		Buildings:     make(map[string]*models.Building),
+	}
+
+	ipPath := filepath.Join(sessionDir, "icon_points.json")
+	if ipBytes, err := os.ReadFile(ipPath); err == nil {
+		var ips []*models.IconPoint
+		if json.Unmarshal(ipBytes, &ips) == nil {
+			for _, ip := range ips {
+				sess.IconPoints[ip.ID] = ip
+			}
+		}
+	}
+
+	bldPath := filepath.Join(sessionDir, "buildings.json")
+	if bldBytes, err := os.ReadFile(bldPath); err == nil {
+		var blds []*models.Building
+		if json.Unmarshal(bldBytes, &blds) == nil {
+			for _, b := range blds {
+				sess.Buildings[b.ID] = b
+			}
+		}
 	}
 
 	datasetsDir := filepath.Join(sessionDir, "datasets")

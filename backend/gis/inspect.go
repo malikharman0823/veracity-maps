@@ -6,6 +6,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -58,6 +59,87 @@ func DetectGDAL() GDALTools {
 	}
 }
 
+func decodeTiffDimensions(filePath string) (int, int, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	header := make([]byte, 8)
+	if _, err := io.ReadFull(f, header); err != nil {
+		return 0, 0, err
+	}
+
+	var isLE bool
+	if header[0] == 'I' && header[1] == 'I' {
+		isLE = true
+	} else if header[0] == 'M' && header[1] == 'M' {
+		isLE = false
+	} else {
+		return 0, 0, fmt.Errorf("not a tiff")
+	}
+
+	readUint16 := func(b []byte) uint16 {
+		if isLE {
+			return uint16(b[0]) | uint16(b[1])<<8
+		}
+		return uint16(b[1]) | uint16(b[0])<<8
+	}
+
+	readUint32 := func(b []byte) uint32 {
+		if isLE {
+			return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+		}
+		return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
+	}
+
+	if readUint16(header[2:4]) != 42 {
+		return 0, 0, fmt.Errorf("invalid tiff magic")
+	}
+
+	ifdOffset := int64(readUint32(header[4:8]))
+	if _, err := f.Seek(ifdOffset, io.SeekStart); err != nil {
+		return 0, 0, err
+	}
+
+	countBuf := make([]byte, 2)
+	if _, err := io.ReadFull(f, countBuf); err != nil {
+		return 0, 0, err
+	}
+	numEntries := int(readUint16(countBuf))
+
+	width := 0
+	height := 0
+	entryBuf := make([]byte, 12)
+	for i := 0; i < numEntries; i++ {
+		if _, err := io.ReadFull(f, entryBuf); err != nil {
+			break
+		}
+		tag := readUint16(entryBuf[0:2])
+		typ := readUint16(entryBuf[2:4])
+		var val int
+		if typ == 3 { // SHORT
+			val = int(readUint16(entryBuf[8:10]))
+		} else if typ == 4 { // LONG
+			val = int(readUint32(entryBuf[8:12]))
+		}
+		if tag == 256 { // ImageWidth
+			width = val
+		} else if tag == 257 { // ImageLength
+			height = val
+		}
+		if width > 0 && height > 0 {
+			return width, height, nil
+		}
+	}
+
+	if width > 0 && height > 0 {
+		return width, height, nil
+	}
+	return 0, 0, fmt.Errorf("tiff dimensions not found")
+}
+
 // InspectRasterFile inspects a PNG, JPEG or TIFF raster
 func InspectRasterFile(filePath string) (*RasterMetadata, error) {
 	file, err := os.Open(filePath)
@@ -68,7 +150,13 @@ func InspectRasterFile(filePath string) (*RasterMetadata, error) {
 
 	cfg, format, err := image.DecodeConfig(file)
 	if err != nil {
-		return nil, fmt.Errorf("unsupported or corrupted raster image: %w", err)
+		w, h, tiffErr := decodeTiffDimensions(filePath)
+		if tiffErr == nil && w > 0 && h > 0 {
+			cfg = image.Config{Width: w, Height: h}
+			format = "tiff"
+		} else {
+			return nil, fmt.Errorf("unsupported or corrupted raster image: %w", err)
+		}
 	}
 
 	driverName := strings.ToUpper(format)
