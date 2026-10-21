@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -30,7 +31,60 @@ func NewGeoreferenceService(repo *repository.SessionRepository, sm *storage.Stor
 }
 
 func (s *GeoreferenceService) ListControlPoints(sessionID, datasetID string) ([]*models.ControlPoint, error) {
-	return s.repo.ListControlPoints(sessionID, datasetID)
+	cps, err := s.repo.ListControlPoints(sessionID, datasetID)
+	if err == nil && len(cps) > 0 {
+		return cps, nil
+	}
+
+	ds, err := s.repo.GetDataset(sessionID, datasetID)
+	if err != nil || ds == nil {
+		return cps, err
+	}
+
+	datasetDir := filepath.Dir(ds.StoragePath)
+	candidates := []string{
+		filepath.Join(datasetDir, "control_points.json"),
+		filepath.Join(datasetDir, "extracted", "control_points.json"),
+		filepath.Join(datasetDir, "..", "control_points.json"),
+		filepath.Join(datasetDir, "..", "extracted", "control_points.json"),
+	}
+	for _, c := range candidates {
+		if data, err := os.ReadFile(c); err == nil {
+			var points []*models.ControlPoint
+			if err := json.Unmarshal(data, &points); err == nil && len(points) > 0 {
+				for _, p := range points {
+					p.DatasetID = datasetID
+				}
+				_ = s.repo.SetControlPoints(sessionID, datasetID, points)
+				return points, nil
+			}
+		}
+	}
+
+	studioCandidates := []string{
+		filepath.Join(datasetDir, "mapstudio.json"),
+		filepath.Join(datasetDir, "extracted", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "extracted", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "..", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "..", "extracted", "mapstudio.json"),
+	}
+	for _, c := range studioCandidates {
+		if data, err := os.ReadFile(c); err == nil {
+			var doc struct {
+				ControlPoints []*models.ControlPoint `json:"control_points"`
+			}
+			if err := json.Unmarshal(data, &doc); err == nil && len(doc.ControlPoints) > 0 {
+				for _, p := range doc.ControlPoints {
+					p.DatasetID = datasetID
+				}
+				_ = s.repo.SetControlPoints(sessionID, datasetID, doc.ControlPoints)
+				return doc.ControlPoints, nil
+			}
+		}
+	}
+
+	return cps, nil
 }
 
 func getDim(v interface{}) float64 {

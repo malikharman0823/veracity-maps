@@ -39,59 +39,104 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 	}
 
 	if project == nil {
-		name := dataset.Filename
-		if ext := filepath.Ext(name); ext != "" {
-			name = strings.TrimSuffix(name, ext)
+		datasetDir := filepath.Dir(dataset.StoragePath)
+		studioCandidates := []string{
+			filepath.Join(datasetDir, "mapstudio.json"),
+			filepath.Join(datasetDir, "extracted", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "extracted", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "..", "mapstudio.json"),
+			filepath.Join(datasetDir, "..", "..", "extracted", "mapstudio.json"),
 		}
-
-		centerLng := 0.0
-		centerLat := 20.0
-		zoom := 1.5
-		if dataset.ExtractedMetadata != nil {
-			if b, ok := dataset.ExtractedMetadata["bounds"].(map[string]interface{}); ok {
-				minX, ok1 := b["min_x"].(float64)
-				minY, ok2 := b["min_y"].(float64)
-				maxX, ok3 := b["max_x"].(float64)
-				maxY, ok4 := b["max_y"].(float64)
-				if ok1 && ok2 && ok3 && ok4 && maxX > minX && maxY > minY {
-					centerLng = (minX + maxX) / 2.0
-					centerLat = (minY + maxY) / 2.0
-					zoom = 15.0
+		var loadedFromStudio bool
+		for _, c := range studioCandidates {
+			if data, err := os.ReadFile(c); err == nil {
+				var doc struct {
+					Project struct {
+						Name          string                 `json:"name"`
+						Configuration map[string]interface{} `json:"configuration"`
+					} `json:"project"`
+					ControlPoints []*models.ControlPoint `json:"control_points"`
+				}
+				if err := json.Unmarshal(data, &doc); err == nil && doc.Project.Configuration != nil {
+					pName := doc.Project.Name
+					if pName == "" {
+						pName = strings.TrimSuffix(dataset.Filename, filepath.Ext(dataset.Filename))
+					}
+					project = &models.MapProject{
+						ID:            "proj_" + datasetID,
+						DatasetID:     datasetID,
+						Name:          pName,
+						Configuration: doc.Project.Configuration,
+					}
+					if len(doc.ControlPoints) > 0 {
+						for _, cp := range doc.ControlPoints {
+							cp.DatasetID = datasetID
+						}
+						_ = h.repo.SetControlPoints(sessionID, datasetID, doc.ControlPoints)
+					}
+					_ = h.repo.SaveMapProject(sessionID, project)
+					loadedFromStudio = true
+					break
 				}
 			}
 		}
 
-		project = &models.MapProject{
-			ID:        "proj_" + datasetID,
-			DatasetID: datasetID,
-			Name:      name,
-			Configuration: map[string]interface{}{
-				"active_view": "database",
-				"camera": map[string]interface{}{
-					"longitude": centerLng,
-					"latitude":  centerLat,
-					"center":    []float64{centerLng, centerLat},
-					"zoom":      zoom,
-					"bearing":   0.0,
-					"pitch":     0.0,
-				},
-				"members": []map[string]interface{}{
-					{
-						"dataset_id":             dataset.ID,
-						"name":                   dataset.Filename,
-						"floor_label":            "Ground Floor",
-						"floor_level":            0,
-						"visible":                true,
-						"raster_visible":         true,
-						"raster_opacity":         1.0,
-						"control_points_visible": true,
-						"icon_points_visible":    true,
-						"sort_order":             0,
+		if !loadedFromStudio {
+			name := dataset.Filename
+			if ext := filepath.Ext(name); ext != "" {
+				name = strings.TrimSuffix(name, ext)
+			}
+
+			centerLng := 0.0
+			centerLat := 20.0
+			zoom := 1.5
+			if dataset.ExtractedMetadata != nil {
+				if b, ok := dataset.ExtractedMetadata["bounds"].(map[string]interface{}); ok {
+					minX, ok1 := b["min_x"].(float64)
+					minY, ok2 := b["min_y"].(float64)
+					maxX, ok3 := b["max_x"].(float64)
+					maxY, ok4 := b["max_y"].(float64)
+					if ok1 && ok2 && ok3 && ok4 && maxX > minX && maxY > minY {
+						centerLng = (minX + maxX) / 2.0
+						centerLat = (minY + maxY) / 2.0
+						zoom = 15.0
+					}
+				}
+			}
+
+			project = &models.MapProject{
+				ID:        "proj_" + datasetID,
+				DatasetID: datasetID,
+				Name:      name,
+				Configuration: map[string]interface{}{
+					"active_view": "database",
+					"camera": map[string]interface{}{
+						"longitude": centerLng,
+						"latitude":  centerLat,
+						"center":    []float64{centerLng, centerLat},
+						"zoom":      zoom,
+						"bearing":   0.0,
+						"pitch":     0.0,
+					},
+					"members": []map[string]interface{}{
+						{
+							"dataset_id":             dataset.ID,
+							"name":                   dataset.Filename,
+							"floor_label":            "Ground Floor",
+							"floor_level":            0,
+							"visible":                true,
+							"raster_visible":         true,
+							"raster_opacity":         1.0,
+							"control_points_visible": true,
+							"icon_points_visible":    true,
+							"sort_order":             0,
+						},
 					},
 				},
-			},
+			}
+			_ = h.repo.SaveMapProject(sessionID, project)
 		}
-		_ = h.repo.SaveMapProject(sessionID, project)
 	}
 
 	if project != nil && project.Configuration != nil {
@@ -135,7 +180,67 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 		}
 	}
 
+	h.ensureDatasetControlPoints(sessionID, dataset)
+
 	return project, dataset, nil
+}
+
+func (h *Handler) ensureDatasetControlPoints(sessionID string, ds *models.Dataset) []*models.ControlPoint {
+	if ds == nil {
+		return nil
+	}
+	existing, _ := h.repo.ListControlPoints(sessionID, ds.ID)
+	if len(existing) > 0 {
+		return existing
+	}
+
+	datasetDir := filepath.Dir(ds.StoragePath)
+	candidates := []string{
+		filepath.Join(datasetDir, "control_points.json"),
+		filepath.Join(datasetDir, "extracted", "control_points.json"),
+		filepath.Join(datasetDir, "..", "control_points.json"),
+		filepath.Join(datasetDir, "..", "extracted", "control_points.json"),
+	}
+	for _, c := range candidates {
+		if data, err := os.ReadFile(c); err == nil {
+			var points []*models.ControlPoint
+			if err := json.Unmarshal(data, &points); err == nil && len(points) > 0 {
+				for _, p := range points {
+					p.DatasetID = ds.ID
+				}
+				_ = h.repo.SetControlPoints(sessionID, ds.ID, points)
+				return points
+			}
+		}
+	}
+
+	studioCandidates := []string{
+		filepath.Join(datasetDir, "mapstudio.json"),
+		filepath.Join(datasetDir, "extracted", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "extracted", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "..", "mapstudio.json"),
+		filepath.Join(datasetDir, "..", "..", "extracted", "mapstudio.json"),
+	}
+	for _, c := range studioCandidates {
+		if data, err := os.ReadFile(c); err == nil {
+			var doc struct {
+				ControlPoints []*models.ControlPoint `json:"control_points"`
+			}
+			if err := json.Unmarshal(data, &doc); err == nil && len(doc.ControlPoints) > 0 {
+				for _, p := range doc.ControlPoints {
+					p.DatasetID = ds.ID
+				}
+				_ = h.repo.SetControlPoints(sessionID, ds.ID, doc.ControlPoints)
+				if cpBytes, err := json.MarshalIndent(doc.ControlPoints, "", "  "); err == nil {
+					_ = os.WriteFile(filepath.Join(datasetDir, "control_points.json"), cpBytes, 0644)
+				}
+				return doc.ControlPoints
+			}
+		}
+	}
+
+	return nil
 }
 
 func ensureDatasetMapLayer(ds *models.Dataset) {
@@ -370,9 +475,20 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		if memberCopy["raster_opacity"] == nil {
 			memberCopy["raster_opacity"] = 1.0
 		}
-		if memberCopy["control_points_visible"] == nil {
+
+		cps := h.ensureDatasetControlPoints(sessionID, ds)
+		if len(cps) > 0 {
+			if memberCopy["control_points_visible"] == nil || memberCopy["control_points_visible"] == false {
+				memberCopy["control_points_visible"] = true
+				if m != nil {
+					m["control_points_visible"] = true
+					_ = h.repo.SaveMapProject(sessionID, project)
+				}
+			}
+		} else if memberCopy["control_points_visible"] == nil {
 			memberCopy["control_points_visible"] = true
 		}
+
 		if memberCopy["icon_points_visible"] == nil {
 			memberCopy["icon_points_visible"] = true
 		}
@@ -383,7 +499,6 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 			memberCopy["floor_label"] = memberCopy["name"]
 		}
 
-		cps, _ := h.repo.ListControlPoints(sessionID, datasetID)
 		memberCopy["sublayers"] = []map[string]interface{}{
 			{
 				"kind":  "raster",
@@ -728,7 +843,7 @@ func (h *Handler) GetWorkspaceRecords(w http.ResponseWriter, r *http.Request, pr
 
 		// 2. Control points records
 		if filterKind == "" || filterKind == "control_point" {
-			cps, _ := h.repo.ListControlPoints(sessionID, ds.ID)
+			cps := h.ensureDatasetControlPoints(sessionID, ds)
 			for idx, cp := range cps {
 				name := fmt.Sprintf("GCP %d", idx+1)
 				if filterSearch == "" || strings.Contains(strings.ToLower(name), filterSearch) || strings.Contains(strings.ToLower(dsName), filterSearch) {
@@ -743,6 +858,7 @@ func (h *Handler) GetWorkspaceRecords(w http.ResponseWriter, r *http.Request, pr
 						"latitude":     cp.Latitude,
 						"image_x":      cp.ImageX,
 						"image_y":      cp.ImageY,
+						"pair_number":  idx + 1,
 						"visible":      true,
 						"updated_at":   cp.CreatedAt,
 					})
