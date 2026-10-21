@@ -30,6 +30,27 @@ The `datasets` subpackage implements handlers for dataset cataloging, individual
   - `DeleteDatasetResponse`: `{ id: string, deleted: bool }`
   - `LayersResponse`: `{ layers: []*models.Layer }`
 
+### 4. `workspace.go`
+- **Purpose**: Implements workspace project state and record manifest endpoints (`GET/PATCH /datasets/{id}/workspace`, `GET /datasets/{id}/workspace/records`, `GET /icons`, `GET /icons/{name}`).
+- **Key Methods**:
+  - `GetWorkspace(w, r, datasetID)`: Returns the current map project, camera position, and enriched member datasets with synthesized `map_layer`.
+  - `UpdateWorkspaceState(w, r, datasetID)`: Patches active view or camera position.
+  - `UpdateMember(w, r, datasetID, memberID)`: Patches individual member visibility or opacity.
+  - `ListIcons(w, r)`: Lists available map icons.
+  - `ServeIcon(w, r, name)`: Streams built-in SVG icons.
+
+### 5. `transparency.go`
+- **Purpose**: Background color removal, live preview generation, and reset capabilities (`GET/POST /datasets/{id}/background-removal`).
+- **Key Methods**:
+  - `GetBackgroundRemoval(w, r, datasetID)`: Returns background removal status and configuration.
+  - `HandleBackgroundRemoval(w, r, datasetID)`: Executes `preview`, `apply`, `reset`, or `status` actions.
+
+### 6. `transform.go`
+- **Purpose**: Interactive raster transformation, affine fitting, history management, and ground control point synchronization (`GET/POST /datasets/{id}/transform`).
+- **Key Methods**:
+  - `GetRasterTransform(w, r, datasetID)`: Returns current transformation corners, bounds, dimensions, and undo/redo capabilities.
+  - `HandleRasterTransform(w, r, datasetID)`: Executes `preview`, `apply`, `undo`, `redo`, `reset`, or `status` actions.
+
 ---
 
 ## Endpoints
@@ -39,6 +60,16 @@ The `datasets` subpackage implements handlers for dataset cataloging, individual
 | `GET` | `/datasets` | Enumerate session datasets | 200 OK |
 | `GET` | `/datasets/{id}` | Inspect dataset metadata | 200 OK |
 | `DELETE` | `/datasets/{id}` | Delete dataset & cleanup files | 200 OK |
-| `GET` | `/datasets/{id}/source-image` | Raw binary image stream | 200 OK |
+| `GET` | `/datasets/{id}/source-image` | Raw binary image stream (serves processed transparent PNG if active) | 200 OK |
 | `GET` | `/datasets/{id}/layers` | Enumerate map layers | 200 OK |
 | `PATCH` | `/datasets/{id}/layers/{layer_id}`| Update layer visibility/opacity | 200 OK |
+| `GET` | `/datasets/{id}/background-removal`| Inspect background transparency status | 200 OK |
+| `POST` | `/datasets/{id}/background-removal`| Preview, apply, or reset background removal | 200 OK |
+| `GET` | `/datasets/{id}/transform` | Inspect raster transformation footprint & undo state | 200 OK |
+| `POST` | `/datasets/{id}/transform` | Preview, apply, undo, redo, or reset raster transformation | 200 OK |
+| `GET` | `/datasets/{id}/workspace` | Workspace project manifest | 200 OK |
+| `PATCH` | `/datasets/{id}/workspace/state` | Update project active view / camera | 200 OK |
+| `GET` | `/datasets/{id}/workspace/records`| Control and icon points records | 200 OK |
+| `GET` | `/icons` | Available SVG icons list | 200 OK |
+| `GET` | `/icons/{name}` | Stream SVG icon | 200 OK |
+

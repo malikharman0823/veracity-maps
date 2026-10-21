@@ -21,6 +21,7 @@ The `models` package defines all core domain entities, API response wrappers, an
   - `ProcessedPath`: Path to processed output.
   - `GeoreferenceStatus`: Current state (`"not_started"`, `"pending"`, `"completed"`).
   - `ExtractedMetadata`: Key-value map containing dimensions (`width`, `height`), `crs`, `transform`, `bounds`.
+  - `MapLayer`: Synthesized MapLibre-compatible raster layer metadata (`id`, `name`, `type`, `bounds`, `coordinates`).
 - **`type MapProject struct`**: Encapsulates project configurations for multi-layer or building-floor mappings.
 
 ### 2. `layer.go`

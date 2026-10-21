@@ -10,12 +10,13 @@ import (
 )
 
 type TransformResult struct {
-	Transformation string             `json:"transformation"`
-	Parameters     map[string]float64 `json:"parameters"`
-	Transform      []float64          `json:"transform"` // [a, b, c, d, e, f]
-	TargetCRS      string             `json:"target_crs"`
-	Bounds         map[string]float64 `json:"bounds"`
-	MapLibreBounds []float64          `json:"maplibre_bounds"` // [west, south, east, north]
+	Transformation    string             `json:"transformation"`
+	Parameters        map[string]float64 `json:"parameters"`
+	Transform         []float64          `json:"transform"` // [a, b, c, d, e, f]
+	TargetCRS         string             `json:"target_crs"`
+	Bounds            map[string]float64 `json:"bounds"`
+	MapLibreBounds    []float64          `json:"maplibre_bounds"` // [west, south, east, north]
+	ControlPointCount int                `json:"control_point_count,omitempty"`
 }
 
 // CalculateGeoreference validates points and computes similarity or affine transformation
@@ -84,12 +85,13 @@ func CalculateGeoreference(points []*models.ControlPoint, width, height int, req
 	}
 
 	return &TransformResult{
-		Transformation: transformation,
-		Parameters:     params,
-		Transform:      transform,
-		TargetCRS:      "EPSG:4326",
-		Bounds:         bounds,
-		MapLibreBounds: maplibreBounds,
+		Transformation:    transformation,
+		Parameters:        params,
+		Transform:         transform,
+		TargetCRS:         "EPSG:4326",
+		Bounds:            bounds,
+		MapLibreBounds:    maplibreBounds,
+		ControlPointCount: len(points),
 	}, nil
 }
 

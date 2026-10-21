@@ -289,12 +289,26 @@ export default function DatasetPage() {
   }
 
   async function receiveControlPointCoordinate(coordinate) {
-    if (!dataset?.georeference?.transformation_parameters) {
+    const transform = dataset?.extracted_metadata?.transform
+    const params =
+      dataset?.georeference?.transformation_parameters ||
+      dataset?.georeference?.parameters ||
+      (Array.isArray(transform) && transform.length === 6
+        ? {
+            a: Number(transform[0]),
+            b: -Number(transform[1]),
+            c: Number(transform[2]),
+            d: Number(transform[3]),
+            e: -Number(transform[4]),
+            f: Number(transform[5]),
+          }
+        : null)
+
+    if (!params) {
       setControlPointsError("Cannot add control points to an ungeoreferenced image from the main map.")
       setMapMode("normal")
       return
     }
-    const params = dataset.georeference.transformation_parameters
     const { a, b, c, d, e, f } = params
     const det = b * d - a * e
     if (Math.abs(det) < 1e-10) {

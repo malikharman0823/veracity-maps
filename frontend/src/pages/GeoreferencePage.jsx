@@ -21,16 +21,52 @@ import { ArrowLeft } from "lucide-react"
 import EndSessionDialog from "../components/EndSessionDialog"
 
 function overlayCoordinates(parameters, imageSize) {
-  if (!parameters || !imageSize?.width || !imageSize?.height) return null
-  const values = [parameters.a, parameters.b, parameters.c, parameters.d, parameters.e, parameters.f].map(Number)
-  if (!values.every(Number.isFinite)) return null
-  const [a, b, c, d, e, f] = values
+  if (!parameters) return null
+  const width = Number(imageSize?.width)
+  const height = Number(imageSize?.height)
+  if (!width || !height) return null
+
+  let a, b, c, d, e, f
+
+  // 1. Array format [a, -b, c, d, -e, f] (from transform or affine matrix)
+  const transformArray = Array.isArray(parameters)
+    ? parameters
+    : Array.isArray(parameters?.transform)
+      ? parameters.transform
+      : null
+
+  if (transformArray && transformArray.length === 6) {
+    const [t0, t1, t2, t3, t4, t5] = transformArray.map(Number)
+    if ([t0, t1, t2, t3, t4, t5].every(Number.isFinite)) {
+      a = t0
+      b = -t1
+      c = t2
+      d = t3
+      e = -t4
+      f = t5
+    }
+  }
+
+  // 2. Object format { a, b, c, d, e, f }
+  if (a === undefined) {
+    const params = parameters?.parameters || parameters?.transformation_parameters || parameters
+    if (params && typeof params === "object") {
+      const values = [params.a, params.b, params.c, params.d, params.e, params.f].map(Number)
+      if (values.every(Number.isFinite)) {
+        ;[a, b, c, d, e, f] = values
+      }
+    }
+  }
+
+  if (a === undefined || !Number.isFinite(a) || !Number.isFinite(d)) return null
+
   const project = (imageX, imageY) => [
     a * imageX + b * -imageY + c,
     d * imageX + e * -imageY + f,
   ]
-  const width = Number(imageSize.width)
-  const height = Number(imageSize.height)
+
+  // MapLibre GL image source expects 4 coordinates in clockwise order:
+  // [top-left, top-right, bottom-right, bottom-left]
   return [project(0, 0), project(width, 0), project(width, height), project(0, height)]
 }
 
@@ -129,10 +165,18 @@ export default function GeoreferencePage() {
     }
   }, [id])
 
-  const imageSize = dataset?.metadata
+  const [naturalDimensions, setNaturalDimensions] = useState(null)
+  const imageSize = dataset?.extracted_metadata || dataset?.metadata || naturalDimensions
   const sourceUrl = useMemo(() => datasetSourceImageUrl(id), [id])
   const previewCoordinates = useMemo(
-    () => overlayCoordinates(calculation?.transformation_parameters, imageSize),
+    () =>
+      overlayCoordinates(
+        calculation?.parameters ||
+          calculation?.transformation_parameters ||
+          calculation?.transform ||
+          calculation,
+        imageSize,
+      ),
     [calculation, imageSize],
   )
   const transformLabel = points.length < 2
@@ -143,7 +187,7 @@ export default function GeoreferencePage() {
   const editing = mode === "edit"
   const busy = savingPoint || calculating || savingConfig
   const canCalculate = editing && points.length >= 2 && !draft && !busy
-  const canSave = editing && calculation?.status === "calculated" && !draft && !busy
+  const canSave = editing && (calculation?.status === "calculated" || calculation?.is_georeferenced || Boolean(previewCoordinates)) && !draft && !busy
 
   function invalidateCalculation() {
     setCalculation(null)
@@ -287,7 +331,8 @@ export default function GeoreferencePage() {
       setCalculation(result)
       setOverlayEnabled(true)
       const article = result.transformation === "affine" ? "an" : "a"
-      setNotice(`${result.control_point_count} points calculated with ${article} ${result.transformation} transform. Review the preview, then save.`)
+      const count = result.control_point_count || points.length
+      setNotice(`${count} points calculated with ${article} ${result.transformation} transform. Review the preview, then save.`)
     } catch (requestError) {
       setError(readableApiError(requestError, "Unable to calculate the georeference."))
     } finally {
@@ -433,7 +478,7 @@ export default function GeoreferencePage() {
 
         <section className="grid min-h-[500px] gap-3 tablet-landscape:grid-cols-2" aria-label="Visual georeferencing workspace">
           <ReferenceMap points={points} selectedId={selectedId} onSelect={selectPoint} onMapClick={handleMapClick} onMoveEnd={persistPointChange} readOnly={!editing} placementMode={controlPointPlacement} overlay={{ visible: overlayEnabled && Boolean(previewCoordinates), imageUrl: sourceUrl, coordinates: previewCoordinates, opacity: overlayOpacity }} />
-          <SourceImagePane sourceUrl={sourceUrl} imageSize={imageSize} points={points} draft={draft} selectedId={selectedId} onSelect={selectPoint} onCreate={handleSourceCreate} onMove={handleSourceMove} onMoveEnd={persistPointChange} readOnly={!editing} placementMode={controlPointPlacement} />
+          <SourceImagePane sourceUrl={sourceUrl} imageSize={imageSize} points={points} draft={draft} selectedId={selectedId} onSelect={selectPoint} onCreate={handleSourceCreate} onMove={handleSourceMove} onMoveEnd={persistPointChange} readOnly={!editing} placementMode={controlPointPlacement} onImageDimensions={setNaturalDimensions} />
         </section>
 
         <section className="grid gap-3 desktop:grid-cols-[minmax(0,1fr)_330px]">

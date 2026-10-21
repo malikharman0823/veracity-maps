@@ -31,6 +31,7 @@ func main() {
 	}
 
 	repo := repository.NewSessionRepository()
+	repo.SetStorageDir(cfg.SessionStorageDir)
 	middleware := api.NewMiddleware(repo)
 
 	datasetService := services.NewDatasetService(cfg, repo, sm)

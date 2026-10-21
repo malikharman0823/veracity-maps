@@ -113,20 +113,32 @@ export async function saveSessionMapConfig(sessionId, configuration) {
   return response.data.data
 }
 
+let ensureSessionPromise = null
+
 export async function ensureActiveSession() {
-  const existing = getActiveSessionId()
-  if (existing) {
-    try {
-      const info = await getSession(existing)
-      if (info && info.session_id) {
-        return info.session_id
-      }
-    } catch {
-      clearActiveSessionId()
-    }
+  if (ensureSessionPromise) {
+    return ensureSessionPromise
   }
-  const created = await createSession()
-  return created.session_id
+
+  ensureSessionPromise = (async () => {
+    const existing = getActiveSessionId()
+    if (existing) {
+      try {
+        const info = await getSession(existing)
+        if (info && info.session_id) {
+          return info.session_id
+        }
+      } catch {
+        clearActiveSessionId()
+      }
+    }
+    const created = await createSession()
+    return created.session_id
+  })().finally(() => {
+    ensureSessionPromise = null
+  })
+
+  return ensureSessionPromise
 }
 
 export async function listDatasets(signal) {
@@ -461,9 +473,26 @@ export async function downloadProjectExport(datasetId, projectName) {
 
 
 
+const DEFAULT_ICONS = [
+  "cinema",
+  "fingerprint",
+  "key",
+  "locked-with-key",
+  "locked",
+  "person-police-officer",
+  "security-lock",
+  "shield",
+  "unlocked",
+  "video-call",
+]
+
 export async function listIcons(signal) {
-  const response = await client.get(`/icons`, { signal })
-  return response.data.icons
+  try {
+    const response = await client.get(`/icons`, { signal })
+    return response.data?.icons || response.data?.data?.icons || DEFAULT_ICONS
+  } catch {
+    return DEFAULT_ICONS
+  }
 }
 
 export async function processRasterDataset(datasetId) {

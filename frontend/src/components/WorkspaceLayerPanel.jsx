@@ -464,8 +464,12 @@ function SortableMember({
 
       {expanded && (
         <div className="workspace-sublayers">
-          {member.sublayers.map((sublayer) => {
-            const Icon = SUBLAYER_ICONS[sublayer.kind]
+          {(member.sublayers || [
+            { kind: "raster", label: "Raster Overlay", count: 1 },
+            { kind: "control_point", label: "Control Points", count: 0 },
+            { kind: "icon_point", label: "Icon Points", count: 0 },
+          ]).map((sublayer) => {
+            const Icon = SUBLAYER_ICONS[sublayer.kind] || Image
             const field = VISIBILITY_FIELDS[sublayer.kind]
             const selected = selectedDatasetId === member.dataset_id && selectedKind === sublayer.kind
             return (

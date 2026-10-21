@@ -209,23 +209,52 @@ export default function ReferenceMap({
         if (source) map.removeSource(OVERLAY_SOURCE_ID)
         return
       }
+
+      const beforeId = map.getLayer("control-points-circle") ? "control-points-circle" : undefined
+
       if (source) {
-        source.updateImage({
-          url: overlay.imageUrl,
-          coordinates: overlay.coordinates,
-        })
+        try {
+          if (typeof source.updateImage === "function") {
+            source.updateImage({
+              url: overlay.imageUrl,
+              coordinates: overlay.coordinates,
+            })
+          } else {
+            throw new Error("updateImage not available")
+          }
+        } catch {
+          if (map.getLayer(OVERLAY_LAYER_ID)) map.removeLayer(OVERLAY_LAYER_ID)
+          if (map.getSource(OVERLAY_SOURCE_ID)) map.removeSource(OVERLAY_SOURCE_ID)
+          map.addSource(OVERLAY_SOURCE_ID, {
+            type: "image",
+            url: overlay.imageUrl,
+            coordinates: overlay.coordinates,
+          })
+          map.addLayer(
+            {
+              id: OVERLAY_LAYER_ID,
+              type: "raster",
+              source: OVERLAY_SOURCE_ID,
+              paint: { "raster-opacity": overlay.opacity },
+            },
+            beforeId,
+          )
+        }
       } else {
         map.addSource(OVERLAY_SOURCE_ID, {
           type: "image",
           url: overlay.imageUrl,
           coordinates: overlay.coordinates,
         })
-        map.addLayer({
-          id: OVERLAY_LAYER_ID,
-          type: "raster",
-          source: OVERLAY_SOURCE_ID,
-          paint: { "raster-opacity": overlay.opacity },
-        })
+        map.addLayer(
+          {
+            id: OVERLAY_LAYER_ID,
+            type: "raster",
+            source: OVERLAY_SOURCE_ID,
+            paint: { "raster-opacity": overlay.opacity },
+          },
+          beforeId,
+        )
       }
       if (map.getLayer(OVERLAY_LAYER_ID)) {
         map.setPaintProperty(OVERLAY_LAYER_ID, "raster-opacity", overlay.opacity)

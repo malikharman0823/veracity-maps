@@ -31,6 +31,13 @@ The `api` package provides the central HTTP request multiplexer, routing logic, 
     - `/datasets/{id}/layers/{layer_id}`: Updates layer opacity or visibility (`PATCH`).
     - `/datasets/{id}/export`: Generates GIS export bundle (`GET`).
     - `/api/exports/{id}/download`: Streams downloadable ZIP/VRT artifact (`GET`).
+    - `/datasets/{id}/workspace`: Retrieves the workspace manifest (`GET`).
+    - `/datasets/{id}/workspace/members`: Attaches a multi-layer member (`POST`).
+    - `/datasets/{id}/workspace/members/{member_id}`: Patches or detaches a member (`PATCH`, `DELETE`).
+    - `/datasets/{id}/workspace/state`: Updates workspace view/camera configuration (`PATCH`).
+    - `/datasets/{id}/workspace/records`: Returns searchable/paginated database records (`GET`).
+    - `/icons`: Lists available map icons (`GET`).
+    - `/icons/{name}`: Streams icon image asset (`GET`).
 - **Error Handling**: Non-matching routes return HTTP 404 `NOT_FOUND` via `models.WriteError`.
 
 ### 2. `middleware.go`

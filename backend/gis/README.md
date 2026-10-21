@@ -33,9 +33,25 @@ The `gis` package implements spatial algorithms natively in pure Go, including r
   - `solveSimilarity(points)`: Solves normal equations for 4 unknowns: scale, rotation, and translation offsets.
   - `solveAffine(points)`: Solves 6-parameter affine transformation using 3x3 matrix inversion via Cramer's rule / adjoint matrix.
 
+### 3. `transparency.go`
+- **Purpose**: Pure Go color distance calculation, antialiased edge softening, defringing, and preview generation for raster background transparency.
+- **Key Functions**:
+  - `RemoveBackground(src, targetColor, threshold, edgeSoftness)`: Calculates normalized Euclidean color distance `sqrt(((r-tr)^2 + (g-tg)^2 + (b-tb)^2)/3.0)` and defringes semi-transparent edge pixels.
+  - `GenerateRasterPreview(filePath, targetColor, threshold, edgeSoftness, maxDimension)`: Creates base64 PNG data URLs for side-by-side original and preview thumbnails.
+  - `ProcessRasterBackgroundRemoval(inputPath, outputPath, targetColor, threshold, edgeSoftness)`: Writes full-resolution transparent PNG.
+
+### 4. `transform_quad.go`
+- **Purpose**: Polygon convexity validation, 4-corner extraction, affine matrix fitting, and control-point synchronization.
+- **Key Functions**:
+  - `PolygonIsSimpleAndConvex(corners)`: Verifies cross-product edge orientation signs to reject self-intersecting or degenerate quadrilaterals.
+  - `ExtractRasterCornersWGS84(dataset)`: Extracts authoritative WGS84 coordinates from MapLayer, affine transform, or bounding box.
+  - `CalculateTransformFromCorners(corners, width, height)`: Least-squares regression to fit a 6-parameter affine transform matrix `[a, -b, c, d, -e, f]`.
+  - `SynchronizeControlPoints(cps, transform)`: Re-calculates geographic `(longitude, latitude)` for ground control points from fixed image pixel coordinates `(image_x, image_y)`.
+
 ---
 
 ## Testing & Quality
 
 - **Tests**:
   - [`backend/tests/gis_transform_test.go`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/tests/README.md) validates similarity equations, affine regression, collinearity rejection, and insufficient point error states.
+  - [`backend/tests/api_transform_transparency_test.go`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/tests/api_transform_transparency_test.go) validates transparency algorithms, antialiasing, edge softness, corner convexity, affine fitting, and GCP synchronization.

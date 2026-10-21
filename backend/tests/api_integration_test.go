@@ -47,6 +47,7 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	}
 
 	repo := repository.NewSessionRepository()
+	repo.SetStorageDir(cfg.SessionStorageDir)
 	mw := api.NewMiddleware(repo)
 
 	dsService := services.NewDatasetService(cfg, repo, sm)

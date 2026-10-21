@@ -218,12 +218,86 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 					rt.georefH.CreateControlPoint(w, r, datasetID)
 					return
 				}
+			case "workspace":
+				rt.datasetsH.GetWorkspace(w, r, datasetID)
+				return
+			case "project":
+				if r.Method == http.MethodGet {
+					proj, err := rt.repo.GetMapProject(GetSessionID(r), datasetID)
+					if err != nil || proj == nil {
+						models.WriteJSON(w, http.StatusOK, map[string]interface{}{})
+						return
+					}
+					models.WriteJSON(w, http.StatusOK, proj)
+					return
+				}
+				if r.Method == http.MethodPut {
+					var req struct {
+						Name          string                 `json:"name"`
+						Configuration map[string]interface{} `json:"configuration"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&req)
+					proj := &models.MapProject{
+						DatasetID:     datasetID,
+						Name:          req.Name,
+						Configuration: req.Configuration,
+					}
+					_ = rt.repo.SaveMapProject(GetSessionID(r), proj)
+					models.WriteJSON(w, http.StatusOK, proj)
+					return
+				}
+			case "background-removal":
+				if r.Method == http.MethodGet {
+					rt.datasetsH.GetBackgroundRemoval(w, r, datasetID)
+					return
+				}
+				if r.Method == http.MethodPost {
+					rt.datasetsH.HandleBackgroundRemoval(w, r, datasetID)
+					return
+				}
+			case "transform":
+				if r.Method == http.MethodGet {
+					rt.datasetsH.GetRasterTransform(w, r, datasetID)
+					return
+				}
+				if r.Method == http.MethodPost {
+					rt.datasetsH.HandleRasterTransform(w, r, datasetID)
+					return
+				}
 			case "georeference":
 				rt.georefH.Georeference(w, r, datasetID)
 				return
 			case "export":
 				rt.exportH.Export(w, r, datasetID)
 				return
+			}
+		}
+
+		if len(parts) >= 3 && parts[1] == "workspace" {
+			sub := parts[2]
+			switch sub {
+			case "records":
+				rt.datasetsH.GetWorkspaceRecords(w, r, datasetID)
+				return
+			case "state":
+				rt.datasetsH.PatchWorkspaceState(w, r, datasetID)
+				return
+			case "members":
+				if len(parts) == 3 && r.Method == http.MethodPost {
+					rt.datasetsH.AttachWorkspaceMember(w, r, datasetID)
+					return
+				}
+				if len(parts) == 4 {
+					memberID := parts[3]
+					if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+						rt.datasetsH.PatchWorkspaceMember(w, r, datasetID, memberID)
+						return
+					}
+					if r.Method == http.MethodDelete {
+						rt.datasetsH.DetachWorkspaceMember(w, r, datasetID, memberID)
+						return
+					}
+				}
 			}
 		}
 
@@ -234,7 +308,23 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 7. Export download
+	// 7. Icons
+	if path == "/icons" || path == "/api/icons" {
+		rt.datasetsH.ListIcons(w, r)
+		return
+	}
+	if strings.HasPrefix(path, "/icons/") {
+		iconName := strings.TrimPrefix(path, "/icons/")
+		rt.datasetsH.GetIcon(w, r, iconName)
+		return
+	}
+	if strings.HasPrefix(path, "/api/icons/") {
+		iconName := strings.TrimPrefix(path, "/api/icons/")
+		rt.datasetsH.GetIcon(w, r, iconName)
+		return
+	}
+
+	// 8. Export download
 	if strings.HasPrefix(path, "/api/exports/") && strings.HasSuffix(path, "/download") {
 		trimmed := strings.TrimPrefix(path, "/api/exports/")
 		trimmed = strings.TrimSuffix(trimmed, "/download")

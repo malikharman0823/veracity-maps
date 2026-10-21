@@ -274,7 +274,15 @@ func (s *DatasetService) ListDatasets(sessionID string) ([]*models.Dataset, erro
 }
 
 func (s *DatasetService) GetDataset(sessionID, datasetID string) (*models.Dataset, error) {
-	return s.repo.GetDataset(sessionID, datasetID)
+	if sessionID != "" {
+		return s.repo.GetDataset(sessionID, datasetID)
+	}
+	ds, _, err := s.repo.FindDataset(datasetID)
+	return ds, err
+}
+
+func (s *DatasetService) FindDataset(datasetID string) (*models.Dataset, string, error) {
+	return s.repo.FindDataset(datasetID)
 }
 
 func (s *DatasetService) DeleteDataset(sessionID, datasetID string) error {

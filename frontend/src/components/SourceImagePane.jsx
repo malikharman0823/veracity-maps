@@ -59,6 +59,7 @@ export default function SourceImagePane({
   onMoveEnd,
   readOnly = false,
   placementMode = false,
+  onImageDimensions,
 }) {
   const viewportRef = useRef(null)
   const layoutRef = useRef(null)
@@ -219,10 +220,12 @@ export default function SourceImagePane({
               onLoad={(event) => {
                 setImageReady(true)
                 if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) {
-                  setNaturalSize({
+                  const size = {
                     width: event.currentTarget.naturalWidth,
                     height: event.currentTarget.naturalHeight,
-                  })
+                  }
+                  setNaturalSize(size)
+                  onImageDimensions?.(size)
                 }
               }}
             />

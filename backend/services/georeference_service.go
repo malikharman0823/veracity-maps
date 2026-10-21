@@ -163,14 +163,71 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 		dataset.ProcessedPath = vrtPath
 	}
 
+	// Compute corner coordinates: [top-left, top-right, bottom-right, bottom-left]
+	a, b, c := result.Transform[0], -result.Transform[1], result.Transform[2]
+	d, e, f := result.Transform[3], -result.Transform[4], result.Transform[5]
+	project := func(ix, iy float64) []float64 {
+		return []float64{
+			a*ix + b*(-iy) + c,
+			d*ix + e*(-iy) + f,
+		}
+	}
+	wFloat := float64(cfg.Width)
+	hFloat := float64(cfg.Height)
+	coordinates := [][]float64{
+		project(0, 0),
+		project(wFloat, 0),
+		project(wFloat, hFloat),
+		project(0, hFloat),
+	}
+
+	dataset.MapLayer = map[string]interface{}{
+		"id":          "lyr_" + datasetID,
+		"name":        dataset.Filename,
+		"type":        "raster",
+		"bounds":      result.Bounds,
+		"bounds_crs":  "EPSG:4326",
+		"coordinates": coordinates,
+	}
+
 	dataset.GeoreferenceStatus = "completed"
 	_ = s.repo.UpdateDataset(sessionID, dataset)
 
-	// Update layers
+	// Update or initialize layers
 	layers, _ := s.repo.ListLayers(sessionID, datasetID)
 	if len(layers) > 0 {
 		layers[0].Bounds = result.MapLibreBounds
 		_ = s.repo.SetLayers(sessionID, datasetID, layers)
+	} else {
+		layers = []*models.Layer{
+			{
+				ID:        "lyr_" + datasetID,
+				DatasetID: datasetID,
+				Name:      dataset.Filename,
+				Type:      "raster",
+				Visible:   true,
+				Opacity:   1.0,
+				Bounds:    result.MapLibreBounds,
+			},
+		}
+		_ = s.repo.SetLayers(sessionID, datasetID, layers)
+	}
+
+	// Center MapProject camera on georeferenced dataset if project exists
+	if proj, err := s.repo.GetMapProject(sessionID, datasetID); err == nil && proj != nil && proj.Configuration != nil {
+		if len(result.MapLibreBounds) == 4 {
+			centerLng := (result.MapLibreBounds[0] + result.MapLibreBounds[2]) / 2.0
+			centerLat := (result.MapLibreBounds[1] + result.MapLibreBounds[3]) / 2.0
+			proj.Configuration["camera"] = map[string]interface{}{
+				"longitude": centerLng,
+				"latitude":  centerLat,
+				"center":    []float64{centerLng, centerLat},
+				"zoom":      15.0,
+				"bearing":   0.0,
+				"pitch":     0.0,
+			}
+			_ = s.repo.SaveMapProject(sessionID, proj)
+		}
 	}
 
 	return result, nil

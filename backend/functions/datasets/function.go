@@ -77,7 +77,31 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		datasets = []*models.Dataset{}
 	}
 
+	for _, ds := range datasets {
+		ensureDatasetMapLayer(ds)
+	}
+
 	models.WriteJSON(w, http.StatusOK, DatasetListResponse{Datasets: datasets})
+}
+
+func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
+	sessionID := models.GetSessionID(r)
+	if sessionID != "" {
+		dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
+		if err != nil || dataset == nil {
+			return nil, "", repository.ErrDatasetNotFound
+		}
+		return dataset, sessionID, nil
+	}
+
+	dataset, foundSess, err := h.datasetService.FindDataset(datasetID)
+	if err != nil || dataset == nil {
+		return nil, "", repository.ErrDatasetNotFound
+	}
+	if foundSess != "" && w != nil {
+		w.Header().Set("X-Session-ID", foundSess)
+	}
+	return dataset, foundSess, nil
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request, datasetID string) {
@@ -86,17 +110,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, datasetID string) 
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
-		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
-		return
-	}
-
-	dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
+	dataset, _, err := h.resolveDatasetAndSession(r, w, datasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
 	}
+
+	ensureDatasetMapLayer(dataset)
 
 	models.WriteJSON(w, http.StatusOK, dataset)
 }
@@ -107,9 +127,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, datasetID strin
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
-		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
+	_, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil {
+		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
 	}
 
@@ -130,31 +150,51 @@ func (h *Handler) SourceImage(w http.ResponseWriter, r *http.Request, datasetID 
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
-		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
-		return
+	dataset, _, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || dataset == nil {
+		// Image stream fallback if session ID was stale or missing
+		var foundSess string
+		dataset, foundSess, err = h.datasetService.FindDataset(datasetID)
+		if err == nil && foundSess != "" && w != nil {
+			w.Header().Set("X-Session-ID", foundSess)
+		}
 	}
-
-	dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
-	if err != nil {
+	if err != nil || dataset == nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
 	}
 
-	if _, err := os.Stat(dataset.StoragePath); os.IsNotExist(err) {
+	imagePath := dataset.StoragePath
+	transparentPNG := filepath.Join(filepath.Dir(dataset.StoragePath), "processed", "processed_transparent.png")
+	if fileExists(transparentPNG) {
+		if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
+			if enabled, _ := bg["enabled"].(bool); enabled {
+				imagePath = transparentPNG
+			}
+		}
+	} else if dataset.ProcessedPath != "" && fileExists(dataset.ProcessedPath) {
+		pExt := strings.ToLower(filepath.Ext(dataset.ProcessedPath))
+		if pExt == ".png" || pExt == ".jpg" || pExt == ".jpeg" {
+			imagePath = dataset.ProcessedPath
+		}
+	}
+
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 		models.WriteError(w, http.StatusNotFound, "FILE_NOT_FOUND", "Source image file was not found", nil, nil)
 		return
 	}
 
-	ext := strings.ToLower(filepath.Ext(dataset.Filename))
+	ext := strings.ToLower(filepath.Ext(imagePath))
 	contentType := "image/png"
 	if ext == ".jpg" || ext == ".jpeg" {
 		contentType = "image/jpeg"
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	http.ServeFile(w, r, dataset.StoragePath)
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	http.ServeFile(w, r, imagePath)
 }
 
 func (h *Handler) ListLayers(w http.ResponseWriter, r *http.Request, datasetID string) {

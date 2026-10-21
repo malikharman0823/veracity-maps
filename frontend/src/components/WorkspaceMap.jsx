@@ -10,6 +10,8 @@ import {
   BASEMAP_ATTRIBUTION,
   BASEMAP_TILE_URL,
   datasetTileUrl,
+  API_URL,
+  getActiveSessionId,
 } from "../api"
 import MapCoordinates from "./MapCoordinates"
 import RasterTransformOverlay from "./RasterTransformOverlay"
@@ -45,6 +47,81 @@ function boundsArray(bounds) {
       ]
   const parsed = values.map(Number)
   return parsed.length === 4 && parsed.every(Number.isFinite) ? parsed : null
+}
+
+function overlayCoordinates(parameters, imageSize) {
+  if (!parameters) return null
+  const width = Number(imageSize?.width)
+  const height = Number(imageSize?.height)
+  if (!width || !height) return null
+
+  let a, b, c, d, e, f
+
+  const transformArray = Array.isArray(parameters)
+    ? parameters
+    : Array.isArray(parameters?.transform)
+      ? parameters.transform
+      : null
+
+  if (transformArray && transformArray.length === 6) {
+    const [t0, t1, t2, t3, t4, t5] = transformArray.map(Number)
+    if ([t0, t1, t2, t3, t4, t5].every(Number.isFinite)) {
+      a = t0
+      b = -t1
+      c = t2
+      d = t3
+      e = -t4
+      f = t5
+    }
+  }
+
+  if (a === undefined) {
+    const params = parameters?.parameters || parameters?.transformation_parameters || parameters
+    if (params && typeof params === "object") {
+      const values = [params.a, params.b, params.c, params.d, params.e, params.f].map(Number)
+      if (values.every(Number.isFinite)) {
+        ;[a, b, c, d, e, f] = values
+      }
+    }
+  }
+
+  if (a === undefined || !Number.isFinite(a) || !Number.isFinite(d)) return null
+
+  const project = (imageX, imageY) => [
+    a * imageX + b * -imageY + c,
+    d * imageX + e * -imageY + f,
+  ]
+
+  return [project(0, 0), project(width, 0), project(width, height), project(0, height)]
+}
+
+function getOverlayCoordinates(member, layer) {
+  if (Array.isArray(layer?.coordinates) && layer.coordinates.length === 4) {
+    return layer.coordinates
+  }
+
+  const meta = member.dataset?.extracted_metadata || member.dataset?.metadata || {}
+  const transform = meta.transform || meta.parameters || meta.transformation_parameters
+  const width = Number(meta.width)
+  const height = Number(meta.height)
+
+  if (transform && width > 0 && height > 0) {
+    const coords = overlayCoordinates(transform, { width, height })
+    if (coords && coords.length === 4) return coords
+  }
+
+  const bounds = boundsArray(layer?.bounds || meta.bounds || member.bounds)
+  if (bounds) {
+    const [minX, minY, maxX, maxY] = bounds
+    return [
+      [minX, maxY], // top-left
+      [maxX, maxY], // top-right
+      [maxX, minY], // bottom-right
+      [minX, minY], // bottom-left
+    ]
+  }
+
+  return null
 }
 
 function pointCollection(records, kind, selectedRecordId) {
@@ -139,15 +216,33 @@ export default function WorkspaceMap({
         },
         layers: [{ id: BASEMAP_LAYER, type: "raster", source: "basemap" }],
       },
-      center: savedCamera ? [savedCamera.longitude, savedCamera.latitude] : [0, 20],
-      zoom: savedCamera?.zoom ?? 1.5,
-      bearing: savedCamera?.bearing ?? 0,
-      pitch: savedCamera?.pitch ?? 0,
+      center:
+        savedCamera && Number.isFinite(savedCamera.longitude) && Number.isFinite(savedCamera.latitude)
+          ? [savedCamera.longitude, savedCamera.latitude]
+          : savedCamera && Array.isArray(savedCamera.center) && Number.isFinite(savedCamera.center[0]) && Number.isFinite(savedCamera.center[1])
+          ? [savedCamera.center[0], savedCamera.center[1]]
+          : [0, 20],
+      zoom: Number.isFinite(savedCamera?.zoom) ? savedCamera.zoom : 1.5,
+      bearing: Number.isFinite(savedCamera?.bearing) ? savedCamera.bearing : 0,
+      pitch: Number.isFinite(savedCamera?.pitch) ? savedCamera.pitch : 0,
       maxZoom: 22,
     })
     map.addControl(new NavigationControl({ showCompass: true }), "bottom-right")
     map.on("load", () => {
       setReady(true)
+    })
+    map.on("error", (e) => {
+      const msg = e?.error?.message || (typeof e?.error === "string" ? e.error : "")
+      if (
+        msg.includes("could not be decoded") ||
+        msg.includes("Failed to fetch") ||
+        msg.includes("ERR_NETWORK_CHANGED") ||
+        msg.includes("AJAXError")
+      ) {
+        console.warn("MapLibre resource notice:", msg)
+        return
+      }
+      console.warn("MapLibre map error:", e?.error || e)
     })
     map.on("mousemove", (event) => {
       setCoordinate({ latitude: event.lngLat.lat, longitude: event.lngLat.lng })
@@ -235,10 +330,22 @@ export default function WorkspaceMap({
 
     sortedMembers.forEach((member) => {
       const ids = resourceIds(member.dataset_id)
-      const layer = member.dataset.map_layer
+      const layer = member.dataset?.map_layer || (
+        (member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds)
+          ? {
+              id: `lyr_${member.dataset_id}`,
+              name: member.name || member.dataset?.filename,
+              type: "raster",
+              bounds: member.bounds || member.dataset?.extracted_metadata?.bounds,
+              bounds_crs: "EPSG:4326",
+            }
+          : null
+      )
       if (!layer) return
+
       activeSourceIds.add(ids.rasterSource)
       activeLayerIds.add(ids.rasterLayer)
+
       const bgRemovalUpdate = member.dataset?.metadata?.background_removal?.updated_at
         || member.dataset?.extracted_metadata?.background_removal?.updated_at
         || ""
@@ -246,52 +353,111 @@ export default function WorkspaceMap({
         || member.dataset?.extracted_metadata?.raster_transform?.updated_at
         || ""
       const updateVersion = [transformUpdate, bgRemovalUpdate].filter(Boolean).join("_")
-      const baseTileUrl = datasetTileUrl(member.dataset_id, layer.tile_url_template)
-      const tileUrl = updateVersion
-        ? `${baseTileUrl}${baseTileUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(updateVersion)}`
-        : baseTileUrl
 
-      const bounds = boundsArray(layer.bounds)
-      const boundsKey = bounds ? bounds.map((n) => Number(n).toFixed(6)).join(",") : ""
-      const existing = map.getSource(ids.rasterSource)
-
-      if (existing) {
-        const urlChanged = existing._currentTileUrl && existing._currentTileUrl !== tileUrl
-        const boundsChanged = existing._currentBounds && existing._currentBounds !== boundsKey
-        if (urlChanged || boundsChanged) {
-          try {
-            if (map.getLayer(ids.rasterLayer)) {
-              map.removeLayer(ids.rasterLayer)
-            }
-            map.removeSource(ids.rasterSource)
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!map.getSource(ids.rasterSource)) {
-        const options = {
-          type: "raster",
-          tiles: [tileUrl],
-          tileSize: layer.tile_size || 256,
-          minzoom: layer.tile_min_zoom ?? 0,
-          maxzoom: layer.tile_max_zoom ?? 22,
-        }
-        if (bounds) options.bounds = bounds
-        map.addSource(ids.rasterSource, options)
-        const added = map.getSource(ids.rasterSource)
-        if (added) {
-          added._currentTileUrl = tileUrl
-          added._currentBounds = boundsKey
-        }
-      }
-
+      const coordinates = getOverlayCoordinates(member, layer)
       const safeOpacity = typeof member.raster_opacity === "number" && Number.isFinite(member.raster_opacity)
         ? Math.max(0, Math.min(1, member.raster_opacity))
         : 1.0
 
-      if (!map.getLayer(ids.rasterLayer)) {
+      if (coordinates) {
+        // Native GPU-accelerated MapLibre Image Source
+        const sid = member.dataset?.session_id || getActiveSessionId()
+        const queryParams = []
+        if (sid) queryParams.push(`session_id=${encodeURIComponent(sid)}`)
+        if (updateVersion) queryParams.push(`v=${encodeURIComponent(updateVersion)}`)
+        const qStr = queryParams.length > 0 ? `?${queryParams.join("&")}` : ""
+        const imageUrl = `${API_URL}/datasets/${encodeURIComponent(member.dataset_id)}/source-image${qStr}`
+        const coordsKey = coordinates.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(";")
+        const existing = map.getSource(ids.rasterSource)
+
+        if (existing) {
+          if (existing.type === "image") {
+            const urlChanged = existing._currentImageUrl && existing._currentImageUrl !== imageUrl
+            const coordsChanged = existing._currentCoordsKey && existing._currentCoordsKey !== coordsKey
+            if (urlChanged || coordsChanged) {
+              try {
+                if (typeof existing.updateImage === "function") {
+                  existing.updateImage({
+                    url: imageUrl,
+                    coordinates: coordinates,
+                  })
+                  existing._currentImageUrl = imageUrl
+                  existing._currentCoordsKey = coordsKey
+                } else {
+                  throw new Error("updateImage not supported")
+                }
+              } catch {
+                if (map.getLayer(ids.rasterLayer)) map.removeLayer(ids.rasterLayer)
+                map.removeSource(ids.rasterSource)
+              }
+            }
+          } else {
+            if (map.getLayer(ids.rasterLayer)) map.removeLayer(ids.rasterLayer)
+            map.removeSource(ids.rasterSource)
+          }
+        }
+
+        if (!map.getSource(ids.rasterSource)) {
+          try {
+            map.addSource(ids.rasterSource, {
+              type: "image",
+              url: imageUrl,
+              coordinates: coordinates,
+            })
+            const added = map.getSource(ids.rasterSource)
+            if (added) {
+              added._currentImageUrl = imageUrl
+              added._currentCoordsKey = coordsKey
+            }
+          } catch (srcErr) {
+            console.warn("Could not add image source to map:", srcErr)
+          }
+        }
+      } else if (layer.tile_url_template) {
+        // Fallback to raster tile service if pre-rendered tiles exist
+        const baseTileUrl = datasetTileUrl(member.dataset_id, layer.tile_url_template)
+        const tileUrl = updateVersion
+          ? `${baseTileUrl}${baseTileUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(updateVersion)}`
+          : baseTileUrl
+
+        const bounds = boundsArray(layer.bounds)
+        const boundsKey = bounds ? bounds.map((n) => Number(n).toFixed(6)).join(",") : ""
+        const existing = map.getSource(ids.rasterSource)
+
+        if (existing) {
+          const urlChanged = existing._currentTileUrl && existing._currentTileUrl !== tileUrl
+          const boundsChanged = existing._currentBounds && existing._currentBounds !== boundsKey
+          if (urlChanged || boundsChanged) {
+            try {
+              if (map.getLayer(ids.rasterLayer)) {
+                map.removeLayer(ids.rasterLayer)
+              }
+              map.removeSource(ids.rasterSource)
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        if (!map.getSource(ids.rasterSource)) {
+          const options = {
+            type: "raster",
+            tiles: [tileUrl],
+            tileSize: layer.tile_size || 256,
+            minzoom: layer.tile_min_zoom ?? 0,
+            maxzoom: layer.tile_max_zoom ?? 22,
+          }
+          if (bounds) options.bounds = bounds
+          map.addSource(ids.rasterSource, options)
+          const added = map.getSource(ids.rasterSource)
+          if (added) {
+            added._currentTileUrl = tileUrl
+            added._currentBounds = boundsKey
+          }
+        }
+      }
+
+      if (map.getSource(ids.rasterSource) && !map.getLayer(ids.rasterLayer)) {
         const firstPointLayer = [ids.controlCircle, ids.controlLabel, ids.iconCircle, ids.iconLabel]
           .find((layerId) => map.getLayer(layerId))
         map.addLayer({
@@ -308,8 +474,10 @@ export default function WorkspaceMap({
       const isFloorActive = !isBuildingFloor || (member.floor_level === activeFloorLevel)
       const isLayerVisible = member.visible && member.raster_visible && isFloorActive
 
-      map.setPaintProperty(ids.rasterLayer, "raster-opacity", safeOpacity)
-      setVisibility(map, [ids.rasterLayer], isLayerVisible)
+      if (map.getLayer(ids.rasterLayer)) {
+        map.setPaintProperty(ids.rasterLayer, "raster-opacity", safeOpacity)
+        setVisibility(map, [ids.rasterLayer], isLayerVisible)
+      }
     })
 
     sortedMembers.forEach((member) => {
@@ -420,8 +588,8 @@ export default function WorkspaceMap({
 
     if (!fittedRef.current) {
       const visibleBounds = sortedMembers
-        .filter((member) => member.visible && member.dataset.map_layer)
-        .map((member) => boundsArray(member.dataset.map_layer.bounds))
+        .filter((member) => member.visible && (member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds))
+        .map((member) => boundsArray(member.dataset?.map_layer?.bounds || member.bounds || member.dataset?.extracted_metadata?.bounds))
         .filter(Boolean)
       if (visibleBounds.length) {
         const union = visibleBounds.reduce((current, bounds) => [
@@ -492,7 +660,7 @@ export default function WorkspaceMap({
           onApplied={onTransformApplied}
         />
       )}
-      {!sortedMembers.some((member) => member.dataset.map_layer) && (
+      {!sortedMembers.some((member) => member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (
         <div className="workspace-map-empty">
           <strong>No mapped raster is available</strong>
           <span>Open Database to inspect raw datasets or georeference a layer.</span>

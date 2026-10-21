@@ -186,12 +186,23 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request, datasetID st
 		return
 	}
 
+	points, _ := h.repo.ListControlPoints(sessionID, datasetID)
+	pointCount := len(points)
+	isReusable := dataset.GeoreferenceStatus == "completed" && dataset.ExtractedMetadata["transform"] != nil
+
 	config := map[string]interface{}{
 		"dataset_id":          dataset.ID,
 		"georeference_status": dataset.GeoreferenceStatus,
+		"status":              dataset.GeoreferenceStatus,
+		"reusable":            isReusable,
+		"control_point_count": pointCount,
 		"crs":                 dataset.ExtractedMetadata["crs"],
+		"target_crs":          dataset.ExtractedMetadata["crs"],
 		"transform":           dataset.ExtractedMetadata["transform"],
 		"bounds":              dataset.ExtractedMetadata["bounds"],
+		"source_width":        dataset.ExtractedMetadata["width"],
+		"source_height":       dataset.ExtractedMetadata["height"],
+		"output_format":       dataset.ExtractedMetadata["format"],
 	}
 
 	models.WriteJSON(w, http.StatusOK, GeoreferenceConfigResponse{Configuration: config})

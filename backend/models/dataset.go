@@ -18,6 +18,7 @@ type Dataset struct {
 	TileStatus         string                 `json:"tile_status"`
 	TilePath           string                 `json:"tile_path,omitempty"`
 	ExtractedMetadata  map[string]interface{} `json:"extracted_metadata"`
+	MapLayer           map[string]interface{} `json:"map_layer,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 }
