@@ -10,7 +10,6 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -239,6 +238,7 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		"georeference_source":  meta.GeoreferenceSource,
 		"color_interpretation": meta.ColorInterpretation,
 		"format":               strings.ToLower(meta.Driver),
+		"archive_filename":     filename,
 	}
 
 	georefStatus := "not_started"
@@ -454,22 +454,4 @@ func (s *DatasetService) DeleteDataset(sessionID, datasetID string) error {
 	}
 
 	return s.repo.DeleteDataset(sessionID, datasetID)
-}
-
-func toFloat64(v interface{}) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		return f, err == nil
-	default:
-		return 0, false
-	}
 }
