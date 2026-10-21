@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -260,6 +261,90 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		ExtractedMetadata:  extractedMeta,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
+	}
+
+	// Restore exported package metadata, control points, and project configuration if present
+	mapstudioPath := filepath.Join(extractDir, "mapstudio.json")
+	if fileExists(mapstudioPath) {
+		if data, err := os.ReadFile(mapstudioPath); err == nil {
+			var doc struct {
+				Project struct {
+					Name          string                 `json:"name"`
+					Configuration map[string]interface{} `json:"configuration"`
+				} `json:"project"`
+				ControlPoints []*models.ControlPoint `json:"control_points"`
+			}
+			if err := json.Unmarshal(data, &doc); err == nil {
+				if len(doc.ControlPoints) > 0 {
+					_ = s.repo.SetControlPoints(sessionID, datasetID, doc.ControlPoints)
+					dataset.GeoreferenceStatus = "completed"
+					if dataset.GeoreferencedPath == "" {
+						dataset.GeoreferencedPath = primaryRaster
+					}
+				}
+				if doc.Project.Configuration != nil {
+					_ = s.repo.SaveMapProject(sessionID, &models.MapProject{
+						ID:            "proj_" + datasetID,
+						DatasetID:     datasetID,
+						Name:          doc.Project.Name,
+						Configuration: doc.Project.Configuration,
+						CreatedAt:     time.Now(),
+						UpdatedAt:     time.Now(),
+					})
+				}
+			}
+		}
+	}
+
+	datasetJSONPath := filepath.Join(extractDir, "dataset.json")
+	if fileExists(datasetJSONPath) {
+		if data, err := os.ReadFile(datasetJSONPath); err == nil {
+			var savedDS models.Dataset
+			if err := json.Unmarshal(data, &savedDS); err == nil {
+				if savedDS.ExtractedMetadata != nil {
+					for k, v := range savedDS.ExtractedMetadata {
+						dataset.ExtractedMetadata[k] = v
+					}
+				}
+				if savedDS.MapLayer != nil {
+					dataset.MapLayer = savedDS.MapLayer
+				}
+				if savedDS.GeoreferenceStatus != "" {
+					dataset.GeoreferenceStatus = savedDS.GeoreferenceStatus
+				}
+			}
+		}
+	}
+
+	cpJSONPath := filepath.Join(extractDir, "control_points.json")
+	if fileExists(cpJSONPath) {
+		if data, err := os.ReadFile(cpJSONPath); err == nil {
+			var points []*models.ControlPoint
+			if err := json.Unmarshal(data, &points); err == nil && len(points) > 0 {
+				_ = s.repo.SetControlPoints(sessionID, datasetID, points)
+				dataset.GeoreferenceStatus = "completed"
+				if dataset.GeoreferencedPath == "" {
+					dataset.GeoreferencedPath = primaryRaster
+				}
+			}
+		}
+	}
+
+	extractedProcessed := filepath.Join(extractDir, "processed")
+	destProcessed := filepath.Join(datasetDir, "processed")
+	if info, err := os.Stat(extractedProcessed); err == nil && info.IsDir() {
+		_ = os.MkdirAll(destProcessed, 0755)
+		if entries, err := os.ReadDir(extractedProcessed); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					_ = storage.CopyFile(filepath.Join(extractedProcessed, entry.Name()), filepath.Join(destProcessed, entry.Name()))
+				}
+			}
+		}
+	}
+	transparentPNG := filepath.Join(destProcessed, "processed_transparent.png")
+	if fileExists(transparentPNG) {
+		dataset.ProcessedPath = transparentPNG
 	}
 
 	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {

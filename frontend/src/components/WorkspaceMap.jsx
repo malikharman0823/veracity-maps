@@ -232,14 +232,16 @@ export default function WorkspaceMap({
       setReady(true)
     })
     map.on("error", (e) => {
-      const msg = e?.error?.message || (typeof e?.error === "string" ? e.error : "")
+      const msg = e?.error?.message || (typeof e?.error === "string" ? e.error : "") || String(e?.error || "")
+      const errName = e?.error?.name || ""
       if (
         msg.includes("could not be decoded") ||
         msg.includes("Failed to fetch") ||
         msg.includes("ERR_NETWORK_CHANGED") ||
-        msg.includes("AJAXError")
+        msg.includes("AJAXError") ||
+        errName === "InvalidStateError"
       ) {
-        console.warn("MapLibre resource notice:", msg)
+        console.warn("MapLibre resource notice:", msg || errName)
         return
       }
       console.warn("MapLibre map error:", e?.error || e)
@@ -408,6 +410,9 @@ export default function WorkspaceMap({
             if (added) {
               added._currentImageUrl = imageUrl
               added._currentCoordsKey = coordsKey
+              if (typeof added.on === "function") {
+                added.on("error", () => {})
+              }
             }
           } catch (srcErr) {
             console.warn("Could not add image source to map:", srcErr)

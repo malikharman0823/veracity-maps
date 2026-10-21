@@ -153,7 +153,7 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Uploads
-	if path == "/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" {
+	if path == "/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" || path == "/map-projects/import" || path == "/map-projects/import-folder" {
 		rt.uploadH.UploadFile(w, r)
 		return
 	}

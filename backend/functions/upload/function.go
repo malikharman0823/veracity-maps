@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -41,13 +42,22 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
+	var header *multipart.FileHeader
+	file, hFile, err := r.FormFile("file")
+	if err == nil {
+		header = hFile
+		_ = file.Close()
+	} else if r.MultipartForm != nil {
+		if files := r.MultipartForm.File["files"]; len(files) > 0 {
+			header = files[0]
+		}
+	}
+
+	if header == nil {
 		field := "file"
-		models.WriteError(w, http.StatusBadRequest, "MISSING_FILE", "Upload request must include a 'file' field", err.Error(), &field)
+		models.WriteError(w, http.StatusBadRequest, "MISSING_FILE", "Upload request must include a 'file' or 'files' field", "No file found in request payload", &field)
 		return
 	}
-	_ = file.Close()
 
 	dataset, err := h.datasetService.HandleUpload(sessionID, header)
 	if err != nil {

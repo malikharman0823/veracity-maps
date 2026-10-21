@@ -166,12 +166,14 @@ func (h *Handler) SourceImage(w http.ResponseWriter, r *http.Request, datasetID 
 
 	imagePath := dataset.StoragePath
 	transparentPNG := filepath.Join(filepath.Dir(dataset.StoragePath), "processed", "processed_transparent.png")
-	if fileExists(transparentPNG) {
-		if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
-			if enabled, _ := bg["enabled"].(bool); enabled {
-				imagePath = transparentPNG
-			}
+	useTransparent := false
+	if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
+		if enabled, _ := bg["enabled"].(bool); enabled {
+			useTransparent = true
 		}
+	}
+	if useTransparent && fileExists(transparentPNG) {
+		imagePath = transparentPNG
 	} else if dataset.ProcessedPath != "" && fileExists(dataset.ProcessedPath) {
 		pExt := strings.ToLower(filepath.Ext(dataset.ProcessedPath))
 		if pExt == ".png" || pExt == ".jpg" || pExt == ".jpeg" {

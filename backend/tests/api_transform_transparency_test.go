@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -455,6 +456,108 @@ func TestRasterTransform_APIEndpoints(t *testing.T) {
 	resp, _ = client.Do(req)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400 for degenerate corners, got %d", resp.StatusCode)
+	}
+}
+
+func TestMapProject_ImportEndpoint(t *testing.T) {
+	server, _, tempDir := createTestServer(t)
+	defer server.Close()
+	defer os.RemoveAll(tempDir)
+
+	client := server.Client()
+
+	// 1. Create Session
+	resp, _ := client.Post(server.URL+"/sessions", "application/json", nil)
+	var sessResult struct {
+		Data struct {
+			SessionID string `json:"session_id"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&sessResult)
+	sessionID := sessResult.Data.SessionID
+
+	// 2. Upload PNG
+	pngBytes := createTransparentTestPNG(200, 200)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "floorplan.png")
+	_, _ = part.Write(pngBytes)
+	_ = writer.Close()
+
+	req, _ := http.NewRequest("POST", server.URL+"/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Session-ID", sessionID)
+	resp, _ = client.Do(req)
+	var uploadResult struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&uploadResult)
+	datasetID := uploadResult.Data.ID
+
+	// 3. Add Control Points
+	points := []map[string]interface{}{
+		{"image_x": 0.0, "image_y": 0.0, "latitude": 37.78, "longitude": -122.42},
+		{"image_x": 200.0, "image_y": 0.0, "latitude": 37.78, "longitude": -122.40},
+		{"image_x": 200.0, "image_y": 200.0, "latitude": 37.76, "longitude": -122.40},
+		{"image_x": 0.0, "image_y": 200.0, "latitude": 37.76, "longitude": -122.42},
+	}
+	for _, p := range points {
+		pBytes, _ := json.Marshal(p)
+		req, _ = http.NewRequest("POST", server.URL+"/datasets/"+datasetID+"/control-points", bytes.NewReader(pBytes))
+		req.Header.Set("X-Session-ID", sessionID)
+		_, _ = client.Do(req)
+	}
+
+	// Georeference
+	geoBody, _ := json.Marshal(map[string]string{"transformation_type": "affine"})
+	req, _ = http.NewRequest("POST", server.URL+"/datasets/"+datasetID+"/georeference", bytes.NewReader(geoBody))
+	req.Header.Set("X-Session-ID", sessionID)
+	_, _ = client.Do(req)
+
+	// 4. Export as mtmap ZIP
+	req, _ = http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/export?format=mtmap", nil)
+	req.Header.Set("X-Session-ID", sessionID)
+	exportResp, err := client.Do(req)
+	if err != nil || exportResp.StatusCode != http.StatusOK {
+		t.Fatalf("failed exporting dataset: %v, status: %d", err, exportResp.StatusCode)
+	}
+	exportZipBytes, _ := io.ReadAll(exportResp.Body)
+	_ = exportResp.Body.Close()
+
+	// 5. Test POST /map-projects/import with the exported project zip
+	importBody := &bytes.Buffer{}
+	importWriter := multipart.NewWriter(importBody)
+	filePart, _ := importWriter.CreateFormFile("file", "reopened_project.zip")
+	_, _ = filePart.Write(exportZipBytes)
+	_ = importWriter.Close()
+
+	importReq, _ := http.NewRequest("POST", server.URL+"/map-projects/import", importBody)
+	importReq.Header.Set("Content-Type", importWriter.FormDataContentType())
+	importReq.Header.Set("X-Session-ID", sessionID)
+	importResp, err := client.Do(importReq)
+	if err != nil {
+		t.Fatalf("POST /map-projects/import failed: %v", err)
+	}
+	if importResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /map-projects/import expected status 201, got %d", importResp.StatusCode)
+	}
+
+	var importResult struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ID                 string `json:"id"`
+			IsGeoreferenced    bool   `json:"is_georeferenced"`
+			GeoreferenceStatus string `json:"georeference_status"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(importResp.Body).Decode(&importResult)
+	if !importResult.Success || importResult.Data.ID == "" {
+		t.Errorf("expected successful import with valid dataset ID, got %+v", importResult)
+	}
+	if !importResult.Data.IsGeoreferenced || importResult.Data.GeoreferenceStatus != "completed" {
+		t.Errorf("expected imported project to have completed georeference, got %+v", importResult.Data)
 	}
 }
 
