@@ -88,10 +88,9 @@ func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWrite
 	sessionID := models.GetSessionID(r)
 	if sessionID != "" {
 		dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
-		if err != nil || dataset == nil {
-			return nil, "", repository.ErrDatasetNotFound
+		if err == nil && dataset != nil {
+			return dataset, sessionID, nil
 		}
-		return dataset, sessionID, nil
 	}
 
 	dataset, foundSess, err := h.datasetService.FindDataset(datasetID)
