@@ -679,6 +679,12 @@ func (s *DatasetService) ImportArchiveSelected(sessionID string, token string, s
 	}
 
 	archivePath := filepath.Join(s.storage.GetSessionDir(sessionID), "imports", token, "archive.zip")
+	if _, statErr := os.Stat(archivePath); statErr != nil {
+		sessionsRoot := filepath.Dir(s.storage.GetSessionDir(sessionID))
+		if matches, _ := filepath.Glob(filepath.Join(sessionsRoot, "*", "imports", token, "archive.zip")); len(matches) > 0 {
+			archivePath = matches[0]
+		}
+	}
 	zipReader, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("ARCHIVE_NOT_FOUND: Unable to open staged archive with token '%s': %w", token, err)

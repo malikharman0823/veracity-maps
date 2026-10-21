@@ -279,7 +279,39 @@ export default function WorkspaceMap({
     })
     map.addControl(new NavigationControl({ showCompass: true }), "bottom-right")
 
-    // Dynamic Image Loading for Custom Icons
+    // Dynamic Image Loading for Custom Icons (MapLibre v6 resolver)
+    if (typeof map.setMissingStyleImageResolver === "function") {
+      map.setMissingStyleImageResolver(async (id) => {
+        try {
+          const resp = await fetch(getIconUrl(id))
+          if (!resp.ok) return
+          const blob = await resp.blob()
+          const imgBitmap = await createImageBitmap(blob)
+          if (!map.hasImage(id)) {
+            map.addImage(id, imgBitmap)
+          }
+        } catch {
+          // Fallback marker circle to prevent missing image crashes
+          try {
+            const canvas = document.createElement("canvas")
+            canvas.width = 24
+            canvas.height = 24
+            const ctx = canvas.getContext("2d")
+            ctx.fillStyle = "#ff3b30"
+            ctx.beginPath()
+            ctx.arc(12, 12, 9, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.strokeStyle = "#ffffff"
+            ctx.lineWidth = 2
+            ctx.stroke()
+            if (!map.hasImage(id)) {
+              map.addImage(id, ctx.getImageData(0, 0, 24, 24))
+            }
+          } catch {}
+        }
+      })
+    }
+
     map.on("styleimagemissing", (e) => {
       const id = e.id
       if (map.hasImage(id)) return
@@ -291,7 +323,6 @@ export default function WorkspaceMap({
         }
       }
       img.onerror = () => {
-        // Fallback marker circle to prevent missing image crashes
         const canvas = document.createElement("canvas")
         canvas.width = 24
         canvas.height = 24
@@ -307,7 +338,7 @@ export default function WorkspaceMap({
           map.addImage(id, ctx.getImageData(0, 0, 24, 24))
         }
       }
-      img.src = `${API_URL}/icons/${encodeURIComponent(id)}`
+      img.src = getIconUrl(id)
     })
 
     map.on("load", () => {

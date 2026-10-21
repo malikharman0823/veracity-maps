@@ -2,6 +2,7 @@ package upload
 
 import (
 	"encoding/json"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -176,6 +177,7 @@ func (h *Handler) ImportArchiveSelected(w http.ResponseWriter, r *http.Request) 
 
 	res, err := h.datasetService.ImportArchiveSelected(sessionID, token, req.Selections)
 	if err != nil {
+		log.Printf("ImportArchiveSelected error: %v (sessionID=%s, token=%s, selectionsCount=%d)", err, sessionID, token, len(req.Selections))
 		models.WriteError(w, http.StatusBadRequest, "IMPORT_FAILED", err.Error(), nil, nil)
 		return
 	}

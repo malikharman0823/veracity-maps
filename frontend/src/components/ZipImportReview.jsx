@@ -25,7 +25,7 @@ export default function ZipImportReview({
 
   const [selections, setSelections] = useState(() =>
     rawDatasets.map((ds, idx) => ({
-      selected: ds.status === "valid" || ds.status === "ambiguous",
+      selected: ds.status === "ready" || ds.status === "valid" || ds.status === "ambiguous" || !ds.status,
       entry_path: ds.entry_path,
       name: ds.name || `Dataset ${idx + 1}`,
       format: ds.format,
@@ -85,10 +85,10 @@ export default function ZipImportReview({
         .filter((s) => s.selected)
         .map((s) => ({
           entry_path: s.entry_path,
-          name: s.name.trim(),
-          building_name: s.building_name.trim(),
-          floor_level: Number(s.floor_level),
-          floor_label: s.floor_label.trim(),
+          name: (s.name || "").trim(),
+          building_name: (s.building_name || "").trim(),
+          floor_level: Number(s.floor_level || 0),
+          floor_label: (s.floor_label || "").trim(),
         }))
 
       const result = await importArchiveSelected(token, itemsToImport)

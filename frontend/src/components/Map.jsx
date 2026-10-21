@@ -8,7 +8,7 @@ import {
 } from "maplibre-gl"
 import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"
 
-import { API_URL, BASEMAP_ATTRIBUTION, BASEMAP_TILE_URL } from "../api"
+import { API_URL, BASEMAP_ATTRIBUTION, BASEMAP_TILE_URL, getIconUrl } from "../api"
 import { featureSummary } from "./FeatureInfo"
 import MapCoordinates from "./MapCoordinates"
 
@@ -326,6 +326,20 @@ export default function Map({
         coordinate,
       })
     })
+    if (typeof map.setMissingStyleImageResolver === "function") {
+      map.setMissingStyleImageResolver(async (id) => {
+        try {
+          const resp = await fetch(getIconUrl(id))
+          if (!resp.ok) return
+          const blob = await resp.blob()
+          const imgBitmap = await createImageBitmap(blob)
+          if (!map.hasImage(id)) {
+            map.addImage(id, imgBitmap)
+          }
+        } catch {}
+      })
+    }
+
     map.on("styleimagemissing", (e) => {
       const id = e.id
       const img = new Image()
