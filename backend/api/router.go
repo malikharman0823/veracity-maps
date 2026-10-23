@@ -215,6 +215,20 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		rt.uploadH.ImportArchiveSelected(w, r)
 		return
 	}
+	if path == "/datasets/import-pdf-pages" || path == "/api/datasets/import-pdf-pages" {
+		rt.uploadH.ImportPdfPages(w, r)
+		return
+	}
+
+	// 3b. Document thumbnails (PDF)
+	if strings.HasPrefix(path, "/documents/") && strings.Contains(path, "/pdf-thumbnail/") {
+		trimmed := strings.TrimPrefix(path, "/documents/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) >= 3 && parts[1] == "pdf-thumbnail" {
+			rt.uploadH.GetPdfThumbnail(w, r, parts[0], parts[2])
+			return
+		}
+	}
 
 	// 4. Datasets collection
 	if path == "/datasets" || path == "/api/datasets" {

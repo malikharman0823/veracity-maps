@@ -16,10 +16,12 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
+  Archive,
   Building2,
   ChevronDown,
   ChevronRight,
   Database,
+  FileText,
   GripVertical,
   Image,
   MapPin,
@@ -31,7 +33,7 @@ import {
 } from "lucide-react"
 
 import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
-import { propagateBuildingGeoreference } from "../api"
+import { propagateBuildingGeoreference, datasetSourceImageUrl, pdfThumbnailUrl } from "../api"
 
 
 const SUBLAYER_ICONS = {
@@ -555,6 +557,237 @@ function BuildingGroup({
   )
 }
 
+function FileDocumentGroup({
+  group,
+  selectedDatasetId,
+  onSelect,
+  onUpdate,
+  onDetach,
+  onOpenBgRemoval,
+  onOpenTransform,
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  const { title, type, members } = group
+  const isPdf = type === "pdf"
+  const allVisible = members.length > 0 && members.every((m) => m.visible !== false && m.raster_visible !== false)
+  const primaryMember = members[0]
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", handleClickOutside)
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside)
+    }
+  }, [menuOpen])
+
+  function toggleGroupVisibility(checked) {
+    members.forEach((m) => {
+      onUpdate(m.dataset_id, { visible: checked, raster_visible: checked })
+    })
+  }
+
+  const badgeClass = isPdf ? "badge-pdf" : "badge-zip"
+  const badgeText = isPdf ? "PDF" : "ZIP"
+  const GroupIcon = isPdf ? FileText : Archive
+
+  return (
+    <div className={`workspace-doc-container ${expanded ? "" : "is-collapsed"}`}>
+      {/* File Document Layer Header */}
+      <div className="workspace-doc-header">
+        <div className="workspace-doc-header-main">
+          <button
+            type="button"
+            className="workspace-layer-disclosure"
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${title}`}
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
+
+          <LayerCheckbox
+            checked={allVisible}
+            label={title}
+            onChange={toggleGroupVisibility}
+          />
+
+          <div className="workspace-doc-title">
+            <GroupIcon className={`size-4 ${isPdf ? "text-red-500" : "text-emerald-600"} shrink-0`} />
+            <span title={title}>{title}</span>
+            <span className={`workspace-doc-badge ${badgeClass}`}>{badgeText}</span>
+          </div>
+        </div>
+
+        <div className="workspace-doc-actions" onClick={(e) => e.stopPropagation()}>
+          <span className="text-[10px] text-slate-400 font-medium mr-1">
+            {members.length} {isPdf ? (members.length === 1 ? "page" : "pages") : (members.length === 1 ? "raster" : "rasters")}
+          </span>
+
+          <div className="workspace-layer-menu-wrap" ref={menuRef}>
+            <button
+              type="button"
+              className="workspace-floor-tool-btn"
+              title="File actions"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setMenuOpen((prev) => !prev)
+              }}
+            >
+              <MoreHorizontal />
+            </button>
+            {menuOpen && (
+              <div className="workspace-layer-popover" onClick={(e) => e.stopPropagation()}>
+                {primaryMember && (
+                  <LayerOpacitySlider
+                    datasetId={primaryMember.dataset_id}
+                    opacity={primaryMember.raster_opacity}
+                    onUpdate={(dId, patch) => {
+                      members.forEach((m) => onUpdate(m.dataset_id, patch))
+                    }}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="workspace-layer-feature-btn text-blue-600"
+                  onClick={() => {
+                    setExpanded((prev) => !prev)
+                    setMenuOpen(false)
+                  }}
+                >
+                  <span>{expanded ? "Collapse sublayers" : `Show all ${members.length} sublayers`}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Child Sublayers List */}
+      {expanded && (
+        <div className="workspace-doc-sublayers">
+          {members.map((member, idx) => {
+            const pageNum = member.dataset?.extracted_metadata?.pdf_page_number ?? member.pdf_page_number
+            const docId = member.dataset?.extracted_metadata?.source_document_id ?? member.source_document_id
+
+            let sublayerLabel = member.name || member.dataset?.filename || `Sublayer ${idx + 1}`
+            if (isPdf && pageNum) {
+              sublayerLabel = `Page ${pageNum}`
+            } else if (!isPdf) {
+              const entry = member.dataset?.extracted_metadata?.archive_entry || member.archive_entry
+              if (entry) {
+                const parts = entry.split("/")
+                sublayerLabel = parts[parts.length - 1] || entry
+              }
+            }
+
+            const isSelected = selectedDatasetId === member.dataset_id
+            const isVisible = member.visible !== false && member.raster_visible !== false
+            const isGeoreferenced = member.dataset?.georeference_status === "completed" || Boolean(member.dataset?.map_layer)
+
+            // Dynamic thumbnail URL
+            const thumbUrl = (isPdf && docId && pageNum)
+              ? pdfThumbnailUrl(docId, pageNum)
+              : datasetSourceImageUrl(member.dataset_id)
+
+            return (
+              <div
+                key={member.dataset_id}
+                className={`workspace-doc-sublayer ${isSelected ? "is-selected" : ""}`}
+              >
+                <div
+                  className="workspace-doc-sublayer-info"
+                  onClick={() => {
+                    if (!isGeoreferenced) {
+                      const returnTo = window.location.pathname + window.location.search
+                      window.location.href = `/datasets/${member.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
+                    } else {
+                      onSelect(member.dataset_id, "raster")
+                    }
+                  }}
+                >
+                  <LayerCheckbox
+                    checked={isVisible}
+                    label={sublayerLabel}
+                    onChange={(checked) => {
+                      onUpdate(member.dataset_id, { visible: checked, raster_visible: checked })
+                    }}
+                  />
+
+                  {/* Dynamic Thumbnail Preview */}
+                  <div className="workspace-doc-thumb" title={sublayerLabel}>
+                    <img
+                      src={thumbUrl}
+                      alt=""
+                      onError={(e) => {
+                        e.target.style.display = "none"
+                      }}
+                    />
+                    <Image className="size-3 text-slate-400 absolute" style={{ zIndex: 0 }} />
+                  </div>
+
+                  <div className="workspace-doc-sublayer-text">
+                    <span className="workspace-doc-sublayer-name" title={sublayerLabel}>
+                      {sublayerLabel}
+                    </span>
+                    <span className="workspace-doc-sublayer-meta">
+                      {isGeoreferenced ? (
+                        <span className="text-emerald-600 font-medium">Georeferenced</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">Needs georeferencing →</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="workspace-doc-sublayer-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="workspace-floor-tool-btn"
+                    title="Transform placement"
+                    onClick={() => {
+                      if (onOpenTransform) onOpenTransform(member)
+                    }}
+                  >
+                    <Move />
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-floor-tool-btn"
+                    title="Remove background"
+                    onClick={() => {
+                      if (onOpenBgRemoval) onOpenBgRemoval(member)
+                    }}
+                  >
+                    <Sparkles />
+                  </button>
+                  {!member.is_primary && (
+                    <button
+                      type="button"
+                      className="workspace-floor-tool-btn hover:text-red-600"
+                      title="Detach dataset"
+                      onClick={() => onDetach(member)}
+                    >
+                      <Trash2 />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SortableMember({
   member,
   records = [],
@@ -604,6 +837,16 @@ function SortableMember({
           label={member.name}
           onChange={(visible) => onUpdate(member.dataset_id, { visible })}
         />
+        <div className="workspace-doc-thumb" title={member.name}>
+          <img
+            src={datasetSourceImageUrl(member.dataset_id)}
+            alt=""
+            onError={(e) => {
+              e.target.style.display = "none"
+            }}
+          />
+          <Image className="size-3 text-slate-400 absolute" style={{ zIndex: 0 }} />
+        </div>
         <button
           type="button"
           className="workspace-layer-title"
@@ -790,7 +1033,8 @@ export default function WorkspaceLayerPanel({
     )
   }, [members])
 
-  const { buildingGroups, standaloneMembers } = useMemo(() => {
+  const { fileGroups, buildingGroups, standaloneMembers } = useMemo(() => {
+    const fileGroupMap = new Map()
     const groups = new Map()
     const standalone = []
 
@@ -814,9 +1058,48 @@ export default function WorkspaceLayerPanel({
     }
 
     sortedMembers.forEach((member) => {
-      let bName = (member.building_name || "").trim()
+      // 1. Check if member belongs to an uploaded file container (.pdf or .zip)
+      const docType = member.dataset?.extracted_metadata?.document_type || member.document_type || ""
+      const srcDocId = member.dataset?.extracted_metadata?.source_document_id || member.source_document_id || ""
+      const srcFn = member.dataset?.extracted_metadata?.source_filename || member.source_filename || ""
+      const archFn = member.dataset?.extracted_metadata?.archive_filename || member.archive_filename || ""
       const mName = (member.name || member.dataset?.filename || "").trim()
 
+      const isPdfMember = docType === "pdf" || srcFn.toLowerCase().endsWith(".pdf") || mName.toLowerCase().endsWith(".pdf")
+      const isZipMember = Boolean(archFn) || srcFn.toLowerCase().endsWith(".zip") || mName.toLowerCase().endsWith(".zip")
+
+      if (isPdfMember) {
+        const pdfKey = `pdf_${srcDocId || srcFn || "document.pdf"}`
+        const pdfTitle = srcFn || mName.replace(/\s*-\s*Page\s+\d+.*$/i, ".pdf") || "Document.pdf"
+        if (!fileGroupMap.has(pdfKey)) {
+          fileGroupMap.set(pdfKey, {
+            id: pdfKey,
+            title: pdfTitle,
+            type: "pdf",
+            members: [],
+          })
+        }
+        fileGroupMap.get(pdfKey).members.push(member)
+        return
+      }
+
+      if (isZipMember) {
+        const zipKey = `zip_${archFn || srcFn || "archive.zip"}`
+        const zipTitle = archFn || srcFn || "Archive.zip"
+        if (!fileGroupMap.has(zipKey)) {
+          fileGroupMap.set(zipKey, {
+            id: zipKey,
+            title: zipTitle,
+            type: "zip",
+            members: [],
+          })
+        }
+        fileGroupMap.get(zipKey).members.push(member)
+        return
+      }
+
+      // 2. Check if member belongs to a multi-floor building
+      let bName = (member.building_name || "").trim()
       if (!bName || isFloorToken(bName)) {
         const matchedReal = realBuildingNames.find((rn) =>
           mName.toLowerCase().includes(rn.toLowerCase().replace(/\s+/g, "_")) ||
@@ -825,13 +1108,9 @@ export default function WorkspaceLayerPanel({
         )
         if (matchedReal) {
           bName = matchedReal
-        } else if (member.is_building_floor || isFloorToken(mName) || isFloorToken(member.floor_label)) {
-          bName = realBuildingNames.length > 0 ? realBuildingNames[0] : "Building A"
+        } else if (member.is_building_floor && realBuildingNames.length > 0) {
+          bName = realBuildingNames[0]
         }
-      }
-
-      if (bName === "Building 1" && realBuildingNames.some((rn) => rn.toLowerCase().startsWith("building a"))) {
-        bName = realBuildingNames.find((rn) => rn.toLowerCase().startsWith("building a"))
       }
 
       if (bName) {
@@ -842,7 +1121,11 @@ export default function WorkspaceLayerPanel({
       }
     })
 
-    return { buildingGroups: groups, standaloneMembers: standalone }
+    return {
+      fileGroups: Array.from(fileGroupMap.values()),
+      buildingGroups: groups,
+      standaloneMembers: standalone,
+    }
   }, [sortedMembers, buildings])
 
   const totalDistinctFloors = useMemo(() => {
@@ -911,6 +1194,20 @@ export default function WorkspaceLayerPanel({
       )}
 
       <div className="workspace-layer-scroll">
+        {/* Render file document groups (e.g. .pdf and .zip uploads) */}
+        {fileGroups.map((group) => (
+          <FileDocumentGroup
+            key={group.id}
+            group={group}
+            selectedDatasetId={selectedDatasetId}
+            onSelect={onSelect}
+            onUpdate={onUpdate}
+            onDetach={onDetach}
+            onOpenBgRemoval={setBgRemovalMember}
+            onOpenTransform={onOpenTransform}
+          />
+        ))}
+
         {/* Render building groups */}
         {Array.from(buildingGroups.entries()).map(([bName, floors]) => (
           <BuildingGroup

@@ -39,6 +39,7 @@ import useWorkspace from "../hooks/useWorkspace"
 import EndSessionDialog from "../components/EndSessionDialog"
 import ZipImportReview from "../components/ZipImportReview"
 import ExportProjectModal from "../components/ExportProjectModal"
+import ImportPdfModal from "../components/ImportPdfModal"
 import { applyFloorSelection } from "../lib/floorSelection"
 import { savedConfigMemberIds } from "../lib/sessionLoading"
 
@@ -48,6 +49,7 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
   const [archiveInspection, setArchiveInspection] = useState(null)
+  const [pdfInspection, setPdfInspection] = useState(null)
 
   useEffect(() => {
     if (open) {
@@ -55,6 +57,7 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
       setProgress(0)
       setError(null)
       setArchiveInspection(null)
+      setPdfInspection(null)
     }
   }, [open])
 
@@ -108,6 +111,14 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
             setProgress(totalPct)
           }
         })
+
+        // Check if PDF pending inspection
+        if (dataset && (dataset.type === "pdf_pending" || dataset.status === "pdf_pending")) {
+          setPdfInspection(dataset)
+          setState("confirm")
+          return
+        }
+
         const isAlreadyMember = existingMembers.some(
           (m) => m.dataset_id === dataset.id
         )
@@ -173,6 +184,20 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
               if ((r.status === "imported" || r.status === "success") && r.dataset_id) {
                 await onUploaded({ id: r.dataset_id, name: r.name, is_georeferenced: true })
               }
+            }
+          }}
+        />
+      )}
+
+      {pdfInspection && (
+        <ImportPdfModal
+          pdfInspection={pdfInspection}
+          onClose={() => setPdfInspection(null)}
+          onImportSuccess={async (importRes) => {
+            setPdfInspection(null)
+            onClose()
+            for (const ds of importRes.datasets || []) {
+              await onUploaded(ds)
             }
           }}
         />

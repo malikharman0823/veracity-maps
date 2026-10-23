@@ -5,6 +5,8 @@ import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
 import UploadStatus from "../components/UploadStatus"
 import TopHeader from "../components/TopHeader"
 import ZipImportReview from "../components/ZipImportReview"
+import ImportPdfModal from "../components/ImportPdfModal"
+import FilePreviewDialog from "../components/FilePreviewDialog"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
@@ -27,6 +29,8 @@ export default function UploadPage() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [archiveInspection, setArchiveInspection] = useState(null)
+  const [pdfInspection, setPdfInspection] = useState(null)
+  const [filePreviewOpen, setFilePreviewOpen] = useState(false)
 
   function selectFile(nextFile) {
     setFile(nextFile)
@@ -35,6 +39,8 @@ export default function UploadPage() {
     setResult(null)
     setError(null)
     setArchiveInspection(null)
+    setPdfInspection(null)
+    setFilePreviewOpen(true)
   }
 
   function removeFile() {
@@ -42,6 +48,8 @@ export default function UploadPage() {
     setState("idle")
     setProgress(0)
     setArchiveInspection(null)
+    setPdfInspection(null)
+    setFilePreviewOpen(false)
   }
 
   async function upload() {
@@ -73,6 +81,15 @@ export default function UploadPage() {
       const uploaded = await uploadFn(file, (event) => {
         if (event.total) setProgress(Math.round((event.loaded / event.total) * 100))
       })
+
+      // PDF multi-page import pending modal
+      if (uploaded && (uploaded.type === "pdf_pending" || uploaded.status === "pdf_pending")) {
+        setPdfInspection(uploaded)
+        setFile(null)
+        setState("idle")
+        return
+      }
+
       setResult(uploaded)
       setFile(null)
       if (uploaded.is_georeferenced) {
@@ -270,6 +287,30 @@ export default function UploadPage() {
           }}
         />
       )}
+
+      {pdfInspection && (
+        <ImportPdfModal
+          pdfInspection={pdfInspection}
+          onClose={() => setPdfInspection(null)}
+          onImportSuccess={(importRes) => {
+            setPdfInspection(null)
+            if (importRes.first_dataset_id) {
+              navigate(`/datasets/${importRes.first_dataset_id}/workspace?view=map`)
+            } else if (importRes.datasets?.length > 0) {
+              navigate(`/datasets/${importRes.datasets[0].id}/workspace?view=map`)
+            } else {
+              navigate("/")
+            }
+          }}
+        />
+      )}
+
+      <FilePreviewDialog
+        file={file}
+        open={filePreviewOpen}
+        onCancel={removeFile}
+        onConfirm={() => setFilePreviewOpen(false)}
+      />
     </div>
   )
 }

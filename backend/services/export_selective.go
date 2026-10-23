@@ -363,6 +363,31 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 			}
 		}
 
+		// Source document export (e.g. PDF or CAD original)
+		if opts.IncludeOriginalRasters && ds.ExtractedMetadata != nil {
+			if origSourcePath, ok := ds.ExtractedMetadata["original_source_path"].(string); ok && origSourcePath != "" && fileExists(origSourcePath) {
+				sourceDocName := filepath.Base(origSourcePath)
+				docID, _ := ds.ExtractedMetadata["document_id"].(string)
+				if docID == "" {
+					docID = "doc"
+				}
+				sourceRel := "source_documents/" + docID + "_" + sourceDocName
+				alreadyCopied := false
+				for _, r := range archiveResources {
+					if r == sourceRel {
+						alreadyCopied = true
+						break
+					}
+				}
+				if !alreadyCopied {
+					if sf, err := os.Open(origSourcePath); err == nil {
+						_ = addFileToZip(sourceRel, sf)
+						_ = sf.Close()
+					}
+				}
+			}
+		}
+
 		// World file sidecar
 		baseExt := strings.ToLower(filepath.Ext(ds.Filename))
 		worldExt := ".wld"

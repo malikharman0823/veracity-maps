@@ -16,6 +16,8 @@ import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
 import UploadStatus from "../components/UploadStatus"
 import DatasetCard from "../components/DatasetCard"
 import TopHeader from "../components/TopHeader"
+import ImportPdfModal from "../components/ImportPdfModal"
+import FilePreviewDialog from "../components/FilePreviewDialog"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -55,6 +57,8 @@ export default function HomePage() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [pdfInspection, setPdfInspection] = useState(null)
+  const [filePreviewOpen, setFilePreviewOpen] = useState(false)
 
   // Session dataset catalog state
   const [datasets, setDatasets] = useState([])
@@ -118,12 +122,14 @@ export default function HomePage() {
     setProgress(0)
     setResult(null)
     setError(null)
+    setFilePreviewOpen(true)
   }
 
   function removeFile() {
     setFile(null)
     setState("idle")
     setProgress(0)
+    setFilePreviewOpen(false)
   }
 
   async function upload() {
@@ -137,6 +143,14 @@ export default function HomePage() {
       const uploaded = await uploadFn(file, (event) => {
         if (event.total) setProgress(Math.round((event.loaded / event.total) * 100))
       })
+
+      if (uploaded && (uploaded.type === "pdf_pending" || uploaded.status === "pdf_pending")) {
+        setPdfInspection(uploaded)
+        setFile(null)
+        setState("idle")
+        return
+      }
+
       setResult(uploaded)
       setFile(null)
       loadDatasets()
@@ -632,6 +646,29 @@ export default function HomePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {pdfInspection && (
+        <ImportPdfModal
+          pdfInspection={pdfInspection}
+          onClose={() => setPdfInspection(null)}
+          onImportSuccess={(importRes) => {
+            setPdfInspection(null)
+            loadDatasets()
+            if (importRes.first_dataset_id) {
+              navigate(`/datasets/${importRes.first_dataset_id}/workspace?view=map`)
+            } else if (importRes.datasets?.length > 0) {
+              navigate(`/datasets/${importRes.datasets[0].id}/workspace?view=map`)
+            }
+          }}
+        />
+      )}
+
+      <FilePreviewDialog
+        file={file}
+        open={filePreviewOpen}
+        onCancel={removeFile}
+        onConfirm={() => setFilePreviewOpen(false)}
+      />
     </div>
   )
 }

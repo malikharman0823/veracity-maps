@@ -38,7 +38,7 @@ func main() {
 	georefService := services.NewGeoreferenceService(repo, sm)
 	exportService := services.NewExportService(repo, sm)
 
-	uploadHandler := upload.NewHandler(datasetService, repo)
+	uploadHandler := upload.NewHandler(datasetService, repo, sm)
 	datasetsHandler := datasets.NewHandler(datasetService, repo)
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)

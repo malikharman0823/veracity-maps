@@ -52,8 +52,8 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	if ext != ".zip" && SupportedRasterExtensions[ext] == "" {
-		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, and ZIP", ext)
+	if ext != ".zip" && ext != ".pdf" && ext != ".dxf" && SupportedRasterExtensions[ext] == "" {
+		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, PDF, DXF, and ZIP", ext)
 	}
 
 	if fileHeader.Size > s.cfg.MaxUploadSizeBytes {
@@ -93,6 +93,9 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 
 	if ext == ".zip" {
 		return s.handleZipDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
+	}
+	if ext == ".dxf" {
+		return s.ConvertCadDxfToDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
 	}
 	return s.handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash, SupportedRasterExtensions[ext])
 }

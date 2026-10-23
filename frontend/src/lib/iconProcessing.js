@@ -4,7 +4,7 @@
  * - Automatically detects and removes checkerboard patterns (fake PNG transparency)
  *   and solid light/white backgrounds.
  * - Uses flood-fill from edges + global color matching so transparency is natural and clean.
- * - Returns a canvas or image element suitable for map.addImage(id, ...).
+ * - Returns an ImageData or image element suitable for map.addImage(id, ...).
  */
 
 const iconCache = new Map()
@@ -15,7 +15,7 @@ export async function processIconForMap(sourceUrl, maxSize = 36) {
     return iconCache.get(cacheKey)
   }
 
-  const promise = new Promise((resolve) => {
+  const promise = new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = "anonymous"
     img.onload = () => {
@@ -111,28 +111,18 @@ export async function processIconForMap(sourceUrl, maxSize = 36) {
           ctx.putImageData(imageData, 0, 0)
         }
 
-        resolve(canvas)
+        // MapLibre GL accepts ImageData, HTMLImageElement, and ImageBitmap,
+        // but not HTMLCanvasElement. Returning the canvas caused addImage()
+        // to throw and the missing-image resolver to register a red fallback.
+        resolve(ctx.getImageData(0, 0, targetW, targetH))
       } catch (err) {
         // Fallback to original image
         resolve(img)
       }
     }
     img.onerror = () => {
-      // Return a 24x24 red fallback pin
-      const fallback = document.createElement("canvas")
-      fallback.width = 24
-      fallback.height = 24
-      const ctx = fallback.getContext("2d")
-      if (ctx) {
-        ctx.fillStyle = "#ff3b30"
-        ctx.beginPath()
-        ctx.arc(12, 12, 9, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.strokeStyle = "#ffffff"
-        ctx.lineWidth = 2
-        ctx.stroke()
-      }
-      resolve(fallback)
+      iconCache.delete(cacheKey)
+      reject(new Error(`Unable to load map icon: ${sourceUrl}`))
     }
     img.src = sourceUrl
   })

@@ -22,6 +22,7 @@ This directory contains the primary React UI components for layout navigation, r
 | **`EndSessionDialog.jsx`** | Confirmation modal for ending the active anonymous session and purging temporary server files. |
 | **`UploadBox.jsx`** | Drag-and-drop file upload target supporting single images and ZIP bundles. |
 | **`UploadStatus.jsx`** | Upload progress feedback and error state alert banner. |
+| **`FilePreviewDialog.jsx`** | Reusable selected-file preview modal. It renders browser-supported image files from an object URL and provides live metadata fallback for ZIP and other formats. |
 | **`RasterTransformOverlay.jsx`** | Interactive bounding-box transformer allowing visual scale, rotation, and translation overlays directly on the map. |
 | **`FloorTraversalOverlay.jsx`** | Top-corner overlay for multi-floor buildings: climbs floors via buttons/keyboard arrows, displays floor badges (B2, B1, G, 1, 2), building switcher, and quick raster opacity/visibility controls. |
 

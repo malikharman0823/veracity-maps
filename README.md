@@ -107,6 +107,25 @@ The script:
 5. Emits a deterministic, UTF-8 (no-BOM) `frontend/public/icons/manifest.json`.
 6. Prints a summary report of imported, skipped, and duplicate assets.
 
+### Feature E — PDF Multi-Page Inspection and Selective Import
+- **Lightweight Document Inspection**: On PDF upload, documents are parsed to extract page count, dimensions (points and pixels), rotation angles, and renderability.
+- **On-Demand Page Thumbnails**: Thumbnails are generated at 72 DPI and served via `GET /documents/{doc_id}/pdf-thumbnail/{page_num}` without allocating memory for full-resolution rendering prematurely.
+- **Import PDF Dialog**:
+  - Modal displaying filename, page count, and thumbnail grid.
+  - Interactive page checkboxes, Select All / Deselect All, and live selection counter.
+  - **Georeferencing Mode Selection**:
+    - **Option A: Georeference together (one-time)**: Pages inherit a shared building coordinate system and transformation. Aligning one floor aligns all associated floors simultaneously.
+    - **Option B: Georeference separately**: Each page maintains its own independent transformation and control points.
+- **Logical Raster Layers**: Each selected PDF page is converted to an independent high-resolution PNG raster layer and mapped to its respective floor level.
+- **Original Document Preservation**: The original PDF file is safely retained under `raw_docs/` in the session workspace and included once in selective ZIP project exports.
+
+### Feature F — CAD Drawing (DXF) Import & Rasterization
+- **Format Verification**: Validates CAD file structure and extracts DXF version, drawing extents, units, and layer list.
+- **High-Fidelity Linework Conversion**: Renders 2D CAD linework into high-resolution transparent PNG rasters via `ezdxf` and `matplotlib`, preserving exact aspect ratio and drawing bounds.
+- **Seamless Workspace Integration**: Converted CAD layers plug directly into the visual georeferencing, opacity, and multi-floor switching workflows.
+- **Selective Project Export**: Preserves both the original source CAD file and the rendered raster within the exported project ZIP.
+- *Update 1.2 release notes are available in [`docs/RELEASE_1.2.md`](docs/RELEASE_1.2.md).*
+
 ---
 
 ## 4. Session Storage & Lifecycle Architecture
@@ -114,6 +133,12 @@ The script:
 - **Session Directories**:
   ```text
   backend/temp/sessions/<session_id>/
+  ├── raw_docs/
+  │   └── <doc_id>_floorplan.pdf
+  ├── pdf_thumbnails/
+  │   └── <doc_id>/
+  │       ├── page_1.png
+  │       └── page_2.png
   ├── datasets/
   │   └── <dataset_id>/
   │       ├── source.png

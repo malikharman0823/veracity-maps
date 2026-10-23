@@ -666,11 +666,24 @@ export async function resetRasterTransform(datasetId) {
 }
 
 export function readableApiError(error, fallbackMessage) {
-  const apiError = error.response?.data?.error
-  if (apiError) {
+  const data = error.response?.data
+  const apiError = data?.error
+  if (typeof apiError === "string") {
     return {
-      message: apiError.message || fallbackMessage,
-      details: apiError.details || "Please try again.",
+      message: apiError,
+      details: data?.message || "Please check the file and try again.",
+    }
+  }
+  if (apiError && typeof apiError === "object") {
+    return {
+      message: apiError.message || apiError.code || fallbackMessage,
+      details: apiError.details || apiError.code || "Please check the file and try again.",
+    }
+  }
+  if (data?.message) {
+    return {
+      message: data.message,
+      details: data.details || "Please try again.",
     }
   }
   if (!error.response) {
@@ -681,7 +694,7 @@ export function readableApiError(error, fallbackMessage) {
   }
   return {
     message: fallbackMessage,
-    details: "The request could not be completed.",
+    details: `Status ${error.response.status}: ${error.response.statusText || "Bad Request"}`,
   }
 }
 
@@ -765,6 +778,21 @@ export async function importArchiveSelected(token, selections) {
     token,
     selections,
   })
+  return response.data.data
+}
+
+// -------------------------------------------------------------
+// PDF Multi-Page Import API
+// -------------------------------------------------------------
+
+export function pdfThumbnailUrl(documentId, pageNumber) {
+  const sid = getActiveSessionId()
+  const q = sid ? `?session_id=${encodeURIComponent(sid)}` : ""
+  return `${API_URL}/documents/${encodeURIComponent(documentId)}/pdf-thumbnail/${encodeURIComponent(pageNumber)}${q}`
+}
+
+export async function importPdfPages(payload) {
+  const response = await client.post("/datasets/import-pdf-pages", payload)
   return response.data.data
 }
 

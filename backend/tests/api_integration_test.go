@@ -54,7 +54,7 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	geoService := services.NewGeoreferenceService(repo, sm)
 	expService := services.NewExportService(repo, sm)
 
-	uh := upload.NewHandler(dsService, repo)
+	uh := upload.NewHandler(dsService, repo, sm)
 	dh := datasets.NewHandler(dsService, repo)
 	gh := georeference.NewHandler(geoService, repo)
 	eh := export.NewHandler(expService, repo)
