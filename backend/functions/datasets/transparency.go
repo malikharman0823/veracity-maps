@@ -12,10 +12,11 @@ import (
 )
 
 type BackgroundRemovalRequest struct {
-	Action       string  `json:"action"` // "status", "preview", "apply", "reset"
-	Color        string  `json:"color"`
-	Threshold    float64 `json:"threshold"`
-	EdgeSoftness float64 `json:"edge_softness"`
+	Action           string  `json:"action"` // "status", "preview", "apply", "reset"
+	Color            string  `json:"color"`
+	Threshold        float64 `json:"threshold"`
+	EdgeSoftness     float64 `json:"edge_softness"`
+	ApplyToAllFloors bool    `json:"apply_to_all_floors,omitempty"`
 }
 
 type BackgroundRemovalData struct {
@@ -235,6 +236,71 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 		dataset.ProcessedPath = processedPNG
 		ensureDatasetMapLayer(dataset)
 		_ = h.repo.UpdateDataset(sessionID, dataset)
+
+		// If req.ApplyToAllFloors is true, also apply to all sibling floors in the same building
+		if req.ApplyToAllFloors {
+			buildings, _ := h.repo.ListBuildings(sessionID)
+			var matchedBld *models.Building
+			for _, b := range buildings {
+				for _, fl := range b.Floors {
+					for _, dID := range fl.DatasetIDs {
+						if dID == datasetID {
+							matchedBld = b
+							break
+						}
+					}
+					if matchedBld != nil {
+						break
+					}
+				}
+				if matchedBld != nil {
+					break
+				}
+			}
+
+			if matchedBld != nil {
+				for _, fl := range matchedBld.Floors {
+					for _, sibID := range fl.DatasetIDs {
+						if sibID == datasetID {
+							continue
+						}
+						sib, err := h.repo.GetDataset(sessionID, sibID)
+						if err != nil || sib == nil {
+							continue
+						}
+						sibDir := filepath.Dir(sib.StoragePath)
+						sibProcessedDir := filepath.Join(sibDir, "processed")
+						_ = os.MkdirAll(sibProcessedDir, 0755)
+						sibBackup := filepath.Join(sibProcessedDir, "original_before_bg.png")
+						sibProcessedPNG := filepath.Join(sibProcessedDir, "processed_transparent.png")
+
+						if !fileExists(sibBackup) && fileExists(sib.StoragePath) {
+							_ = copyFile(sib.StoragePath, sibBackup)
+						}
+						sibInput := sib.StoragePath
+						if fileExists(sibBackup) {
+							sibInput = sibBackup
+						}
+
+						if err := gis.ProcessRasterBackgroundRemoval(sibInput, sibProcessedPNG, targetColor, req.Threshold, req.EdgeSoftness); err == nil {
+							if sib.ExtractedMetadata == nil {
+								sib.ExtractedMetadata = make(map[string]interface{})
+							}
+							sib.ExtractedMetadata["background_removal"] = map[string]interface{}{
+								"enabled":       true,
+								"color":         req.Color,
+								"threshold":     req.Threshold,
+								"edge_softness": req.EdgeSoftness,
+								"updated_at":    nowStr,
+							}
+							sib.ProcessedPath = sibProcessedPNG
+							ensureDatasetMapLayer(sib)
+							_ = h.repo.UpdateDataset(sessionID, sib)
+						}
+					}
+				}
+			}
+		}
 
 		models.WriteJSON(w, http.StatusOK, BackgroundRemovalData{
 			DatasetID:       datasetID,

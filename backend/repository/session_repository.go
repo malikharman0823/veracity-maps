@@ -34,8 +34,9 @@ type Session struct {
 	Layers        map[string][]*models.Layer        // datasetID -> layers
 	MapProjects   map[string]*models.MapProject     // datasetID -> project
 	MapConfig     map[string]interface{}
-	IconPoints    map[string]*models.IconPoint // pointID -> icon point
-	Buildings     map[string]*models.Building  // buildingID -> building
+	SavedConfigs  map[string]*models.SavedConfig // configID -> saved config
+	IconPoints    map[string]*models.IconPoint   // pointID -> icon point
+	Buildings     map[string]*models.Building    // buildingID -> building
 }
 
 type SessionRepository struct {
@@ -110,6 +111,7 @@ func (r *SessionRepository) CreateSession() *Session {
 		Layers:        make(map[string][]*models.Layer),
 		MapProjects:   make(map[string]*models.MapProject),
 		MapConfig:     make(map[string]interface{}),
+		SavedConfigs:  make(map[string]*models.SavedConfig),
 		IconPoints:    make(map[string]*models.IconPoint),
 		Buildings:     make(map[string]*models.Building),
 	}
@@ -527,6 +529,79 @@ func (r *SessionRepository) SaveMapProject(sessionID string, project *models.Map
 	return nil
 }
 
+// SavedConfig Operations
+func (r *SessionRepository) SaveConfig(sessionID string, cfg *models.SavedConfig) (*models.SavedConfig, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	if cfg.ID == "" {
+		cfg.ID = generateID("cfg")
+	}
+	now := time.Now()
+	if cfg.CreatedAt.IsZero() {
+		cfg.CreatedAt = now
+	}
+	cfg.UpdatedAt = now
+	if sess.SavedConfigs == nil {
+		sess.SavedConfigs = make(map[string]*models.SavedConfig)
+	}
+	sess.SavedConfigs[cfg.ID] = cfg
+	sess.LastActiveAt = now
+	r.saveSavedConfigsLocked(sessionID)
+	return cfg, nil
+}
+
+func (r *SessionRepository) GetSavedConfig(sessionID, configID string) (*models.SavedConfig, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	cfg, ok := sess.SavedConfigs[configID]
+	if !ok {
+		return nil, errors.New("CONFIG_NOT_FOUND")
+	}
+	return cfg, nil
+}
+
+func (r *SessionRepository) ListSavedConfigs(sessionID string) ([]*models.SavedConfig, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return nil, ErrSessionNotFound
+	}
+	res := make([]*models.SavedConfig, 0, len(sess.SavedConfigs))
+	for _, c := range sess.SavedConfigs {
+		res = append(res, c)
+	}
+	return res, nil
+}
+
+func (r *SessionRepository) DeleteSavedConfig(sessionID, configID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[sessionID]
+	if !exists {
+		return ErrSessionNotFound
+	}
+	if _, ok := sess.SavedConfigs[configID]; !ok {
+		return errors.New("CONFIG_NOT_FOUND")
+	}
+	delete(sess.SavedConfigs, configID)
+	sess.LastActiveAt = time.Now()
+	r.saveSavedConfigsLocked(sessionID)
+	return nil
+}
+
 // IconPoint Operations
 func (r *SessionRepository) CreateIconPoint(sessionID string, pt *models.IconPoint) (*models.IconPoint, error) {
 	r.mu.Lock()
@@ -890,6 +965,21 @@ func (r *SessionRepository) saveBuildingsLocked(sessionID string) {
 	saveJSONFile(filepath.Join(r.storageDir, sessionID, "buildings.json"), list)
 }
 
+func (r *SessionRepository) saveSavedConfigsLocked(sessionID string) {
+	if r.storageDir == "" {
+		return
+	}
+	sess := r.sessions[sessionID]
+	if sess == nil {
+		return
+	}
+	list := make([]*models.SavedConfig, 0, len(sess.SavedConfigs))
+	for _, c := range sess.SavedConfigs {
+		list = append(list, c)
+	}
+	saveJSONFile(filepath.Join(r.storageDir, sessionID, "saved_configs.json"), list)
+}
+
 func (r *SessionRepository) hydrateAllLocked() {
 	if r.storageDir == "" {
 		return
@@ -924,8 +1014,19 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 		Layers:        make(map[string][]*models.Layer),
 		MapProjects:   make(map[string]*models.MapProject),
 		MapConfig:     make(map[string]interface{}),
+		SavedConfigs:  make(map[string]*models.SavedConfig),
 		IconPoints:    make(map[string]*models.IconPoint),
 		Buildings:     make(map[string]*models.Building),
+	}
+
+	cfgPath := filepath.Join(sessionDir, "saved_configs.json")
+	if cfgBytes, err := os.ReadFile(cfgPath); err == nil {
+		var cfgs []*models.SavedConfig
+		if json.Unmarshal(cfgBytes, &cfgs) == nil {
+			for _, c := range cfgs {
+				sess.SavedConfigs[c.ID] = c
+			}
+		}
 	}
 
 	ipPath := filepath.Join(sessionDir, "icon_points.json")

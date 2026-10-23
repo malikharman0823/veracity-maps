@@ -119,14 +119,16 @@ func decodeTiffDimensions(filePath string) (int, int, error) {
 		tag := readUint16(entryBuf[0:2])
 		typ := readUint16(entryBuf[2:4])
 		var val int
-		if typ == 3 { // SHORT
+		switch typ {
+		case 3: // SHORT
 			val = int(readUint16(entryBuf[8:10]))
-		} else if typ == 4 { // LONG
+		case 4: // LONG
 			val = int(readUint32(entryBuf[8:12]))
 		}
-		if tag == 256 { // ImageWidth
+		switch tag {
+		case 256: // ImageWidth
 			width = val
-		} else if tag == 257 { // ImageLength
+		case 257: // ImageLength
 			height = val
 		}
 		if width > 0 && height > 0 {
@@ -188,7 +190,7 @@ func InspectRasterFile(filePath string) (*RasterMetadata, error) {
 				"x": math.Abs(transform[0]),
 				"y": math.Abs(transform[4]),
 			}
-			meta.Bounds = CalculateBoundsFromTransform(transform, cfg.Width, cfg.Height)
+			rawBounds := CalculateBoundsFromTransform(transform, cfg.Width, cfg.Height)
 			meta.GeoreferenceSource = "sidecar"
 			crsStr := "EPSG:4326"
 			if prjBytes, prjErr := os.ReadFile(sidecarPrj); prjErr == nil {
@@ -199,8 +201,35 @@ func InspectRasterFile(filePath string) (*RasterMetadata, error) {
 					crsStr = "EPSG:4326"
 				}
 			}
-			meta.CRS = &crsStr
-			meta.IsGeoreferenced = true
+
+			minX := rawBounds["min_x"]
+			minY := rawBounds["min_y"]
+			maxX := rawBounds["max_x"]
+			maxY := rawBounds["max_y"]
+
+			if crsStr == "EPSG:3857" ||
+				((math.Abs(minX) > 180 || math.Abs(maxX) > 180 || math.Abs(minY) > 90 || math.Abs(maxY) > 90) &&
+					math.Abs(minX) <= 20037508.35 && math.Abs(maxX) <= 20037508.35 &&
+					math.Abs(minY) <= 20037508.35 && math.Abs(maxY) <= 20037508.35) {
+				lng1, lat1 := MercatorToWGS84(minX, minY)
+				lng2, lat2 := MercatorToWGS84(maxX, maxY)
+				meta.Bounds = map[string]float64{
+					"min_x": lng1,
+					"min_y": lat1,
+					"max_x": lng2,
+					"max_y": lat2,
+				}
+				crs4326 := "EPSG:4326"
+				meta.CRS = &crs4326
+				meta.IsGeoreferenced = true
+			} else if minX >= -180 && maxX <= 180 && minY >= -90 && maxY <= 90 {
+				meta.Bounds = rawBounds
+				meta.CRS = &crsStr
+				meta.IsGeoreferenced = true
+			} else {
+				meta.Bounds = rawBounds
+				meta.IsGeoreferenced = false
+			}
 		}
 	}
 
@@ -318,6 +347,18 @@ func CalculateBoundsFromTransform(transform []float64, width, height int) map[st
 	}
 }
 
+// MercatorToWGS84 converts Web Mercator meters (EPSG:3857) to WGS84 degrees (EPSG:4326)
+func MercatorToWGS84(x, y float64) (lng, lat float64) {
+	lng = (x / 20037508.342789244) * 180.0
+	lat = (math.Atan(math.Exp((y/20037508.342789244)*math.Pi))*360.0)/math.Pi - 90.0
+	if lat < -85.05112878 {
+		lat = -85.05112878
+	} else if lat > 85.05112878 {
+		lat = 85.05112878
+	}
+	return lng, lat
+}
+
 // NormalizeBounds validates and returns [west, south, east, north] (MapLibre format)
 func NormalizeBounds(bounds map[string]float64) ([]float64, error) {
 	if bounds == nil {
@@ -337,5 +378,15 @@ func NormalizeBounds(bounds map[string]float64) ([]float64, error) {
 	if minX >= maxX || minY >= maxY {
 		return nil, fmt.Errorf("inverted bounds: [%f, %f, %f, %f]", minX, minY, maxX, maxY)
 	}
+
+	// Check if bounds are in Web Mercator meters
+	if (math.Abs(minX) > 180 || math.Abs(maxX) > 180 || math.Abs(minY) > 90 || math.Abs(maxY) > 90) &&
+		math.Abs(minX) <= 20037508.35 && math.Abs(maxX) <= 20037508.35 &&
+		math.Abs(minY) <= 20037508.35 && math.Abs(maxY) <= 20037508.35 {
+		lng1, lat1 := MercatorToWGS84(minX, minY)
+		lng2, lat2 := MercatorToWGS84(maxX, maxY)
+		minX, minY, maxX, maxY = lng1, lat1, lng2, lat2
+	}
+
 	return []float64{minX, minY, maxX, maxY}, nil
 }

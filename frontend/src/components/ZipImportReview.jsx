@@ -172,12 +172,12 @@ export default function ZipImportReview({
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
-                      res.status === "success"
+                      res.status === "success" || res.status === "imported"
                         ? "bg-emerald-100 text-emerald-800"
                         : "bg-red-100 text-red-800"
                     }`}
                   >
-                    {res.status === "success" ? "Imported" : "Failed"}
+                    {res.status === "success" || res.status === "imported" ? "Imported" : "Failed"}
                   </span>
                 </div>
               ))}

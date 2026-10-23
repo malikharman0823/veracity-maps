@@ -150,6 +150,56 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
+		if len(parts) >= 2 && parts[1] == "configs" {
+			sid := parts[0]
+			if len(parts) == 2 {
+				if r.Method == http.MethodGet {
+					cfgs, err := rt.repo.ListSavedConfigs(sid)
+					if err != nil {
+						models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found", nil, nil)
+						return
+					}
+					models.WriteJSON(w, http.StatusOK, cfgs)
+					return
+				}
+				if r.Method == http.MethodPost {
+					var cfg models.SavedConfig
+					if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+						models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid config JSON", nil, nil)
+						return
+					}
+					saved, err := rt.repo.SaveConfig(sid, &cfg)
+					if err != nil {
+						models.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error(), nil, nil)
+						return
+					}
+					models.WriteJSON(w, http.StatusCreated, saved)
+					return
+				}
+			}
+			if len(parts) == 3 {
+				configID := parts[2]
+				if r.Method == http.MethodGet {
+					cfg, err := rt.repo.GetSavedConfig(sid, configID)
+					if err != nil {
+						models.WriteError(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config not found", nil, nil)
+						return
+					}
+					models.WriteJSON(w, http.StatusOK, cfg)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					err := rt.repo.DeleteSavedConfig(sid, configID)
+					if err != nil {
+						models.WriteError(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config not found", nil, nil)
+						return
+					}
+					models.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+					return
+				}
+			}
+		}
 	}
 
 	// 3. Uploads
@@ -374,6 +424,13 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			}
 			if r.Method == http.MethodDelete {
 				rt.datasetsH.DeleteBuilding(w, r, buildingID)
+				return
+			}
+		}
+
+		if len(parts) == 2 && parts[1] == "propagate" {
+			if r.Method == http.MethodPost {
+				rt.datasetsH.PropagateBuildingGeoreferenceHandler(w, r, buildingID)
 				return
 			}
 		}

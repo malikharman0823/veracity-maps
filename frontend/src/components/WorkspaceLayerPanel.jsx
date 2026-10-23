@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 
 import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
+import { propagateBuildingGeoreference } from "../api"
 
 
 const SUBLAYER_ICONS = {
@@ -47,7 +48,11 @@ const VISIBILITY_FIELDS = {
 
 function LayerCheckbox({ checked, label, onChange }) {
   return (
-    <label className="workspace-layer-checkbox" title={`${checked ? "Hide" : "Show"} ${label}`}>
+    <label
+      className="workspace-layer-checkbox"
+      title={`${checked ? "Hide" : "Show"} ${label}`}
+      onClick={(e) => e.stopPropagation()}
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -120,9 +125,10 @@ function LayerOpacitySlider({ datasetId, opacity, onUpdate }) {
   )
 }
 
-function BuildingFloorItem({
-  member,
+function FloorLevelRow({
+  floorObj,
   isActiveFloor,
+  buildingName,
   onSelectFloor,
   onSelect,
   onUpdate,
@@ -130,113 +136,249 @@ function BuildingFloorItem({
   onOpenBgRemoval,
   onOpenTransform,
 }) {
+  const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const level = member.floor_level ?? 0
+  const menuRef = useRef(null)
+  const { level, label, members } = floorObj
+
+  const isMultiLayer = members.length > 1
+  const allVisible = members.every((m) => m.visible && m.raster_visible)
+  const primaryMember = members[0]
+
   const badgeLabel = level === -1 ? "B1" : level === 0 ? "G" : `${level}`
   const badgeClass = level < 0 ? "badge-basement" : level === 0 ? "badge-ground" : "badge-upper"
 
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", handleClickOutside)
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside)
+    }
+  }, [menuOpen])
+
+  function toggleFloorVisibility(checked) {
+    members.forEach((m) => {
+      onUpdate(m.dataset_id, { visible: checked, raster_visible: checked })
+    })
+  }
+
   return (
-    <div
-      className={`workspace-floor-item ${isActiveFloor ? "is-active" : ""}`}
-      onClick={() => {
-        if (member.dataset?.georeference_status !== "completed") {
-          const returnTo = window.location.pathname + window.location.search
-          window.location.href = `/datasets/${member.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
-        } else {
-          if (onSelectFloor) onSelectFloor(level)
-          onSelect(member.dataset_id, "raster")
-        }
-      }}
-    >
-      <LayerCheckbox
-        checked={member.visible && member.raster_visible}
-        label={member.floor_label || member.name}
-        onChange={(checked) => {
-          onUpdate(member.dataset_id, { visible: checked, raster_visible: checked })
+    <div className={`workspace-floor-card ${menuOpen ? "has-menu-open" : ""}`}>
+      <div
+        className={`workspace-floor-item ${isActiveFloor ? "is-active" : ""}`}
+        onClick={() => {
+          if (onSelectFloor) onSelectFloor(level, buildingName)
+          if (primaryMember) onSelect(primaryMember.dataset_id, "raster")
+          if (!allVisible) {
+            members.forEach((m) => {
+              onUpdate(m.dataset_id, { visible: true, raster_visible: true })
+            })
+          }
         }}
-      />
-      <span className={`workspace-floor-badge ${badgeClass}`}>{badgeLabel}</span>
-      <div className="workspace-floor-info">
-        <span className="workspace-floor-name" title={member.floor_label || member.name}>
-          {member.floor_label || member.name}
-        </span>
-        {isActiveFloor && <span className="workspace-floor-active-tag">Active Floor</span>}
-      </div>
-      <div className="workspace-floor-actions" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="workspace-floor-tool-btn"
-          title="Transform raster placement"
-          onClick={() => {
-            if (onOpenTransform) onOpenTransform(member)
-          }}
-        >
-          <Move />
-        </button>
-        <div className="workspace-layer-menu-wrap">
+      >
+        {isMultiLayer ? (
           <button
             type="button"
-            className="workspace-floor-tool-btn"
-            title="More actions"
-            onClick={() => setMenuOpen(!menuOpen)}
+            className="workspace-layer-disclosure"
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${label} layers`}
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpanded(!expanded)
+            }}
           >
-            <MoreHorizontal />
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </button>
-          {menuOpen && (
-            <div className="workspace-layer-popover">
-              <LayerOpacitySlider
-                datasetId={member.dataset_id}
-                opacity={member.raster_opacity}
-                onUpdate={onUpdate}
-              />
-              <button
-                type="button"
-                className="workspace-layer-feature-btn"
-                onClick={() => {
-                  if (onOpenTransform) onOpenTransform(member)
-                  setMenuOpen(false)
-                }}
-              >
-                <Move />
-                <span>Transform Raster</span>
-              </button>
-              <button
-                type="button"
-                className="workspace-layer-feature-btn"
-                onClick={() => {
-                  if (onOpenBgRemoval) onOpenBgRemoval(member)
-                  setMenuOpen(false)
-                }}
-              >
-                <Sparkles />
-                <span>Remove Background</span>
-              </button>
-              {member.dataset?.georeference_status !== "completed" && (
-                <button
-                  type="button"
-                  className="workspace-layer-feature-btn text-amber-600"
-                  onClick={() => {
-                    const returnTo = window.location.pathname + window.location.search
-                    window.location.href = `/datasets/${member.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
-                  }}
-                >
-                  <MapPin />
-                  <span>Georeference Floor</span>
-                </button>
-              )}
-              {!member.is_primary && (
-                <button
-                  type="button"
-                  className="workspace-danger-action"
-                  onClick={() => onDetach(member)}
-                >
-                  <Trash2 /> Detach floor
-                </button>
-              )}
-            </div>
+        ) : (
+          <LayerCheckbox
+            checked={allVisible}
+            label={label}
+            onChange={toggleFloorVisibility}
+          />
+        )}
+
+        <span className={`workspace-floor-badge ${badgeClass}`}>{badgeLabel}</span>
+
+        <div className="workspace-floor-info">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="workspace-floor-name" title={label}>
+              {label}
+            </span>
+            {isMultiLayer && (
+              <span className="workspace-floor-layer-pill">
+                {members.length} layers
+              </span>
+            )}
+          </div>
+          {isActiveFloor && <span className="workspace-floor-active-tag">Active Floor</span>}
+        </div>
+
+        <div className="workspace-floor-actions" onClick={(e) => e.stopPropagation()}>
+          {isMultiLayer && (
+            <LayerCheckbox
+              checked={allVisible}
+              label={label}
+              onChange={toggleFloorVisibility}
+            />
           )}
+
+          {!isMultiLayer && primaryMember && (
+            <button
+              type="button"
+              className="workspace-floor-tool-btn"
+              title="Transform raster placement"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                if (onOpenTransform) onOpenTransform(primaryMember)
+              }}
+            >
+              <Move />
+            </button>
+          )}
+
+          <div className="workspace-layer-menu-wrap" ref={menuRef}>
+            <button
+              type="button"
+              className="workspace-floor-tool-btn"
+              title="Floor actions"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setMenuOpen((prev) => !prev)
+              }}
+            >
+              <MoreHorizontal />
+            </button>
+            {menuOpen && (
+              <div className="workspace-layer-popover" onClick={(e) => e.stopPropagation()}>
+                {primaryMember && (
+                  <LayerOpacitySlider
+                    datasetId={primaryMember.dataset_id}
+                    opacity={primaryMember.raster_opacity}
+                    onUpdate={(dId, patch) => {
+                      members.forEach((m) => onUpdate(m.dataset_id, patch))
+                    }}
+                  />
+                )}
+                {primaryMember && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn"
+                    onClick={() => {
+                      if (onOpenTransform) onOpenTransform(primaryMember)
+                      setMenuOpen(false)
+                    }}
+                  >
+                    <Move />
+                    <span>Transform Raster</span>
+                  </button>
+                )}
+                {primaryMember && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn"
+                    onClick={() => {
+                      if (onOpenBgRemoval) onOpenBgRemoval(primaryMember)
+                      setMenuOpen(false)
+                    }}
+                  >
+                    <Sparkles />
+                    <span>Remove Background</span>
+                  </button>
+                )}
+                {primaryMember && primaryMember.dataset?.georeference_status !== "completed" && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn text-amber-600"
+                    onClick={() => {
+                      const returnTo = window.location.pathname + window.location.search
+                      window.location.href = `/datasets/${primaryMember.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
+                    }}
+                  >
+                    <MapPin />
+                    <span>Georeference Floor</span>
+                  </button>
+                )}
+                {isMultiLayer && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn text-blue-600"
+                    onClick={() => {
+                      setExpanded(!expanded)
+                      setMenuOpen(false)
+                    }}
+                  >
+                    <span>{expanded ? "Collapse Layers" : `Show all ${members.length} layers`}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Render child layers when expanded */}
+      {isMultiLayer && expanded && (
+        <div className="workspace-floor-child-layers">
+          {members.map((member, idx) => {
+            const rawFilename = member.name || member.dataset?.filename || `Layer ${idx + 1}`
+            const displayName = rawFilename.length > 28 ? rawFilename.slice(0, 25) + "..." : rawFilename
+
+            return (
+              <div key={member.dataset_id} className="workspace-floor-child-item">
+                <div className="workspace-floor-child-title">
+                  <LayerCheckbox
+                    checked={member.visible && member.raster_visible}
+                    label={rawFilename}
+                    onChange={(checked) => {
+                      onUpdate(member.dataset_id, { visible: checked, raster_visible: checked })
+                    }}
+                  />
+                  <Image className="size-3 text-slate-400 shrink-0" />
+                  <span title={rawFilename}>{displayName}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="workspace-floor-tool-btn"
+                    title="Transform layer"
+                    onClick={() => {
+                      if (onOpenTransform) onOpenTransform(member)
+                    }}
+                  >
+                    <Move />
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-floor-tool-btn"
+                    title="Remove background"
+                    onClick={() => {
+                      if (onOpenBgRemoval) onOpenBgRemoval(member)
+                    }}
+                  >
+                    <Sparkles />
+                  </button>
+                  {!member.is_primary && (
+                    <button
+                      type="button"
+                      className="workspace-floor-tool-btn hover:text-red-600"
+                      title="Detach dataset"
+                      onClick={() => onDetach(member)}
+                    >
+                      <Trash2 />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -245,22 +387,62 @@ function BuildingGroup({
   buildingName,
   floors,
   activeFloorLevel,
+  activeBuildingName = "",
   onSelectFloor,
   onSelect,
   onUpdate,
   onDetach,
   onOpenBgRemoval,
   onOpenTransform,
+  buildings = [],
+  onLayerChanged,
+  hasAnyGeorefInWorkspace = false,
+  floorFilter = "all",
 }) {
   const [expanded, setExpanded] = useState(true)
+  const [isPropagating, setIsPropagating] = useState(false)
   const isGeoreferenced = floors.some(
     (f) => f.dataset?.georeference_status === "completed" || f.dataset?.map_layer
   )
   const allVisible = floors.some((f) => f.visible)
   const primaryFloor = floors.find((f) => f.floor_level === 0) || floors[0]
 
-  const sortedFloors = useMemo(() => {
-    return [...floors].sort((a, b) => (a.floor_level ?? 0) - (b.floor_level ?? 0))
+  const isBuildingActive = !activeBuildingName || (buildingName.trim().toLowerCase() === activeBuildingName.trim().toLowerCase())
+
+  // Group members into distinct floor levels
+  const floorLevels = useMemo(() => {
+    const levelMap = new Map()
+    floors.forEach((m) => {
+      const lvl = m.floor_level ?? 0
+      if (!levelMap.has(lvl)) {
+        levelMap.set(lvl, {
+          level: lvl,
+          label: m.floor_label || (lvl === -1 ? "Basement" : lvl === 0 ? "Ground Floor" : `Floor ${lvl}`),
+          members: [],
+        })
+      }
+      const entry = levelMap.get(lvl)
+      entry.members.push(m)
+      if (m.floor_label && m.floor_label !== m.name && entry.label === `Floor ${lvl}`) {
+        entry.label = m.floor_label
+      }
+    })
+
+    const sorted = Array.from(levelMap.values()).sort((a, b) => b.level - a.level)
+    if (floorFilter === "active") {
+      if (isBuildingActive) {
+        return sorted.filter((fl) => fl.level === activeFloorLevel)
+      }
+      // In active floor only mode, other buildings show their matching floor level if available or all floors
+      return sorted.filter((fl) => fl.level === activeFloorLevel)
+    }
+    return sorted
+  }, [floors, floorFilter, activeFloorLevel, isBuildingActive])
+
+  const distinctFloorCount = useMemo(() => {
+    const s = new Set()
+    floors.forEach((f) => s.add(f.floor_level ?? 0))
+    return s.size
   }, [floors])
 
   function toggleMasterVisibility(checked) {
@@ -269,42 +451,82 @@ function BuildingGroup({
     })
   }
 
+  async function handleInheritFootprint() {
+    setIsPropagating(true)
+    try {
+      const bldObj = buildings?.find(
+        (b) => b.name?.toLowerCase() === buildingName?.toLowerCase()
+      )
+      const bId = bldObj?.id || floors[0]?.building_id || floors[0]?.dataset?.extracted_metadata?.building_id
+      if (bId) {
+        await propagateBuildingGeoreference(bId)
+      } else {
+        const refId = primaryFloor?.dataset_id || floors[0]?.dataset_id
+        if (refId) {
+          await propagateBuildingGeoreference(refId)
+        }
+      }
+      if (onLayerChanged) onLayerChanged()
+    } catch (err) {
+      console.warn("Failed to propagate building footprint:", err)
+    } finally {
+      setIsPropagating(false)
+    }
+  }
+
   return (
     <div className="workspace-building-container">
       <div className="workspace-building-header">
-        <button
-          type="button"
-          className="workspace-layer-disclosure"
-          aria-label={`${expanded ? "Collapse" : "Expand"} ${buildingName}`}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <ChevronDown /> : <ChevronRight />}
-        </button>
-        <Building2 className="size-4 text-blue-600 shrink-0" />
-        <LayerCheckbox
-          checked={allVisible}
-          label={buildingName}
-          onChange={toggleMasterVisibility}
-        />
-        <div className="workspace-building-title" title={buildingName}>
-          <span>{buildingName}</span>
-          <span className="workspace-building-badge">{floors.length} Floors</span>
+        <div className="workspace-building-header-main">
+          <button
+            type="button"
+            className="workspace-layer-disclosure"
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${buildingName}`}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? <ChevronDown /> : <ChevronRight />}
+          </button>
+          <Building2 className="size-4 text-blue-600 shrink-0" />
+          <LayerCheckbox
+            checked={allVisible}
+            label={buildingName}
+            onChange={toggleMasterVisibility}
+          />
+          <div className="workspace-building-title" title={buildingName}>
+            <span>{buildingName}</span>
+            <span className="workspace-building-badge">
+              {distinctFloorCount} {distinctFloorCount === 1 ? "Floor" : "Floors"}
+            </span>
+          </div>
         </div>
-        <div>
+        <div className="workspace-building-actions">
           {!isGeoreferenced ? (
-            <button
-              type="button"
-              className="text-[11px] text-amber-600 font-semibold hover:underline"
-              onClick={() => {
-                const targetId = primaryFloor?.dataset_id || floors[0]?.dataset_id
-                const returnTo = window.location.pathname + window.location.search
-                window.location.href = `/datasets/${targetId}/georeference?returnTo=${encodeURIComponent(returnTo)}`
-              }}
-            >
-              Georeference →
-            </button>
+            <>
+              {hasAnyGeorefInWorkspace && (
+                <button
+                  type="button"
+                  disabled={isPropagating}
+                  className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  title="Inherit footprint and georeference coordinates from matching floor"
+                  onClick={handleInheritFootprint}
+                >
+                  {isPropagating ? "Syncing..." : "Inherit Footprint"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-[11px] text-amber-600 font-semibold hover:underline whitespace-nowrap"
+                onClick={() => {
+                  const targetId = primaryFloor?.dataset_id || floors[0]?.dataset_id
+                  const returnTo = window.location.pathname + window.location.search
+                  window.location.href = `/datasets/${targetId}/georeference?returnTo=${encodeURIComponent(returnTo)}`
+                }}
+              >
+                Georeference →
+              </button>
+            </>
           ) : (
-            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 whitespace-nowrap">
               Georeferenced
             </span>
           )}
@@ -313,11 +535,12 @@ function BuildingGroup({
 
       {expanded && (
         <div className="workspace-building-floors">
-          {sortedFloors.map((member) => (
-            <BuildingFloorItem
-              key={member.dataset_id}
-              member={member}
-              isActiveFloor={activeFloorLevel === member.floor_level}
+          {floorLevels.map((floorObj) => (
+            <FloorLevelRow
+              key={floorObj.level}
+              floorObj={floorObj}
+              isActiveFloor={isBuildingActive && activeFloorLevel === floorObj.level}
+              buildingName={buildingName}
               onSelectFloor={onSelectFloor}
               onSelect={onSelect}
               onUpdate={onUpdate}
@@ -343,7 +566,7 @@ function SortableMember({
   onOpenBgRemoval,
   onOpenTransform,
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const sortable = useSortable({ id: member.dataset_id })
   const style = {
@@ -536,21 +759,82 @@ export default function WorkspaceLayerPanel({
   onLayerChanged,
   onOpenTransform,
   activeFloorLevel = 0,
+  activeBuildingName = "",
   onSelectFloor,
+  buildings = [],
+  isolateActiveFloor = true,
+  onToggleIsolateActiveFloor,
 }) {
   const [bgRemovalMember, setBgRemovalMember] = useState(null)
+  const [localFloorFilter, setLocalFloorFilter] = useState("active")
+  const floorFilter = onToggleIsolateActiveFloor
+    ? (isolateActiveFloor ? "active" : "all")
+    : localFloorFilter
+
+  const handleFilterChange = (mode) => {
+    if (onToggleIsolateActiveFloor) {
+      onToggleIsolateActiveFloor(mode === "active")
+    } else {
+      setLocalFloorFilter(mode)
+    }
+  }
+
   const sortedMembers = useMemo(
     () => [...members].sort((a, b) => a.sort_order - b.sort_order),
     [members],
   )
 
+  const hasAnyGeorefInWorkspace = useMemo(() => {
+    return members.some(
+      (m) => m.dataset?.georeference_status === "completed" || m.dataset?.map_layer || m.map_layer
+    )
+  }, [members])
+
   const { buildingGroups, standaloneMembers } = useMemo(() => {
     const groups = new Map()
     const standalone = []
 
+    const isFloorToken = (name) =>
+      /^(floor|flr|level|lvl|basement|ground)\b/i.test((name || "").trim())
+
+    const realBuildingNames = []
+    sortedMembers.forEach((m) => {
+      const bn = (m.building_name || "").trim()
+      if (bn && !isFloorToken(bn) && !realBuildingNames.includes(bn)) {
+        realBuildingNames.push(bn)
+      }
+    })
+    if (buildings && Array.isArray(buildings)) {
+      buildings.forEach((b) => {
+        const bn = (b.name || "").trim()
+        if (bn && !isFloorToken(bn) && !realBuildingNames.includes(bn)) {
+          realBuildingNames.push(bn)
+        }
+      })
+    }
+
     sortedMembers.forEach((member) => {
-      if (member.is_building_floor || member.building_name) {
-        const bName = member.building_name || "Building"
+      let bName = (member.building_name || "").trim()
+      const mName = (member.name || member.dataset?.filename || "").trim()
+
+      if (!bName || isFloorToken(bName)) {
+        const matchedReal = realBuildingNames.find((rn) =>
+          mName.toLowerCase().includes(rn.toLowerCase().replace(/\s+/g, "_")) ||
+          mName.toLowerCase().includes(rn.toLowerCase()) ||
+          (member.dataset?.storage_path && member.dataset.storage_path.toLowerCase().includes(rn.toLowerCase().replace(/\s+/g, "_")))
+        )
+        if (matchedReal) {
+          bName = matchedReal
+        } else if (member.is_building_floor || isFloorToken(mName) || isFloorToken(member.floor_label)) {
+          bName = realBuildingNames.length > 0 ? realBuildingNames[0] : "Building A"
+        }
+      }
+
+      if (bName === "Building 1" && realBuildingNames.some((rn) => rn.toLowerCase().startsWith("building a"))) {
+        bName = realBuildingNames.find((rn) => rn.toLowerCase().startsWith("building a"))
+      }
+
+      if (bName) {
         if (!groups.has(bName)) groups.set(bName, [])
         groups.get(bName).push(member)
       } else {
@@ -559,7 +843,17 @@ export default function WorkspaceLayerPanel({
     })
 
     return { buildingGroups: groups, standaloneMembers: standalone }
-  }, [sortedMembers])
+  }, [sortedMembers, buildings])
+
+  const totalDistinctFloors = useMemo(() => {
+    let count = 0
+    buildingGroups.forEach((floors) => {
+      const s = new Set()
+      floors.forEach((f) => s.add(f.floor_level ?? 0))
+      count += s.size
+    })
+    return count
+  }, [buildingGroups])
 
   const [orderedIds, setOrderedIds] = useState(standaloneMembers.map((member) => member.dataset_id))
   const sensors = useSensors(
@@ -596,6 +890,26 @@ export default function WorkspaceLayerPanel({
           </button>
         )}
       </div>
+
+      {buildingGroups.size > 0 && totalDistinctFloors > 1 && (
+        <div className="workspace-layer-filter-bar">
+          <button
+            type="button"
+            className={`workspace-filter-chip ${floorFilter === "all" ? "is-active" : ""}`}
+            onClick={() => handleFilterChange("all")}
+          >
+            All Floors ({totalDistinctFloors})
+          </button>
+          <button
+            type="button"
+            className={`workspace-filter-chip ${floorFilter === "active" ? "is-active" : ""}`}
+            onClick={() => handleFilterChange("active")}
+          >
+            Active Floor Only
+          </button>
+        </div>
+      )}
+
       <div className="workspace-layer-scroll">
         {/* Render building groups */}
         {Array.from(buildingGroups.entries()).map(([bName, floors]) => (
@@ -604,12 +918,17 @@ export default function WorkspaceLayerPanel({
             buildingName={bName}
             floors={floors}
             activeFloorLevel={activeFloorLevel}
+            activeBuildingName={activeBuildingName}
             onSelectFloor={onSelectFloor}
             onSelect={onSelect}
             onUpdate={onUpdate}
             onDetach={onDetach}
             onOpenBgRemoval={setBgRemovalMember}
             onOpenTransform={onOpenTransform}
+            buildings={buildings}
+            onLayerChanged={onLayerChanged}
+            hasAnyGeorefInWorkspace={hasAnyGeorefInWorkspace}
+            floorFilter={floorFilter}
           />
         ))}
 

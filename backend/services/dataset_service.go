@@ -120,11 +120,39 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		"archive_filename":     filename,
 	}
 
+	fBase := strings.TrimSuffix(filename, filepath.Ext(filename))
+	lvl, lbl := inferFloor(fBase, "")
+	bldName := inferBuilding("", fBase, "")
+	extractedMeta["floor_level"] = lvl
+	extractedMeta["floor_label"] = lbl
+	extractedMeta["building_name"] = bldName
+	extractedMeta["is_building_floor"] = true
+
 	georefStatus := "not_started"
 	var georefPath string
+	var mapLayer map[string]interface{}
 	if meta.IsGeoreferenced {
 		georefStatus = "completed"
 		georefPath = destPath
+		if meta.Bounds != nil {
+			boundsArr, normErr := gis.NormalizeBounds(meta.Bounds)
+			if normErr == nil && len(boundsArr) == 4 {
+				west, south, east, north := boundsArr[0], boundsArr[1], boundsArr[2], boundsArr[3]
+				mapLayer = map[string]interface{}{
+					"id":         "lyr_" + datasetID,
+					"name":       filename,
+					"type":       "raster",
+					"bounds":     meta.Bounds,
+					"bounds_crs": "EPSG:4326",
+					"coordinates": [][]float64{
+						{west, north},
+						{east, north},
+						{east, south},
+						{west, south},
+					},
+				}
+			}
+		}
 	}
 
 	dataset := &models.Dataset{
@@ -139,6 +167,7 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		GeoreferenceStatus: georefStatus,
 		TileStatus:         "not_started",
 		ExtractedMetadata:  extractedMeta,
+		MapLayer:           mapLayer,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
@@ -146,6 +175,34 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {
 		_ = storage.SafeRemoveAll(datasetDir)
 		return nil, err
+	}
+
+	// Register building and floor
+	buildings, _ := s.repo.ListBuildings(sessionID)
+	var bld *models.Building
+	for _, b := range buildings {
+		if strings.EqualFold(b.Name, bldName) {
+			bld = b
+			break
+		}
+	}
+	if bld == nil {
+		bld, _ = s.repo.CreateBuilding(sessionID, &models.Building{
+			Name:              bldName,
+			DefaultFloorLevel: lvl,
+		})
+	}
+	if bld != nil {
+		_, _ = s.repo.AddFloor(sessionID, bld.ID, &models.BuildingFloor{
+			Level:      lvl,
+			Name:       lbl,
+			DatasetIDs: []string{datasetID},
+		})
+	}
+
+	// Propagate if georeferenced
+	if dataset.GeoreferenceStatus == "completed" && dataset.MapLayer != nil {
+		_ = s.PropagateBuildingGeoreference(sessionID, dataset)
 	}
 	return dataset, nil
 }
@@ -171,9 +228,15 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 
 	var primaryRaster string
 	var allRasters []string
+	rasterRelPaths := make(map[string]string)
 	var totalExtracted int64
 
 	for _, file := range zipReader.File {
+		cleanEntry := filepath.ToSlash(file.Name)
+		if strings.Contains(cleanEntry, "__MACOSX") || strings.HasPrefix(filepath.Base(cleanEntry), "._") || strings.EqualFold(filepath.Base(cleanEntry), ".ds_store") {
+			continue
+		}
+
 		cleanName, err := s.storage.SafePath(extractDir, file.Name)
 		if err != nil {
 			_ = storage.SafeRemoveAll(datasetDir)
@@ -219,6 +282,7 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 				primaryRaster = cleanName
 			}
 			allRasters = append(allRasters, cleanName)
+			rasterRelPaths[cleanName] = cleanEntry
 		}
 	}
 
@@ -227,10 +291,113 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		return nil, fmt.Errorf("NO_SUPPORTED_RASTER: The ZIP archive does not contain a supported PNG, JPEG, or TIFF image")
 	}
 
+	type manifestInfo struct {
+		BuildingName string
+		FloorLevel   int
+		FloorName    string
+	}
+	manifestMap := make(map[string]*manifestInfo)
+	manifestPath := filepath.Join(extractDir, "manifest.json")
+	if fileExists(manifestPath) {
+		if data, err := os.ReadFile(manifestPath); err == nil {
+			var doc struct {
+				Buildings []struct {
+					ID         string `json:"id"`
+					BuildingID string `json:"building_id"`
+					Name       string `json:"name"`
+					Floors     []struct {
+						ID            string `json:"id"`
+						FloorID       string `json:"floor_id"`
+						Name          string `json:"name"`
+						Level         int    `json:"level"`
+						Raster        string `json:"raster"`
+						Dataset       string `json:"dataset"`
+						Path          string `json:"path"`
+						File          string `json:"file"`
+						Georeferenced bool   `json:"georeferenced"`
+					} `json:"floors"`
+				} `json:"buildings"`
+			}
+			if err := json.Unmarshal(data, &doc); err == nil {
+				for _, b := range doc.Buildings {
+					bName := strings.TrimSpace(b.Name)
+					if bName == "" {
+						bName = strings.TrimSpace(b.BuildingID)
+					}
+					if bName == "" {
+						bName = b.ID
+					}
+					for _, fl := range b.Floors {
+						rPath := fl.Raster
+						if rPath == "" {
+							rPath = fl.Dataset
+						}
+						if rPath == "" {
+							rPath = fl.Path
+						}
+						if rPath == "" {
+							rPath = fl.File
+						}
+						fName := strings.TrimSpace(fl.Name)
+						if fName == "" {
+							if fl.Level == 0 {
+								fName = "Ground Floor"
+							} else if fl.Level < 0 {
+								fName = fmt.Sprintf("Basement %d", -fl.Level)
+							} else {
+								fName = fmt.Sprintf("Floor %d", fl.Level)
+							}
+						}
+						cleanR := filepath.ToSlash(rPath)
+						info := &manifestInfo{
+							BuildingName: bName,
+							FloorLevel:   fl.Level,
+							FloorName:    fName,
+						}
+						manifestMap[cleanR] = info
+						manifestMap[filepath.Base(cleanR)] = info
+						manifestMap[strings.ToLower(cleanR)] = info
+						manifestMap[strings.ToLower(filepath.Base(cleanR))] = info
+					}
+				}
+			}
+		}
+	}
+
 	meta, err := gis.InspectRasterFile(primaryRaster)
 	if err != nil {
 		_ = storage.SafeRemoveAll(datasetDir)
 		return nil, fmt.Errorf("CORRUPTED_FILE: Failed inspecting raster inside zip: %w", err)
+	}
+
+	relPrimary := rasterRelPaths[primaryRaster]
+	if relPrimary == "" {
+		relPrimary = filepath.Base(primaryRaster)
+	}
+	relDir := filepath.ToSlash(filepath.Dir(relPrimary))
+	pBase := strings.TrimSuffix(filepath.Base(primaryRaster), filepath.Ext(primaryRaster))
+	var pBld string
+	var pLvl int
+	var pLbl string
+	if mInfo, ok := manifestMap[relPrimary]; ok {
+		pBld = mInfo.BuildingName
+		pLvl = mInfo.FloorLevel
+		pLbl = mInfo.FloorName
+	} else if mInfo, ok := manifestMap[filepath.Base(primaryRaster)]; ok {
+		pBld = mInfo.BuildingName
+		pLvl = mInfo.FloorLevel
+		pLbl = mInfo.FloorName
+	} else if mInfo, ok := manifestMap[strings.ToLower(relPrimary)]; ok {
+		pBld = mInfo.BuildingName
+		pLvl = mInfo.FloorLevel
+		pLbl = mInfo.FloorName
+	} else if mInfo, ok := manifestMap[strings.ToLower(filepath.Base(primaryRaster))]; ok {
+		pBld = mInfo.BuildingName
+		pLvl = mInfo.FloorLevel
+		pLbl = mInfo.FloorName
+	} else {
+		pBld = inferBuilding(relDir, pBase, filename)
+		pLvl, pLbl = inferFloor(pBase, relDir)
 	}
 
 	extractedMeta := map[string]interface{}{
@@ -247,13 +414,44 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		"color_interpretation": meta.ColorInterpretation,
 		"format":               strings.ToLower(meta.Driver),
 		"archive_filename":     filename,
+		"archive_entry":        relPrimary,
+		"building_name":        pBld,
+		"is_building_floor":    true,
+		"floor_level":          pLvl,
+		"floor_label":          pLbl,
 	}
 
 	georefStatus := "not_started"
 	var georefPath string
-	if meta.IsGeoreferenced {
+	var pMapLayer map[string]interface{}
+	if meta.IsGeoreferenced && meta.Bounds != nil {
 		georefStatus = "completed"
 		georefPath = primaryRaster
+		boundsArr, normErr := gis.NormalizeBounds(meta.Bounds)
+		if normErr == nil && len(boundsArr) == 4 {
+			west, south, east, north := boundsArr[0], boundsArr[1], boundsArr[2], boundsArr[3]
+			pMapLayer = map[string]interface{}{
+				"id":         "lyr_" + datasetID,
+				"name":       filepath.Base(primaryRaster),
+				"type":       "raster",
+				"bounds":     meta.Bounds,
+				"bounds_crs": "EPSG:4326",
+				"coordinates": [][]float64{
+					{west, north},
+					{east, north},
+					{east, south},
+					{west, south},
+				},
+			}
+		}
+	}
+
+	originalPrimaryRaster := primaryRaster
+	// Ensure primary raster is saved in its own datasetDir folder
+	primaryTarget := filepath.Join(datasetDir, filepath.Base(primaryRaster))
+	if data, readErr := os.ReadFile(primaryRaster); readErr == nil {
+		_ = os.WriteFile(primaryTarget, data, 0644)
+		primaryRaster = primaryTarget
 	}
 
 	dataset := &models.Dataset{
@@ -268,6 +466,7 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		GeoreferenceStatus: georefStatus,
 		TileStatus:         "not_started",
 		ExtractedMetadata:  extractedMeta,
+		MapLayer:           pMapLayer,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
@@ -312,7 +511,6 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 						dataset.GeoreferencedPath = primaryRaster
 					}
 
-					// If transform/bounds not yet set, compute georeference from control points
 					if dataset.ExtractedMetadata["transform"] == nil && len(doc.ControlPoints) >= 2 && meta.Width > 0 && meta.Height > 0 {
 						if res, err := gis.CalculateGeoreference(doc.ControlPoints, meta.Width, meta.Height, ""); err == nil && res != nil {
 							dataset.ExtractedMetadata["bounds"] = res.Bounds
@@ -344,7 +542,6 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 								"bounds_crs":  "EPSG:4326",
 								"coordinates": coordinates,
 							}
-							// Also write world file next to primary raster
 							baseExt := strings.ToLower(filepath.Ext(primaryRaster))
 							worldExt := ".wld"
 							switch baseExt {
@@ -358,37 +555,11 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 						}
 					}
 				}
-
-				if doc.Project.Configuration != nil {
-					// Remap all members to new datasetID
-					if rawMembers, ok := doc.Project.Configuration["members"].([]interface{}); ok {
-						for _, rm := range rawMembers {
-							if m, ok := rm.(map[string]interface{}); ok {
-								m["dataset_id"] = datasetID
-								m["name"] = dataset.Filename
-								if dataset.MapLayer != nil {
-									m["map_layer"] = dataset.MapLayer
-								}
-								if dataset.ExtractedMetadata["bounds"] != nil {
-									m["bounds"] = dataset.ExtractedMetadata["bounds"]
-								}
-							}
-						}
-					}
-					_ = s.repo.SaveMapProject(sessionID, &models.MapProject{
-						ID:            "proj_" + datasetID,
-						DatasetID:     datasetID,
-						Name:          doc.Project.Name,
-						Configuration: doc.Project.Configuration,
-						CreatedAt:     time.Now(),
-						UpdatedAt:     time.Now(),
-					})
-				}
 			}
 		}
 	}
 
-	// 2. Check metadata.json for bounds fallback
+	// Check metadata.json for bounds fallback
 	metaJSONPath := filepath.Join(extractDir, "metadata.json")
 	if fileExists(metaJSONPath) {
 		if data, err := os.ReadFile(metaJSONPath); err == nil {
@@ -431,6 +602,346 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		_ = storage.SafeRemoveAll(datasetDir)
 		return nil, err
 	}
+
+	allCreatedDatasets := []*models.Dataset{dataset}
+
+	// 3. Extract and register all additional rasters in archive (e.g. multi-floor building plans)
+	for _, extraPath := range allRasters {
+		if extraPath == originalPrimaryRaster || extraPath == primaryRaster {
+			continue
+		}
+		extraID := repository.GenerateDatasetID()
+		extraDir := s.storage.GetDatasetDir(sessionID, extraID)
+		_ = os.MkdirAll(extraDir, 0755)
+
+		extraBase := filepath.Base(extraPath)
+		targetRasterPath := filepath.Join(extraDir, extraBase)
+		if data, readErr := os.ReadFile(extraPath); readErr == nil {
+			_ = os.WriteFile(targetRasterPath, data, 0644)
+		} else {
+			targetRasterPath = extraPath
+		}
+
+		// Copy any matching sidecars
+		srcDir := filepath.Dir(extraPath)
+		extraBaseNoExt := strings.TrimSuffix(extraBase, filepath.Ext(extraBase))
+		for _, sExt := range []string{".pgw", ".jgw", ".wld", ".tfw", ".prj"} {
+			if scData, scErr := os.ReadFile(filepath.Join(srcDir, extraBaseNoExt+sExt)); scErr == nil {
+				_ = os.WriteFile(filepath.Join(extraDir, extraBaseNoExt+sExt), scData, 0644)
+			}
+		}
+
+		extraMeta, err := gis.InspectRasterFile(targetRasterPath)
+		if err != nil {
+			continue
+		}
+
+		extraRel := rasterRelPaths[extraPath]
+		if extraRel == "" {
+			extraRel = extraBase
+		}
+		extraRelDir := filepath.ToSlash(filepath.Dir(extraRel))
+		var eBld string
+		var eLvl int
+		var eLbl string
+		if mInfo, ok := manifestMap[extraRel]; ok {
+			eBld = mInfo.BuildingName
+			eLvl = mInfo.FloorLevel
+			eLbl = mInfo.FloorName
+		} else if mInfo, ok := manifestMap[extraBase]; ok {
+			eBld = mInfo.BuildingName
+			eLvl = mInfo.FloorLevel
+			eLbl = mInfo.FloorName
+		} else if mInfo, ok := manifestMap[strings.ToLower(extraRel)]; ok {
+			eBld = mInfo.BuildingName
+			eLvl = mInfo.FloorLevel
+			eLbl = mInfo.FloorName
+		} else if mInfo, ok := manifestMap[strings.ToLower(extraBase)]; ok {
+			eBld = mInfo.BuildingName
+			eLvl = mInfo.FloorLevel
+			eLbl = mInfo.FloorName
+		} else {
+			eBld = inferBuilding(extraRelDir, extraBaseNoExt, filename)
+			eLvl, eLbl = inferFloor(extraBaseNoExt, extraRelDir)
+		}
+
+		eGeorefStatus := "not_started"
+		var eGeorefPath string
+		var extraLayer map[string]interface{}
+		if extraMeta.IsGeoreferenced && extraMeta.Bounds != nil {
+			eGeorefStatus = "completed"
+			eGeorefPath = targetRasterPath
+			boundsArr, normErr := gis.NormalizeBounds(extraMeta.Bounds)
+			if normErr == nil && len(boundsArr) == 4 {
+				west, south, east, north := boundsArr[0], boundsArr[1], boundsArr[2], boundsArr[3]
+				extraLayer = map[string]interface{}{
+					"id":         "lyr_" + extraID,
+					"name":       extraBase,
+					"type":       "raster",
+					"bounds":     extraMeta.Bounds,
+					"bounds_crs": "EPSG:4326",
+					"coordinates": [][]float64{
+						{west, north},
+						{east, north},
+						{east, south},
+						{west, south},
+					},
+				}
+			}
+		}
+
+		extraExtracted := map[string]interface{}{
+			"driver":               extraMeta.Driver,
+			"width":                extraMeta.Width,
+			"height":               extraMeta.Height,
+			"bands":                extraMeta.Bands,
+			"dtype":                extraMeta.DType,
+			"crs":                  extraMeta.CRS,
+			"bounds":               extraMeta.Bounds,
+			"resolution":           extraMeta.Resolution,
+			"transform":            extraMeta.Transform,
+			"georeference_source":  extraMeta.GeoreferenceSource,
+			"color_interpretation": extraMeta.ColorInterpretation,
+			"format":               strings.ToLower(extraMeta.Driver),
+			"archive_filename":     filename,
+			"archive_entry":        extraRel,
+			"building_name":        eBld,
+			"is_building_floor":    true,
+			"floor_level":          eLvl,
+			"floor_label":          eLbl,
+		}
+
+		extraFi, _ := os.Stat(targetRasterPath)
+		extraSize := int64(0)
+		if extraFi != nil {
+			extraSize = extraFi.Size()
+		}
+
+		extraDs := &models.Dataset{
+			ID:                 extraID,
+			SessionID:          sessionID,
+			Filename:           extraBase,
+			FileSize:           extraSize,
+			ContentType:        SupportedRasterExtensions[strings.ToLower(filepath.Ext(targetRasterPath))],
+			StoragePath:        targetRasterPath,
+			GeoreferencedPath:  eGeorefPath,
+			GeoreferenceStatus: eGeorefStatus,
+			TileStatus:         "not_started",
+			ExtractedMetadata:  extraExtracted,
+			MapLayer:           extraLayer,
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+		_ = s.repo.InsertDataset(sessionID, extraDs)
+		allCreatedDatasets = append(allCreatedDatasets, extraDs)
+	}
+
+	// 4. Group all created floors by building and register Building & Floor models
+	buildingFloorsMap := make(map[string][]*models.Dataset)
+	for _, ds := range allCreatedDatasets {
+		bName, _ := ds.ExtractedMetadata["building_name"].(string)
+		if bName == "" {
+			bName = "Building 1"
+		}
+		buildingFloorsMap[bName] = append(buildingFloorsMap[bName], ds)
+	}
+
+	for bName, floorDatasets := range buildingFloorsMap {
+		buildings, _ := s.repo.ListBuildings(sessionID)
+		var bld *models.Building
+		for _, b := range buildings {
+			if strings.EqualFold(b.Name, bName) {
+				bld = b
+				break
+			}
+		}
+		if bld == nil {
+			defLvl := 0
+			if len(floorDatasets) > 0 {
+				if l, ok := floorDatasets[0].ExtractedMetadata["floor_level"].(int); ok {
+					defLvl = l
+				}
+			}
+			bld, _ = s.repo.CreateBuilding(sessionID, &models.Building{
+				Name:              bName,
+				DefaultFloorLevel: defLvl,
+			})
+		}
+		if bld != nil {
+			for _, ds := range floorDatasets {
+				lvl := 0
+				if l, ok := ds.ExtractedMetadata["floor_level"].(int); ok {
+					lvl = l
+				}
+				lbl, _ := ds.ExtractedMetadata["floor_label"].(string)
+				if lbl == "" {
+					lbl = ds.Filename
+				}
+				exists := false
+				for _, fl := range bld.Floors {
+					if fl.Level == lvl {
+						fl.DatasetIDs = append(fl.DatasetIDs, ds.ID)
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					_, _ = s.repo.AddFloor(sessionID, bld.ID, &models.BuildingFloor{
+						Level:      lvl,
+						Name:       lbl,
+						DatasetIDs: []string{ds.ID},
+					})
+				}
+			}
+		}
+	}
+
+	// 5. If ANY floor has a georeference, propagate it to all other floors in that building
+	for _, ds := range allCreatedDatasets {
+		if ds.GeoreferenceStatus == "completed" && ds.ExtractedMetadata["bounds"] != nil {
+			_ = s.PropagateBuildingGeoreference(sessionID, ds)
+		}
+	}
+
+	// Reload datasets to reflect any propagated bounds
+	var reloadedDatasets []*models.Dataset
+	for _, ds := range allCreatedDatasets {
+		if updated, err := s.repo.GetDataset(sessionID, ds.ID); err == nil && updated != nil {
+			reloadedDatasets = append(reloadedDatasets, updated)
+			if updated.ID == dataset.ID {
+				dataset = updated
+			}
+		} else {
+			reloadedDatasets = append(reloadedDatasets, ds)
+		}
+	}
+
+	// 6. Build MapProject members list so workspace immediately contains all floors
+	var membersList []map[string]interface{}
+	for idx, ds := range reloadedDatasets {
+		lvl, _ := ds.ExtractedMetadata["floor_level"].(int)
+		lbl, _ := ds.ExtractedMetadata["floor_label"].(string)
+		bName, _ := ds.ExtractedMetadata["building_name"].(string)
+		membersList = append(membersList, map[string]interface{}{
+			"dataset_id":             ds.ID,
+			"name":                   ds.Filename,
+			"floor_label":            lbl,
+			"floor_level":            lvl,
+			"building_name":          bName,
+			"is_building_floor":      true,
+			"visible":                true,
+			"raster_visible":         true,
+			"raster_opacity":         1.0,
+			"control_points_visible": true,
+			"icon_points_visible":    true,
+			"sort_order":             idx,
+			"bounds":                 ds.ExtractedMetadata["bounds"],
+			"map_layer":              ds.MapLayer,
+		})
+	}
+
+	for _, ds := range reloadedDatasets {
+		_ = s.repo.SaveMapProject(sessionID, &models.MapProject{
+			ID:        "proj_" + ds.ID,
+			DatasetID: ds.ID,
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Configuration: map[string]interface{}{
+				"active_view": "map",
+				"members":     membersList,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}
+
+	// 7. Expose imported_datasets list so frontend gets all floor datasets
+	var importedList []map[string]interface{}
+	for _, ds := range reloadedDatasets {
+		importedList = append(importedList, map[string]interface{}{
+			"id":                  ds.ID,
+			"name":                ds.Filename,
+			"is_georeferenced":    ds.GeoreferenceStatus == "completed",
+			"georeference_status": ds.GeoreferenceStatus,
+		})
+	}
+	dataset.ExtractedMetadata["imported_datasets"] = importedList
+	_ = s.repo.UpdateDataset(sessionID, dataset)
+
+	// 8. Restore selective layer settings, background removal, and icon points if exported project package
+	for _, ds := range reloadedDatasets {
+		// Check for layer.json in layers/{ds.ID} or layers/{origID}
+		var layerJSONPaths []string
+		_ = filepath.Walk(extractDir, func(p string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() && filepath.Base(p) == "layer.json" {
+				layerJSONPaths = append(layerJSONPaths, p)
+			}
+			return nil
+		})
+		for _, ljp := range layerJSONPaths {
+			if data, err := os.ReadFile(ljp); err == nil {
+				var lDoc struct {
+					ID                string                 `json:"id"`
+					Filename          string                 `json:"filename"`
+					MapLayer          map[string]interface{} `json:"map_layer"`
+					BackgroundRemoval map[string]interface{} `json:"background_removal"`
+					RasterTransform   map[string]interface{} `json:"raster_transform"`
+					RasterCorners     interface{}            `json:"raster_corners"`
+					RasterOpacity     interface{}            `json:"raster_opacity"`
+					ControlPoints     []*models.ControlPoint `json:"control_points"`
+				}
+				if json.Unmarshal(data, &lDoc) == nil {
+					if lDoc.ID == ds.ID || strings.EqualFold(lDoc.Filename, ds.Filename) {
+						if lDoc.MapLayer != nil && ds.MapLayer == nil {
+							ds.MapLayer = lDoc.MapLayer
+						}
+						if lDoc.BackgroundRemoval != nil {
+							ds.ExtractedMetadata["background_removal"] = lDoc.BackgroundRemoval
+							// If transparent png exists in layer dir or processed/
+							tPath := filepath.Join(filepath.Dir(ljp), "processed_transparent.png")
+							if fileExists(tPath) {
+								destProcDir := filepath.Join(filepath.Dir(ds.StoragePath), "processed")
+								_ = os.MkdirAll(destProcDir, 0755)
+								if tBytes, rErr := os.ReadFile(tPath); rErr == nil {
+									_ = os.WriteFile(filepath.Join(destProcDir, "processed_transparent.png"), tBytes, 0644)
+								}
+							}
+						}
+						if lDoc.RasterTransform != nil {
+							ds.ExtractedMetadata["raster_transform"] = lDoc.RasterTransform
+						}
+						if lDoc.RasterCorners != nil {
+							ds.ExtractedMetadata["raster_corners"] = lDoc.RasterCorners
+						}
+						if lDoc.RasterOpacity != nil {
+							ds.ExtractedMetadata["raster_opacity"] = lDoc.RasterOpacity
+						}
+						if len(lDoc.ControlPoints) > 0 {
+							for _, p := range lDoc.ControlPoints {
+								p.DatasetID = ds.ID
+							}
+							_ = s.repo.SetControlPoints(sessionID, ds.ID, lDoc.ControlPoints)
+						}
+						_ = s.repo.UpdateDataset(sessionID, ds)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Restore icon points if present
+	iconPointsPath := filepath.Join(extractDir, "icons", "icon_points.json")
+	if fileExists(iconPointsPath) {
+		if data, err := os.ReadFile(iconPointsPath); err == nil {
+			var iconPoints []*models.IconPoint
+			if json.Unmarshal(data, &iconPoints) == nil && len(iconPoints) > 0 {
+				for _, ip := range iconPoints {
+					_, _ = s.repo.CreateIconPoint(sessionID, ip)
+				}
+			}
+		}
+	}
+
 	return dataset, nil
 }
 
@@ -576,6 +1087,93 @@ func (s *DatasetService) InspectArchive(sessionID string, header *multipart.File
 	tempInspectDir := filepath.Join(importsDir, "staging")
 	_ = os.MkdirAll(tempInspectDir, 0755)
 
+	type manifestFloorInfo struct {
+		BuildingName string
+		FloorLevel   int
+		FloorName    string
+		DisplayName  string
+	}
+	manifestMap := make(map[string]*manifestFloorInfo)
+
+	var manifestFile *zip.File
+	for name, f := range allEntryNames {
+		if strings.EqualFold(filepath.Base(name), "manifest.json") {
+			manifestFile = f
+			break
+		}
+	}
+
+	if manifestFile != nil {
+		if mRc, err := manifestFile.Open(); err == nil {
+			var doc struct {
+				Buildings []struct {
+					ID         string `json:"id"`
+					BuildingID string `json:"building_id"`
+					Name       string `json:"name"`
+					Floors     []struct {
+						ID            string `json:"id"`
+						FloorID       string `json:"floor_id"`
+						Name          string `json:"name"`
+						Level         int    `json:"level"`
+						Raster        string `json:"raster"`
+						Dataset       string `json:"dataset"`
+						Path          string `json:"path"`
+						File          string `json:"file"`
+						Georeferenced bool   `json:"georeferenced"`
+					} `json:"floors"`
+				} `json:"buildings"`
+			}
+			if data, readErr := io.ReadAll(io.LimitReader(mRc, 5*1024*1024)); readErr == nil {
+				if json.Unmarshal(data, &doc) == nil {
+					for _, bld := range doc.Buildings {
+						bldName := strings.TrimSpace(bld.Name)
+						if bldName == "" {
+							bldName = strings.TrimSpace(bld.BuildingID)
+						}
+						if bldName == "" {
+							bldName = bld.ID
+						}
+						for _, fl := range bld.Floors {
+							rPath := fl.Raster
+							if rPath == "" {
+								rPath = fl.Dataset
+							}
+							if rPath == "" {
+								rPath = fl.Path
+							}
+							if rPath == "" {
+								rPath = fl.File
+							}
+							cleanRaster := filepath.ToSlash(rPath)
+							flName := strings.TrimSpace(fl.Name)
+							if flName == "" {
+								if fl.Level == 0 {
+									flName = "Ground Floor"
+								} else if fl.Level < 0 {
+									flName = fmt.Sprintf("Basement %d", -fl.Level)
+								} else {
+									flName = fmt.Sprintf("Floor %d", fl.Level)
+								}
+							}
+							dispName := fmt.Sprintf("%s %s", bldName, flName)
+							info := &manifestFloorInfo{
+								BuildingName: bldName,
+								FloorLevel:   fl.Level,
+								FloorName:    flName,
+								DisplayName:  dispName,
+							}
+							manifestMap[cleanRaster] = info
+							manifestMap[filepath.Base(cleanRaster)] = info
+							manifestMap[strings.ToLower(cleanRaster)] = info
+							manifestMap[strings.ToLower(filepath.Base(cleanRaster))] = info
+						}
+					}
+				}
+			}
+			mRc.Close()
+		}
+	}
+
 	var candidates []*ArchiveCandidate
 	archiveBase := strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
 
@@ -636,16 +1234,42 @@ func (s *DatasetService) InspectArchive(sessionID string, header *multipart.File
 			rc.Close()
 		}
 
-		suggestedBld := inferBuilding(dir, archiveBase)
-		suggestedFloor, suggestedFloorLabel := inferFloor(base, dir)
+		var suggestedBld string
+		var suggestedFloor int
+		var suggestedFloorLabel string
+		var cleanDisplayName string
+
+		if info, ok := manifestMap[entryClean]; ok {
+			suggestedBld = info.BuildingName
+			suggestedFloor = info.FloorLevel
+			suggestedFloorLabel = info.FloorName
+			cleanDisplayName = info.DisplayName
+		} else if info, ok := manifestMap[filepath.Base(entryClean)]; ok {
+			suggestedBld = info.BuildingName
+			suggestedFloor = info.FloorLevel
+			suggestedFloorLabel = info.FloorName
+			cleanDisplayName = info.DisplayName
+		} else if info, ok := manifestMap[strings.ToLower(entryClean)]; ok {
+			suggestedBld = info.BuildingName
+			suggestedFloor = info.FloorLevel
+			suggestedFloorLabel = info.FloorName
+			cleanDisplayName = info.DisplayName
+		} else if info, ok := manifestMap[strings.ToLower(filepath.Base(entryClean))]; ok {
+			suggestedBld = info.BuildingName
+			suggestedFloor = info.FloorLevel
+			suggestedFloorLabel = info.FloorName
+			cleanDisplayName = info.DisplayName
+		} else {
+			suggestedBld = inferBuilding(dir, base, archiveBase)
+			suggestedFloor, suggestedFloorLabel = inferFloor(base, dir)
+			cleanDisplayName = strings.Title(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
+		}
 
 		status := "ready"
 		var warnings []string
 		if !isGeoref {
-			warnings = append(warnings, "No georeferencing metadata found. Layer will require manual georeferencing.")
+			warnings = append(warnings, "No georeferencing metadata found. Layer will inherit building footprint or require manual georeferencing.")
 		}
-
-		cleanDisplayName := strings.Title(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
 
 		candidates = append(candidates, &ArchiveCandidate{
 			EntryPath:           entryClean,
@@ -931,6 +1555,88 @@ func (s *DatasetService) ImportArchiveSelected(sessionID string, token string, s
 		})
 	}
 
+	// Propagate building footprint/georeferencing to sibling floors that lack it
+	if buildings, err := s.repo.ListBuildings(sessionID); err == nil {
+		for _, bld := range buildings {
+			var refDataset *models.Dataset
+			for _, fl := range bld.Floors {
+				for _, dID := range fl.DatasetIDs {
+					if ds, err := s.repo.GetDataset(sessionID, dID); err == nil && ds != nil {
+						if ds.GeoreferenceStatus == "completed" && ds.MapLayer != nil {
+							refDataset = ds
+							break
+						}
+					}
+				}
+				if refDataset != nil {
+					break
+				}
+			}
+
+			if refDataset != nil {
+				_ = s.PropagateBuildingGeoreference(sessionID, refDataset)
+			}
+		}
+	}
+
+	// Build or update MapProject so the workspace immediately contains all imported datasets
+	if len(results) > 0 {
+		var firstID string
+		var membersList []map[string]interface{}
+		for idx, res := range results {
+			if res.DatasetID != "" {
+				if firstID == "" {
+					firstID = res.DatasetID
+				}
+				ds, _ := s.repo.GetDataset(sessionID, res.DatasetID)
+				if ds != nil {
+					lvl, _ := ds.ExtractedMetadata["floor_level"].(int)
+					lbl, _ := ds.ExtractedMetadata["floor_label"].(string)
+					bName, _ := ds.ExtractedMetadata["building_name"].(string)
+					membersList = append(membersList, map[string]interface{}{
+						"dataset_id":             ds.ID,
+						"name":                   ds.Filename,
+						"floor_label":            lbl,
+						"floor_level":            lvl,
+						"building_name":          bName,
+						"is_building_floor":      true,
+						"visible":                true,
+						"raster_visible":         true,
+						"raster_opacity":         1.0,
+						"control_points_visible": true,
+						"icon_points_visible":    true,
+						"sort_order":             idx,
+						"bounds":                 ds.ExtractedMetadata["bounds"],
+						"map_layer":              ds.MapLayer,
+					})
+				}
+			}
+		}
+		if firstID != "" {
+			_ = s.repo.SaveMapProject(sessionID, &models.MapProject{
+				ID:        "proj_" + firstID,
+				DatasetID: firstID,
+				Name:      "Workspace",
+				Configuration: map[string]interface{}{
+					"active_view": "map",
+					"members":     membersList,
+				},
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			})
+		}
+	}
+
+	// Update response results with any mutated dataset records after inheritance
+	for _, res := range results {
+		if res.DatasetID != "" {
+			if updatedDs, err := s.repo.GetDataset(sessionID, res.DatasetID); err == nil && updatedDs != nil {
+				res.Dataset = updatedDs
+				res.Status = "imported"
+			}
+		}
+	}
+
 	return &ImportArchiveResponse{
 		ImportedCount: importedCount,
 		FailedCount:   failedCount,
@@ -938,47 +1644,395 @@ func (s *DatasetService) ImportArchiveSelected(sessionID string, token string, s
 	}, nil
 }
 
+func isFloorFolderToken(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	prefixes := []string{"floor", "flr", "fl_", "fl-", "level", "lvl", "storey", "story", "basement", "b1", "b2", "b3", "b4", "ground", "cellar", "roof", "terrace", "first", "second", "third"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) || strings.EqualFold(lower, p) {
+			return true
+		}
+	}
+	if len(lower) == 2 && (lower[1] == 'f' || lower[1] == 'l') && lower[0] >= '0' && lower[0] <= '9' {
+		return true
+	}
+	for _, num := range []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+		if strings.HasSuffix(lower, num) && (strings.Contains(lower, "floor") || strings.Contains(lower, "flr") || strings.Contains(lower, "lvl") || strings.Contains(lower, "level") || strings.Contains(lower, "basement")) {
+			return true
+		}
+	}
+	return false
+}
+
 func inferFloor(name, folder string) (int, string) {
-	combined := strings.ToLower(name + " " + folder)
-	if strings.Contains(combined, "basement 2") || strings.Contains(combined, "b2") || strings.Contains(combined, "sub-basement") {
+	combined := strings.ToLower(filepath.ToSlash(name + " " + folder))
+	cleanBase := strings.ToLower(strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))
+
+	// Check Basements (negative floors)
+	if strings.Contains(combined, "basement 4") || strings.Contains(combined, "b4") || (strings.HasSuffix(cleanBase, "_-4") || strings.HasSuffix(cleanBase, "-4")) && strings.Contains(cleanBase, "basement") {
+		return -4, "Basement 4"
+	}
+	if strings.Contains(combined, "basement 3") || strings.Contains(combined, "b3") || (strings.HasSuffix(cleanBase, "_-3") || strings.HasSuffix(cleanBase, "-3")) && strings.Contains(cleanBase, "basement") {
+		return -3, "Basement 3"
+	}
+	if strings.Contains(combined, "basement 2") || strings.Contains(combined, "b2") || strings.Contains(combined, "sub-basement") || (strings.HasSuffix(cleanBase, "_-2") || strings.HasSuffix(cleanBase, "-2")) && strings.Contains(cleanBase, "basement") {
 		return -2, "Basement 2"
 	}
-	if strings.Contains(combined, "basement 1") || strings.Contains(combined, "basement") || strings.Contains(combined, "b1") || strings.Contains(combined, "cellar") {
+	if strings.Contains(combined, "basement 1") || strings.Contains(combined, "basement") || strings.Contains(combined, "b1") || strings.Contains(combined, "cellar") || strings.Contains(combined, "floor_b") || strings.Contains(combined, "floor-b") || strings.HasSuffix(cleanBase, "_-1") || (strings.HasSuffix(cleanBase, "-1") && strings.Contains(cleanBase, "basement")) {
 		return -1, "Basement 1"
 	}
-	if strings.Contains(combined, "ground") || strings.Contains(combined, "floor 0") || strings.Contains(combined, "level 0") || strings.Contains(combined, "g-floor") {
+
+	// Check Roof / Terrace
+	if strings.Contains(combined, "roof") || strings.Contains(combined, "terrace") {
+		return 99, "Roof / Terrace"
+	}
+
+	// Check Ground
+	if strings.Contains(combined, "ground") || strings.Contains(combined, "floor_g") || strings.Contains(combined, "floor-g") || strings.Contains(combined, "floor g") || strings.Contains(combined, "floor_0") || strings.Contains(combined, "floor 0") || strings.Contains(combined, "level 0") || strings.Contains(combined, "lvl 0") || strings.Contains(combined, "g-floor") || strings.Contains(combined, "g_floor") || strings.Contains(combined, "0f") || strings.HasSuffix(cleanBase, "_0") || strings.HasSuffix(cleanBase, "-0") {
 		return 0, "Ground Floor"
 	}
-	if strings.Contains(combined, "first floor") || strings.Contains(combined, "floor 1") || strings.Contains(combined, "level 1") || strings.Contains(combined, "1st floor") || strings.Contains(combined, "1f") {
+
+	// Suffix and word checks for upper floors
+	if strings.Contains(combined, "first") || strings.Contains(combined, "1st") || strings.HasSuffix(cleanBase, "_1") || (strings.HasSuffix(cleanBase, "-1") && !strings.Contains(cleanBase, "basement")) {
 		return 1, "First Floor"
 	}
-	if strings.Contains(combined, "second floor") || strings.Contains(combined, "floor 2") || strings.Contains(combined, "level 2") || strings.Contains(combined, "2nd floor") || strings.Contains(combined, "2f") {
+	if strings.Contains(combined, "second") || strings.Contains(combined, "2nd") || strings.HasSuffix(cleanBase, "_2") || strings.HasSuffix(cleanBase, "-2") {
 		return 2, "Second Floor"
 	}
-	if strings.Contains(combined, "third floor") || strings.Contains(combined, "floor 3") || strings.Contains(combined, "level 3") || strings.Contains(combined, "3rd floor") || strings.Contains(combined, "3f") {
+	if strings.Contains(combined, "third") || strings.Contains(combined, "3rd") || strings.HasSuffix(cleanBase, "_3") || strings.HasSuffix(cleanBase, "-3") {
 		return 3, "Third Floor"
 	}
-	if strings.Contains(combined, "roof") || strings.Contains(combined, "terrace") {
-		return 4, "Roof / Terrace"
+	if strings.Contains(combined, "fourth") || strings.Contains(combined, "4th") || strings.HasSuffix(cleanBase, "_4") || strings.HasSuffix(cleanBase, "-4") {
+		return 4, "Fourth Floor"
 	}
+	if strings.Contains(combined, "fifth") || strings.Contains(combined, "5th") || strings.HasSuffix(cleanBase, "_5") || strings.HasSuffix(cleanBase, "-5") {
+		return 5, "Fifth Floor"
+	}
+
+	// Numbered floors
+	for lvl := 15; lvl >= 1; lvl-- {
+		pats := []string{
+			fmt.Sprintf("floor %d", lvl),
+			fmt.Sprintf("floor_%d", lvl),
+			fmt.Sprintf("floor-%d", lvl),
+			fmt.Sprintf("floor%d", lvl),
+			fmt.Sprintf("level %d", lvl),
+			fmt.Sprintf("level_%d", lvl),
+			fmt.Sprintf("level-%d", lvl),
+			fmt.Sprintf("level%d", lvl),
+			fmt.Sprintf("lvl %d", lvl),
+			fmt.Sprintf("lvl_%d", lvl),
+			fmt.Sprintf("lvl-%d", lvl),
+			fmt.Sprintf("flr %d", lvl),
+			fmt.Sprintf("flr_%d", lvl),
+			fmt.Sprintf("fl_%d", lvl),
+			fmt.Sprintf("%df", lvl),
+		}
+		for _, pat := range pats {
+			if strings.Contains(combined, pat) {
+				return lvl, fmt.Sprintf("Floor %d", lvl)
+			}
+		}
+	}
+
 	return 0, "Ground Floor"
 }
 
-func inferBuilding(folder, archiveName string) string {
+func inferBuilding(folder, filename, archiveName string) string {
 	parts := strings.Split(filepath.ToSlash(folder), "/")
 	for i := len(parts) - 1; i >= 0; i-- {
 		part := strings.TrimSpace(parts[i])
-		if part != "" && part != "." && !strings.EqualFold(part, "source") && !strings.EqualFold(part, "images") && !strings.EqualFold(part, "rasters") {
-			clean := strings.ReplaceAll(part, "-", " ")
-			clean = strings.ReplaceAll(clean, "_", " ")
-			return strings.Title(strings.ToLower(clean))
+		if part == "" || part == "." || strings.EqualFold(part, "source") || strings.EqualFold(part, "images") || strings.EqualFold(part, "rasters") {
+			continue
+		}
+		if isFloorFolderToken(part) {
+			continue
+		}
+		clean := strings.ReplaceAll(part, "-", " ")
+		clean = strings.ReplaceAll(clean, "_", " ")
+		if isFloorFolderToken(clean) {
+			continue
+		}
+		return strings.Title(strings.ToLower(clean))
+	}
+	if filename != "" {
+		base := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		lower := strings.ToLower(base)
+		floorIdx := -1
+		for _, token := range []string{"_floor", "-floor", " floor", "_flr", "-flr", "_lvl", "-lvl", "_level", "-level", "_b1", "_b2", "_b3", "_b4", "_g"} {
+			if idx := strings.Index(lower, token); idx > 0 {
+				floorIdx = idx
+				break
+			}
+		}
+		if floorIdx > 0 {
+			bldPart := strings.TrimSpace(base[:floorIdx])
+			if len(bldPart) > 1 && !isFloorFolderToken(bldPart) {
+				clean := strings.ReplaceAll(strings.ReplaceAll(bldPart, "-", " "), "_", " ")
+				if !isFloorFolderToken(clean) {
+					return strings.Title(strings.ToLower(clean))
+				}
+			}
+		} else if !isFloorFolderToken(base) {
+			clean := strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " ")
+			if !isFloorFolderToken(clean) && len(clean) > 0 {
+				return strings.Title(strings.ToLower(clean))
+			}
 		}
 	}
 	if archiveName != "" {
 		base := strings.TrimSuffix(archiveName, filepath.Ext(archiveName))
 		clean := strings.ReplaceAll(base, "-", " ")
 		clean = strings.ReplaceAll(clean, "_", " ")
-		return strings.Title(strings.ToLower(clean))
+		if !isFloorFolderToken(clean) {
+			return strings.Title(strings.ToLower(clean))
+		}
 	}
-	return "Building"
+	return "Building 1"
+}
+
+// PropagateBuildingGeoreference delegates building-wide spatial propagation to the shared service helper.
+func (s *DatasetService) PropagateBuildingGeoreference(sessionID string, refDataset *models.Dataset) error {
+	return PropagateBuildingGeoreference(s.repo, s.storage, sessionID, refDataset)
+}
+
+// ConsolidateSessionBuildings delegates pseudo-building consolidation and footprint propagation.
+func (s *DatasetService) ConsolidateSessionBuildings(sessionID string) error {
+	return ConsolidateSessionBuildings(s.repo, s.storage, sessionID)
+}
+
+// StorageManager returns the active StorageManager.
+func (s *DatasetService) StorageManager() *storage.StorageManager {
+	return s.storage
+}
+
+// LocateOrRestoreDatasetImage attempts to locate the dataset's raster image on disk or re-extract it from an archive if displaced or missing.
+func (s *DatasetService) LocateOrRestoreDatasetImage(dataset *models.Dataset) string {
+	if dataset == nil {
+		return ""
+	}
+
+	// 1. If StoragePath exists and is non-empty, verify on disk
+	if dataset.StoragePath != "" && fileExists(dataset.StoragePath) {
+		return dataset.StoragePath
+	}
+
+	// 2. Check ProcessedPath if it's an image
+	if dataset.ProcessedPath != "" && fileExists(dataset.ProcessedPath) {
+		ext := strings.ToLower(filepath.Ext(dataset.ProcessedPath))
+		if SupportedRasterExtensions[ext] != "" && ext != ".vrt" {
+			return dataset.ProcessedPath
+		}
+	}
+
+	// 3. Check GeoreferencedPath if it's an image
+	if dataset.GeoreferencedPath != "" && fileExists(dataset.GeoreferencedPath) {
+		ext := strings.ToLower(filepath.Ext(dataset.GeoreferencedPath))
+		if SupportedRasterExtensions[ext] != "" && ext != ".vrt" {
+			return dataset.GeoreferencedPath
+		}
+	}
+
+	// 4. Resolve session and dataset directories
+	datasetDir := s.storage.GetDatasetDir(dataset.SessionID, dataset.ID)
+	sessionDir := s.storage.GetSessionDir(dataset.SessionID)
+
+	targetFilename := dataset.Filename
+	if targetFilename == "" && dataset.StoragePath != "" {
+		targetFilename = filepath.Base(dataset.StoragePath)
+	}
+
+	var archiveEntry string
+	if dataset.ExtractedMetadata != nil {
+		if ae, ok := dataset.ExtractedMetadata["archive_entry"].(string); ok && ae != "" {
+			archiveEntry = ae
+		}
+	}
+
+	// 5. Walk datasetDir recursively to see if file is located anywhere in the dataset directory
+	if fileExists(datasetDir) {
+		var foundPath string
+		_ = filepath.Walk(datasetDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(path))
+			if SupportedRasterExtensions[ext] == "" || ext == ".vrt" {
+				return nil
+			}
+			base := filepath.Base(path)
+			if strings.EqualFold(base, targetFilename) ||
+				(archiveEntry != "" && strings.EqualFold(base, filepath.Base(archiveEntry))) ||
+				(dataset.StoragePath != "" && strings.EqualFold(base, filepath.Base(dataset.StoragePath))) {
+				foundPath = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if foundPath != "" && fileExists(foundPath) {
+			dataset.StoragePath = foundPath
+			_ = s.repo.UpdateDataset(dataset.SessionID, dataset)
+			return foundPath
+		}
+	}
+
+	// 6. Look for any zip files in datasetDir or sessionDir
+	var zipCandidates []string
+	if fileExists(datasetDir) {
+		if matches, err := filepath.Glob(filepath.Join(datasetDir, "*.zip")); err == nil {
+			zipCandidates = append(zipCandidates, matches...)
+		}
+	}
+	if dataset.ExtractedMetadata != nil {
+		if archFn, ok := dataset.ExtractedMetadata["archive_filename"].(string); ok && archFn != "" {
+			cand := filepath.Join(datasetDir, archFn)
+			if fileExists(cand) {
+				zipCandidates = append(zipCandidates, cand)
+			}
+			candSess := filepath.Join(sessionDir, archFn)
+			if fileExists(candSess) {
+				zipCandidates = append(zipCandidates, candSess)
+			}
+		}
+	}
+	// Also check session-level imports or datasets for archives
+	if fileExists(filepath.Join(sessionDir, "imports")) {
+		_ = filepath.Walk(filepath.Join(sessionDir, "imports"), func(path string, info os.FileInfo, err error) error {
+			if err == nil && info != nil && !info.IsDir() && strings.EqualFold(filepath.Ext(path), ".zip") {
+				zipCandidates = append(zipCandidates, path)
+			}
+			return nil
+		})
+	}
+	if fileExists(filepath.Join(sessionDir, "datasets")) {
+		_ = filepath.Walk(filepath.Join(sessionDir, "datasets"), func(path string, info os.FileInfo, err error) error {
+			if err == nil && info != nil && !info.IsDir() && strings.EqualFold(filepath.Ext(path), ".zip") {
+				zipCandidates = append(zipCandidates, path)
+			}
+			return nil
+		})
+	}
+
+	// Try extracting from candidate zips
+	seenZips := make(map[string]bool)
+	for _, zPath := range zipCandidates {
+		if seenZips[zPath] || !fileExists(zPath) {
+			continue
+		}
+		seenZips[zPath] = true
+
+		r, err := zip.OpenReader(zPath)
+		if err != nil {
+			continue
+		}
+
+		var targetEntry *zip.File
+		for _, f := range r.File {
+			if f.FileInfo().IsDir() {
+				continue
+			}
+			fName := filepath.ToSlash(f.Name)
+			fBase := filepath.Base(f.Name)
+
+			if archiveEntry != "" && (strings.EqualFold(fName, filepath.ToSlash(archiveEntry)) || strings.EqualFold(fBase, filepath.Base(archiveEntry))) {
+				targetEntry = f
+				break
+			}
+			if targetFilename != "" && strings.EqualFold(fBase, targetFilename) {
+				targetEntry = f
+				break
+			}
+			if dataset.StoragePath != "" && strings.EqualFold(fBase, filepath.Base(dataset.StoragePath)) {
+				targetEntry = f
+				break
+			}
+		}
+
+		if targetEntry != nil {
+			// Determine output destination
+			destPath := dataset.StoragePath
+			if destPath == "" || !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(sessionDir)) {
+				destPath = filepath.Join(datasetDir, filepath.Base(targetEntry.Name))
+			}
+
+			_ = os.MkdirAll(filepath.Dir(destPath), 0755)
+			rc, err := targetEntry.Open()
+			if err == nil {
+				outFile, createErr := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+				if createErr == nil {
+					_, _ = io.Copy(outFile, rc)
+					_ = outFile.Close()
+				}
+				_ = rc.Close()
+			}
+
+			// Also extract matching sidecar files (e.g. pgw, wld, prj) if present in zip
+			entryBaseNoExt := strings.TrimSuffix(filepath.Base(targetEntry.Name), filepath.Ext(targetEntry.Name))
+			for _, sidecarFile := range r.File {
+				if sidecarFile.FileInfo().IsDir() {
+					continue
+				}
+				scBase := filepath.Base(sidecarFile.Name)
+				scBaseNoExt := strings.TrimSuffix(scBase, filepath.Ext(scBase))
+				scExt := strings.ToLower(filepath.Ext(scBase))
+				if strings.EqualFold(scBaseNoExt, entryBaseNoExt) && (scExt == ".pgw" || scExt == ".jgw" || scExt == ".prj" || scExt == ".wld" || scExt == ".tfw") {
+					scDest := filepath.Join(filepath.Dir(destPath), scBase)
+					if scRc, scErr := sidecarFile.Open(); scErr == nil {
+						if scOut, scOutErr := os.OpenFile(scDest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644); scOutErr == nil {
+							_, _ = io.Copy(scOut, scRc)
+							_ = scOut.Close()
+						}
+						_ = scRc.Close()
+					}
+				}
+			}
+
+			_ = r.Close()
+
+			if fileExists(destPath) {
+				dataset.StoragePath = destPath
+				_ = s.repo.UpdateDataset(dataset.SessionID, dataset)
+				return destPath
+			}
+		}
+		_ = r.Close()
+	}
+
+	// 7. Check sibling datasets in the same session
+	datasetsParent := filepath.Join(sessionDir, "datasets")
+	if fileExists(datasetsParent) {
+		var siblingMatch string
+		_ = filepath.Walk(datasetsParent, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(path))
+			if SupportedRasterExtensions[ext] == "" || ext == ".vrt" {
+				return nil
+			}
+			base := filepath.Base(path)
+			if strings.EqualFold(base, targetFilename) ||
+				(archiveEntry != "" && strings.EqualFold(base, filepath.Base(archiveEntry))) {
+				siblingMatch = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if siblingMatch != "" && fileExists(siblingMatch) {
+			destPath := filepath.Join(datasetDir, filepath.Base(siblingMatch))
+			if data, rErr := os.ReadFile(siblingMatch); rErr == nil {
+				_ = os.MkdirAll(datasetDir, 0755)
+				if wErr := os.WriteFile(destPath, data, 0644); wErr == nil {
+					dataset.StoragePath = destPath
+					_ = s.repo.UpdateDataset(dataset.SessionID, dataset)
+					return destPath
+				}
+			}
+			// Fallback directly to the sibling match
+			dataset.StoragePath = siblingMatch
+			_ = s.repo.UpdateDataset(dataset.SessionID, dataset)
+			return siblingMatch
+		}
+	}
+
+	return ""
 }

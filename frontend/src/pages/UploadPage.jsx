@@ -259,7 +259,9 @@ export default function UploadPage() {
           onClose={() => setArchiveInspection(null)}
           onImportComplete={(importRes) => {
             setArchiveInspection(null)
-            const firstSuccess = importRes.results?.find((r) => r.status === "success" && r.dataset_id)
+            const firstSuccess = importRes.results?.find(
+              (r) => (r.status === "imported" || r.status === "success") && r.dataset_id
+            )
             if (firstSuccess) {
               navigate(`/datasets/${firstSuccess.dataset_id}/workspace?view=map`)
             } else {

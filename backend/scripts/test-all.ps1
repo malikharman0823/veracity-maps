@@ -48,7 +48,10 @@ if ($unformatted) {
 
 # 3. Go Static Analysis (go vet)
 Write-Host "[3/5] Running Go Vet Static Analysis..." -ForegroundColor Yellow
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 $vetOutput = go vet ./... 2>&1
+$ErrorActionPreference = $prevEAP
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [FAIL] go vet failed:" -ForegroundColor Red
     Write-Host $vetOutput -ForegroundColor Red

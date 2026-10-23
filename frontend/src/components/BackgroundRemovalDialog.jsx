@@ -30,6 +30,7 @@ export default function BackgroundRemovalDialog({
   const [color, setColor] = useState("#ffffff")
   const [threshold, setThreshold] = useState(30)
   const [edgeSoftness, setEdgeSoftness] = useState(10)
+  const [applyToAllFloors, setApplyToAllFloors] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
@@ -126,11 +127,17 @@ export default function BackgroundRemovalDialog({
         color,
         threshold,
         edgeSoftness,
+        applyToAllFloors,
       })
       setProcessing(false)
-      setSuccessMessage("Background removal applied to map layer.")
+      setSuccessMessage(
+        applyToAllFloors
+          ? "Background removal applied to all building floor layers."
+          : "Background removal applied to map layer."
+      )
       if (onApplied) onApplied(res)
     } catch (err) {
+
       setProcessing(false)
       setError(readableApiError(err, "Failed to apply background removal."))
     }
@@ -284,7 +291,26 @@ export default function BackgroundRemovalDialog({
                   className="bg-removal-slider"
                 />
               </div>
+
+              {/* Multi-Floor Propagation Checkbox */}
+              <div className="bg-removal-section pt-1">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={applyToAllFloors}
+                    onChange={(e) => setApplyToAllFloors(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-semibold block text-slate-800">Apply these background-removal settings to all floors</span>
+                    <span className="text-[11px] text-slate-500 block leading-tight mt-0.5">
+                      Propagates color and threshold settings across all floors in the building while preserving each floor's original raster.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
+
 
             {/* Right Column: Visual Preview */}
             <div className="bg-removal-preview-wrap">

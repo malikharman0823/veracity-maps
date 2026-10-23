@@ -87,9 +87,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
 	sessionID := models.GetSessionID(r)
 	if sessionID != "" {
-		dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
-		if err == nil && dataset != nil {
-			return dataset, sessionID, nil
+		if sess, err := h.repo.GetSession(sessionID); err == nil && sess != nil {
+			dataset, err := h.datasetService.GetDataset(sessionID, datasetID)
+			if err == nil && dataset != nil {
+				return dataset, sessionID, nil
+			}
+			return nil, "", repository.ErrDatasetNotFound
 		}
 	}
 
@@ -180,9 +183,13 @@ func (h *Handler) SourceImage(w http.ResponseWriter, r *http.Request, datasetID 
 		}
 	}
 
-	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-		models.WriteError(w, http.StatusNotFound, "FILE_NOT_FOUND", "Source image file was not found", nil, nil)
-		return
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) || !fileExists(imagePath) {
+		if rec := h.datasetService.LocateOrRestoreDatasetImage(dataset); rec != "" && fileExists(rec) {
+			imagePath = rec
+		} else {
+			models.WriteError(w, http.StatusNotFound, "FILE_NOT_FOUND", "Source image file was not found", nil, nil)
+			return
+		}
 	}
 
 	ext := strings.ToLower(filepath.Ext(imagePath))

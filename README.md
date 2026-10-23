@@ -78,7 +78,12 @@ graph TD
   2. **Security & Validation**: Checks for ZIP-Slip path traversal (`..`), safe decompression limits, and uncompressed size ceilings.
   3. **Inspection**: Automatically discovers all nested raster images (`.png`, `.jpg`, `.tif`, `.webp`, `.bmp`) and auto-associates matching sidecars (`.pgw`, `.jgw`, `.tfw`, `.wld`, `.prj`).
   4. **Review Screen (`ZipImportReview`)**: Interactive table displaying discovered datasets, dimensions, georeferencing status, sidecars, and auto-suggested buildings and floors.
-  5. **Selective Import**: Users can rename datasets, toggle individual items, assign buildings/floors, and import only desired layers without corrupting other datasets.
+### Feature D — Selective Multi-Layer Map Project Export (v1.1)
+- **Session-Truthful Dynamic Export**: The export dialog reads strictly from the active session manifest (`manifest.members`). Single-floor uploads render cleanly without phantom placeholder buildings or hardcoded `"Building A"` strings.
+- **Hierarchical Building & Floor Selection**: Users can selectively check/uncheck individual buildings, floors, or standalone raster layers with live selection counters and tri-state checkboxes.
+- **Configurable Package Options**: Users can independently toggle building configurations, shared control points, custom icons, layer styles, original rasters, and processed transparent images.
+- **Roundtrip Project Re-importing**: The resulting `.zip` archive adheres to the Veracity Maps project manifest schema and can be re-opened anytime to resume editing.
+- *Detailed release notes are available in [RELEASE_1.1.md](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/docs/RELEASE_1.1.md).*
 
 ---
 

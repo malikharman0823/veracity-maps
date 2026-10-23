@@ -431,5 +431,10 @@ func (h *Handler) applyCornersToDataset(sessionID string, dataset *models.Datase
 		_ = h.repo.SetControlPoints(sessionID, dataset.ID, cps)
 	}
 
+	// Propagate building footprint/georeferencing to sibling floors if dataset belongs to a building
+	if h.datasetService != nil {
+		_ = h.datasetService.PropagateBuildingGeoreference(sessionID, dataset)
+	}
+
 	return nil
 }

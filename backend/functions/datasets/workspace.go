@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
+	"github.com/malikharman0823/veracity-maps/services"
 )
 
 var defaultIcons = []string{
@@ -120,20 +122,99 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 						"bearing":   0.0,
 						"pitch":     0.0,
 					},
-					"members": []map[string]interface{}{
-						{
-							"dataset_id":             dataset.ID,
-							"name":                   dataset.Filename,
-							"floor_label":            "Ground Floor",
-							"floor_level":            0,
-							"visible":                true,
-							"raster_visible":         true,
-							"raster_opacity":         1.0,
-							"control_points_visible": true,
-							"icon_points_visible":    true,
-							"sort_order":             0,
-						},
-					},
+					"members": func() []map[string]interface{} {
+						var matchedBld *models.Building
+						if buildings, err := h.repo.ListBuildings(sessionID); err == nil {
+							for _, b := range buildings {
+								for _, fl := range b.Floors {
+									for _, dID := range fl.DatasetIDs {
+										if dID == datasetID {
+											matchedBld = b
+											break
+										}
+									}
+									if matchedBld != nil {
+										break
+									}
+								}
+								if matchedBld != nil {
+									break
+								}
+							}
+						}
+
+						var membersList []map[string]interface{}
+						addedIDs := make(map[string]bool)
+						order := 0
+
+						if matchedBld != nil {
+							for _, fl := range matchedBld.Floors {
+								for _, dID := range fl.DatasetIDs {
+									if !addedIDs[dID] {
+										flDs, _ := h.repo.GetDataset(sessionID, dID)
+										if flDs == nil {
+											continue
+										}
+										membersList = append(membersList, map[string]interface{}{
+											"dataset_id":             dID,
+											"name":                   flDs.Filename,
+											"floor_label":            fl.Name,
+											"floor_level":            fl.Level,
+											"building_name":          matchedBld.Name,
+											"is_building_floor":      true,
+											"visible":                true,
+											"raster_visible":         true,
+											"raster_opacity":         1.0,
+											"control_points_visible": true,
+											"icon_points_visible":    true,
+											"sort_order":             order,
+										})
+										addedIDs[dID] = true
+										order++
+									}
+								}
+							}
+						}
+
+						if len(membersList) == 0 {
+							flLevel := 0
+							flLabel := "Ground Floor"
+							var bldName string
+							isBf := false
+							if dataset.ExtractedMetadata != nil {
+								if l, ok := dataset.ExtractedMetadata["floor_level"].(int); ok {
+									flLevel = l
+								} else if lf, ok := dataset.ExtractedMetadata["floor_level"].(float64); ok {
+									flLevel = int(lf)
+								}
+								if lbl, ok := dataset.ExtractedMetadata["floor_label"].(string); ok && lbl != "" {
+									flLabel = lbl
+								}
+								if bn, ok := dataset.ExtractedMetadata["building_name"].(string); ok && bn != "" {
+									bldName = bn
+									isBf = true
+								}
+								if b, ok := dataset.ExtractedMetadata["is_building_floor"].(bool); ok {
+									isBf = b
+								}
+							}
+							membersList = append(membersList, map[string]interface{}{
+								"dataset_id":             dataset.ID,
+								"name":                   dataset.Filename,
+								"floor_label":            flLabel,
+								"floor_level":            flLevel,
+								"building_name":          bldName,
+								"is_building_floor":      isBf,
+								"visible":                true,
+								"raster_visible":         true,
+								"raster_opacity":         1.0,
+								"control_points_visible": true,
+								"icon_points_visible":    true,
+								"sort_order":             0,
+							})
+						}
+						return membersList
+					}(),
 				},
 			}
 			_ = h.repo.SaveMapProject(sessionID, project)
@@ -167,16 +248,37 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 		}
 
 		rawMembers, _ := project.Configuration["members"].([]interface{})
-		for _, rm := range rawMembers {
-			if m, ok := rm.(map[string]interface{}); ok {
-				memDsID, _ := m["dataset_id"].(string)
-				if memDsID != "" && memDsID != datasetID {
-					if _, err := h.repo.GetDataset(sessionID, memDsID); err != nil {
-						m["dataset_id"] = datasetID
-						m["name"] = dataset.Filename
-						_ = h.repo.SaveMapProject(sessionID, project)
+		if len(rawMembers) > 0 {
+			validMembers := make([]interface{}, 0, len(rawMembers))
+			seen := make(map[string]bool)
+			modified := false
+			for _, rm := range rawMembers {
+				if m, ok := rm.(map[string]interface{}); ok {
+					memDsID, _ := m["dataset_id"].(string)
+					if memDsID == datasetID {
+						if !seen[memDsID] {
+							validMembers = append(validMembers, m)
+							seen[memDsID] = true
+						} else {
+							modified = true
+						}
+					} else if memDsID != "" {
+						if _, err := h.repo.GetDataset(sessionID, memDsID); err == nil {
+							if !seen[memDsID] {
+								validMembers = append(validMembers, m)
+								seen[memDsID] = true
+							} else {
+								modified = true
+							}
+						} else {
+							modified = true
+						}
 					}
 				}
+			}
+			if modified {
+				project.Configuration["members"] = validMembers
+				_ = h.repo.SaveMapProject(sessionID, project)
 			}
 		}
 	}
@@ -272,14 +374,28 @@ func ensureDatasetMapLayer(ds *models.Dataset) {
 				if err := json.Unmarshal(data, &mDoc); err == nil && len(mDoc.Bounds) == 4 {
 					minX, minY, maxX, maxY := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
 					if maxX > minX && maxY > minY {
-						ds.ExtractedMetadata["bounds"] = map[string]interface{}{
-							"min_x": minX,
-							"min_y": minY,
-							"max_x": maxX,
-							"max_y": maxY,
+						if minX >= -180 && maxX <= 180 && minY >= -90 && maxY <= 90 {
+							ds.ExtractedMetadata["bounds"] = map[string]interface{}{
+								"min_x": minX,
+								"min_y": minY,
+								"max_x": maxX,
+								"max_y": maxY,
+							}
+							ds.GeoreferenceStatus = "completed"
+							break
+						} else if math.Abs(minX) <= 20037508.35 && math.Abs(maxX) <= 20037508.35 &&
+							math.Abs(minY) <= 20037508.35 && math.Abs(maxY) <= 20037508.35 {
+							lng1, lat1 := gis.MercatorToWGS84(minX, minY)
+							lng2, lat2 := gis.MercatorToWGS84(maxX, maxY)
+							ds.ExtractedMetadata["bounds"] = map[string]interface{}{
+								"min_x": lng1,
+								"min_y": lat1,
+								"max_x": lng2,
+								"max_y": lat2,
+							}
+							ds.GeoreferenceStatus = "completed"
+							break
 						}
-						ds.GeoreferenceStatus = "completed"
-						break
 					}
 				}
 			}
@@ -417,12 +533,99 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 	}
 
+	existingMemberIDs := make(map[string]bool)
+	for _, rm := range rawMembers {
+		if m, ok := rm.(map[string]interface{}); ok {
+			if dID, ok := m["dataset_id"].(string); ok && dID != "" {
+				existingMemberIDs[dID] = true
+			}
+		}
+	}
+
+	var matchedBld *models.Building
+	if buildings, err := h.repo.ListBuildings(sessionID); err == nil {
+		for _, b := range buildings {
+			for _, fl := range b.Floors {
+				for _, dID := range fl.DatasetIDs {
+					if dID == primaryDataset.ID {
+						matchedBld = b
+						break
+					}
+				}
+				if matchedBld != nil {
+					break
+				}
+			}
+			if matchedBld != nil {
+				break
+			}
+		}
+	}
+
+	addedAny := false
+	if matchedBld != nil {
+		for _, fl := range matchedBld.Floors {
+			for _, dID := range fl.DatasetIDs {
+				if !existingMemberIDs[dID] {
+					flDs, _ := h.repo.GetDataset(sessionID, dID)
+					if flDs == nil {
+						continue
+					}
+					rawMembers = append(rawMembers, map[string]interface{}{
+						"dataset_id":             dID,
+						"name":                   flDs.Filename,
+						"floor_label":            fl.Name,
+						"floor_level":            fl.Level,
+						"building_name":          matchedBld.Name,
+						"is_building_floor":      true,
+						"visible":                true,
+						"raster_visible":         true,
+						"raster_opacity":         1.0,
+						"control_points_visible": true,
+						"icon_points_visible":    true,
+						"sort_order":             len(rawMembers),
+					})
+					existingMemberIDs[dID] = true
+					addedAny = true
+				}
+			}
+		}
+	}
+
+	if addedAny {
+		cfg["members"] = rawMembers
+		_ = h.repo.SaveMapProject(sessionID, project)
+	}
+
 	if len(rawMembers) == 0 {
+		flLevel := 0
+		flLabel := "Ground Floor"
+		var bldName string
+		isBf := false
+		if primaryDataset.ExtractedMetadata != nil {
+			if l, ok := primaryDataset.ExtractedMetadata["floor_level"].(int); ok {
+				flLevel = l
+			} else if lf, ok := primaryDataset.ExtractedMetadata["floor_level"].(float64); ok {
+				flLevel = int(lf)
+			}
+			if lbl, ok := primaryDataset.ExtractedMetadata["floor_label"].(string); ok && lbl != "" {
+				flLabel = lbl
+			}
+			if bn, ok := primaryDataset.ExtractedMetadata["building_name"].(string); ok && bn != "" {
+				bldName = bn
+				isBf = true
+			}
+			if b, ok := primaryDataset.ExtractedMetadata["is_building_floor"].(bool); ok {
+				isBf = b
+			}
+		}
 		rawMembers = append(rawMembers, map[string]interface{}{
 			"dataset_id":             primaryDataset.ID,
 			"name":                   primaryDataset.Filename,
-			"floor_label":            "Ground Floor",
-			"floor_level":            0,
+			"floor_label":            flLabel,
+			"floor_level":            flLevel,
+			"building_name":          bldName,
+			"is_building_floor":      isBf,
 			"visible":                true,
 			"raster_visible":         true,
 			"raster_opacity":         1.0,
@@ -454,24 +657,64 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 				ds = primaryDataset
 				datasetID = primaryDataset.ID
 				memberCopy["dataset_id"] = primaryDataset.ID
+			} else {
+				continue
 			}
 		}
-		if ds != nil {
-			ensureDatasetMapLayer(ds)
-			memberCopy["dataset"] = ds
-			if memberCopy["bounds"] == nil && ds.ExtractedMetadata != nil {
-				memberCopy["bounds"] = ds.ExtractedMetadata["bounds"]
+		if ds == nil {
+			continue
+		}
+		ensureDatasetMapLayer(ds)
+		memberCopy["dataset"] = ds
+		if memberCopy["bounds"] == nil && ds.ExtractedMetadata != nil {
+			memberCopy["bounds"] = ds.ExtractedMetadata["bounds"]
+		}
+		if memberCopy["map_layer"] == nil && ds.MapLayer != nil {
+			memberCopy["map_layer"] = ds.MapLayer
+		}
+		if ds.ExtractedMetadata != nil {
+			if bn, ok := ds.ExtractedMetadata["building_name"].(string); ok && bn != "" {
+				curBName, _ := memberCopy["building_name"].(string)
+				if curBName == "" || services.IsFloorName(curBName) || !strings.EqualFold(curBName, bn) {
+					memberCopy["building_name"] = bn
+				}
 			}
-			if memberCopy["map_layer"] == nil && ds.MapLayer != nil {
-				memberCopy["map_layer"] = ds.MapLayer
+			if memberCopy["is_building_floor"] == nil {
+				if isBf, ok := ds.ExtractedMetadata["is_building_floor"].(bool); ok {
+					memberCopy["is_building_floor"] = isBf
+				} else if memberCopy["building_name"] != nil && memberCopy["building_name"] != "" {
+					memberCopy["is_building_floor"] = true
+				}
+			}
+			if fl, ok := ds.ExtractedMetadata["floor_level"].(int); ok {
+				memberCopy["floor_level"] = fl
+			} else if flf, ok := ds.ExtractedMetadata["floor_level"].(float64); ok {
+				memberCopy["floor_level"] = int(flf)
+			}
+			if flLbl, ok := ds.ExtractedMetadata["floor_label"].(string); ok && flLbl != "" {
+				memberCopy["floor_label"] = flLbl
 			}
 		}
 
-		if memberCopy["visible"] == nil {
-			memberCopy["visible"] = true
+		fileMissing := false
+		if !fileExists(ds.StoragePath) {
+			if rec := h.datasetService.LocateOrRestoreDatasetImage(ds); rec != "" {
+				ds.StoragePath = rec
+				_ = h.repo.UpdateDataset(sessionID, ds)
+			} else {
+				fileMissing = true
+			}
 		}
-		if memberCopy["raster_visible"] == nil {
-			memberCopy["raster_visible"] = true
+		if fileMissing {
+			memberCopy["file_missing"] = true
+			memberCopy["raster_visible"] = false
+		} else {
+			if memberCopy["visible"] == nil {
+				memberCopy["visible"] = true
+			}
+			if memberCopy["raster_visible"] == nil {
+				memberCopy["raster_visible"] = true
+			}
 		}
 		if memberCopy["raster_opacity"] == nil {
 			memberCopy["raster_opacity"] = 1.0
@@ -522,6 +765,95 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		enrichedMembers = append(enrichedMembers, memberCopy)
 	}
 
+	hasPrimary := false
+	for _, em := range enrichedMembers {
+		if em["dataset_id"] == primaryDataset.ID {
+			hasPrimary = true
+			break
+		}
+	}
+	if !hasPrimary && primaryDataset != nil {
+		ensureDatasetMapLayer(primaryDataset)
+		flLevel := 0
+		flLabel := "Ground Floor"
+		var bldName string
+		isBf := false
+		if primaryDataset.ExtractedMetadata != nil {
+			if l, ok := primaryDataset.ExtractedMetadata["floor_level"].(int); ok {
+				flLevel = l
+			} else if lf, ok := primaryDataset.ExtractedMetadata["floor_level"].(float64); ok {
+				flLevel = int(lf)
+			}
+			if lbl, ok := primaryDataset.ExtractedMetadata["floor_label"].(string); ok && lbl != "" {
+				flLabel = lbl
+			}
+			if bn, ok := primaryDataset.ExtractedMetadata["building_name"].(string); ok && bn != "" {
+				bldName = bn
+				isBf = true
+			}
+			if b, ok := primaryDataset.ExtractedMetadata["is_building_floor"].(bool); ok {
+				isBf = b
+			}
+		}
+
+		cps := h.ensureDatasetControlPoints(sessionID, primaryDataset)
+		iconPoints, _ := h.repo.ListIconPoints(sessionID, primaryDataset.ID, "")
+
+		var primaryBounds interface{}
+		if primaryDataset.ExtractedMetadata != nil {
+			primaryBounds = primaryDataset.ExtractedMetadata["bounds"]
+		}
+
+		primaryRasterVisible := true
+		primaryFileMissing := false
+		if !fileExists(primaryDataset.StoragePath) {
+			if rec := h.datasetService.LocateOrRestoreDatasetImage(primaryDataset); rec != "" {
+				primaryDataset.StoragePath = rec
+				_ = h.repo.UpdateDataset(sessionID, primaryDataset)
+			} else {
+				primaryFileMissing = true
+				primaryRasterVisible = false
+			}
+		}
+
+		primaryMember := map[string]interface{}{
+			"dataset_id":             primaryDataset.ID,
+			"dataset":                primaryDataset,
+			"name":                   primaryDataset.Filename,
+			"floor_label":            flLabel,
+			"floor_level":            flLevel,
+			"building_name":          bldName,
+			"is_building_floor":      isBf,
+			"visible":                true,
+			"raster_visible":         primaryRasterVisible,
+			"file_missing":           primaryFileMissing,
+			"raster_opacity":         1.0,
+			"control_points_visible": true,
+			"icon_points_visible":    true,
+			"sort_order":             0,
+			"bounds":                 primaryBounds,
+			"map_layer":              primaryDataset.MapLayer,
+			"sublayers": []map[string]interface{}{
+				{
+					"kind":  "raster",
+					"label": "Raster Overlay",
+					"count": 1,
+				},
+				{
+					"kind":  "control_point",
+					"label": "Control Points",
+					"count": len(cps),
+				},
+				{
+					"kind":  "icon_point",
+					"label": "Icon Points",
+					"count": len(iconPoints),
+				},
+			},
+		}
+		enrichedMembers = append([]map[string]interface{}{primaryMember}, enrichedMembers...)
+	}
+
 	activeView, _ := cfg["active_view"].(string)
 	if activeView == "" {
 		activeView = "database"
@@ -556,6 +888,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		camMap["pitch"] = 0.0
 	}
 
+	allBuildings, _ := h.repo.ListBuildings(sessionID)
 	return map[string]interface{}{
 		"id":          project.ID,
 		"dataset_id":  primaryDataset.ID,
@@ -563,6 +896,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		"active_view": activeView,
 		"camera":      camMap,
 		"members":     enrichedMembers,
+		"buildings":   allBuildings,
 	}
 }
 
@@ -576,6 +910,10 @@ func (h *Handler) GetWorkspace(w http.ResponseWriter, r *http.Request, datasetID
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
+	}
+
+	if h.datasetService != nil {
+		_ = h.datasetService.ConsolidateSessionBuildings(sessionID)
 	}
 
 	project, dataset, err := h.getOrCreateProject(sessionID, datasetID)
@@ -1422,6 +1760,10 @@ func (h *Handler) ListBuildings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.datasetService != nil {
+		_ = h.datasetService.ConsolidateSessionBuildings(sessionID)
+	}
+
 	buildings, err := h.repo.ListBuildings(sessionID)
 	if err != nil {
 		models.WriteError(w, http.StatusInternalServerError, "LIST_FAILED", err.Error(), nil, nil)
@@ -1429,6 +1771,66 @@ func (h *Handler) ListBuildings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	models.WriteJSON(w, http.StatusOK, buildings)
+}
+
+func (h *Handler) PropagateBuildingGeoreferenceHandler(w http.ResponseWriter, r *http.Request, buildingID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "No active session ID provided", nil, nil)
+		return
+	}
+
+	if h.datasetService != nil {
+		_ = h.datasetService.ConsolidateSessionBuildings(sessionID)
+	}
+
+	bld, err := h.repo.GetBuilding(sessionID, buildingID)
+	if err != nil || bld == nil {
+		models.WriteError(w, http.StatusNotFound, "BUILDING_NOT_FOUND", "Building not found", nil, nil)
+		return
+	}
+
+	var refDataset *models.Dataset
+	for _, fl := range bld.Floors {
+		for _, dID := range fl.DatasetIDs {
+			ds, err := h.repo.GetDataset(sessionID, dID)
+			if err == nil && ds != nil && ds.GeoreferenceStatus == "completed" && ds.ExtractedMetadata != nil && ds.ExtractedMetadata["bounds"] != nil {
+				refDataset = ds
+				break
+			}
+		}
+		if refDataset != nil {
+			break
+		}
+	}
+
+	if refDataset == nil {
+		allDs, _ := h.repo.ListDatasets(sessionID)
+		for _, ds := range allDs {
+			if ds.GeoreferenceStatus == "completed" && ds.ExtractedMetadata != nil && ds.ExtractedMetadata["bounds"] != nil {
+				refDataset = ds
+				break
+			}
+		}
+	}
+
+	if refDataset == nil {
+		models.WriteError(w, http.StatusBadRequest, "NO_GEOREFERENCE_AVAILABLE", "No georeferenced floor found to propagate", nil, nil)
+		return
+	}
+
+	if err := services.PropagateBuildingGeoreference(h.repo, h.datasetService.StorageManager(), sessionID, refDataset); err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "PROPAGATION_FAILED", err.Error(), nil, nil)
+		return
+	}
+
+	updatedBld, _ := h.repo.GetBuilding(sessionID, buildingID)
+	models.WriteJSON(w, http.StatusOK, updatedBld)
 }
 
 func (h *Handler) GetBuilding(w http.ResponseWriter, r *http.Request, buildingID string) {

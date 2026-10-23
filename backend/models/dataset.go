@@ -31,3 +31,13 @@ type MapProject struct {
 	CreatedAt     time.Time              `json:"created_at"`
 	UpdatedAt     time.Time              `json:"updated_at"`
 }
+
+type SavedConfig struct {
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	PrimaryDatasetID string                 `json:"primary_dataset_id"`
+	Members          []string               `json:"members"`
+	Configuration    map[string]interface{} `json:"configuration,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+}

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -284,7 +285,609 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 		}
 	}
 
+	// Propagate building footprint/georeferencing to all sibling floors of the building
+	_ = s.PropagateBuildingGeoreference(sessionID, dataset)
+
 	return result, nil
+}
+
+func parseBoundsMap(raw interface{}) (map[string]float64, []float64) {
+	if raw == nil {
+		return nil, nil
+	}
+	resMap := make(map[string]float64)
+	if mFloat, ok := raw.(map[string]float64); ok {
+		w := mFloat["min_x"]
+		s := mFloat["min_y"]
+		e := mFloat["max_x"]
+		n := mFloat["max_y"]
+		if w == 0 && s == 0 && e == 0 && n == 0 {
+			w = mFloat["west"]
+			s = mFloat["south"]
+			e = mFloat["east"]
+			n = mFloat["north"]
+		}
+		if e > w && n > s {
+			return mFloat, []float64{w, s, e, n}
+		}
+	}
+	if mInt, ok := raw.(map[string]interface{}); ok {
+		w := getDim(mInt["min_x"])
+		s := getDim(mInt["min_y"])
+		e := getDim(mInt["max_x"])
+		n := getDim(mInt["max_y"])
+		if w == 0 && s == 0 && e == 0 && n == 0 {
+			w = getDim(mInt["west"])
+			s = getDim(mInt["south"])
+			e = getDim(mInt["east"])
+			n = getDim(mInt["north"])
+		}
+		if e > w && n > s {
+			resMap["min_x"] = w
+			resMap["min_y"] = s
+			resMap["max_x"] = e
+			resMap["max_y"] = n
+			return resMap, []float64{w, s, e, n}
+		}
+	}
+	if arr, ok := raw.([]float64); ok && len(arr) == 4 {
+		w, s, e, n := arr[0], arr[1], arr[2], arr[3]
+		if e > w && n > s {
+			resMap["min_x"] = w
+			resMap["min_y"] = s
+			resMap["max_x"] = e
+			resMap["max_y"] = n
+			return resMap, []float64{w, s, e, n}
+		}
+	}
+	return nil, nil
+}
+
+// IsFloorName returns true if a name string represents a floor or level indicator
+// (e.g. "Floor 1", "Floor B1", "Floor G", "Basement 1", "Level 2") rather than a building name.
+func IsFloorName(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	lower := strings.ToLower(trimmed)
+	if lower == "" {
+		return false
+	}
+	if lower == "b1" || lower == "b2" || lower == "b3" || lower == "b4" || lower == "b5" || lower == "g" || lower == "gf" || lower == "b" {
+		return true
+	}
+	if len(lower) == 2 && (lower[1] == 'f' || lower[1] == 'l') && lower[0] >= '0' && lower[0] <= '9' {
+		return true
+	}
+	prefixes := []string{
+		"floor", "flr", "fl_", "fl-", "level", "lvl", "basement", "ground", "cellar", "roof", "terrace",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func inferBuildingFromDataset(ds *models.Dataset, existingRealBuildings []*models.Building) string {
+	if ds == nil {
+		if len(existingRealBuildings) > 0 {
+			return existingRealBuildings[0].Name
+		}
+		return "Building 1"
+	}
+
+	// 1. Check archive_entry: e.g. "Building_A/Floor_B1/building_a_floor_b1.png"
+	if ds.ExtractedMetadata != nil {
+		if archEntry, ok := ds.ExtractedMetadata["archive_entry"].(string); ok && archEntry != "" {
+			cleanEntry := filepath.ToSlash(archEntry)
+			parts := strings.Split(cleanEntry, "/")
+			for _, part := range parts {
+				p := strings.TrimSpace(part)
+				if p == "" || p == "." || strings.EqualFold(p, "source") || strings.EqualFold(p, "images") || strings.EqualFold(p, "rasters") {
+					continue
+				}
+				if IsFloorName(p) {
+					continue
+				}
+				if strings.Contains(p, ".") {
+					continue
+				}
+				clean := strings.ReplaceAll(strings.ReplaceAll(p, "-", " "), "_", " ")
+				if !IsFloorName(clean) && len(clean) > 1 {
+					return strings.Title(strings.ToLower(clean))
+				}
+			}
+		}
+	}
+
+	// 2. Check filename: e.g. "building_a_floor_b1.png" or "Building A Floor B1"
+	fn := ds.Filename
+	if fn != "" {
+		base := strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
+		lower := strings.ToLower(base)
+		floorIdx := -1
+		for _, token := range []string{"_floor", "-floor", " floor", "_flr", "-flr", "_lvl", "-lvl", "_level", "-level", "_b1", "_b2", "_b3", "_b4", "_g"} {
+			if idx := strings.Index(lower, token); idx > 0 {
+				floorIdx = idx
+				break
+			}
+		}
+		if floorIdx > 0 {
+			bldPart := strings.TrimSpace(base[:floorIdx])
+			if len(bldPart) > 1 && !IsFloorName(bldPart) {
+				clean := strings.ReplaceAll(strings.ReplaceAll(bldPart, "-", " "), "_", " ")
+				if !IsFloorName(clean) {
+					return strings.Title(strings.ToLower(clean))
+				}
+			}
+		}
+	}
+
+	// 3. Match against existing real buildings
+	for _, rb := range existingRealBuildings {
+		if rb.Name != "" && !IsFloorName(rb.Name) {
+			cleanRb := strings.ToLower(strings.ReplaceAll(rb.Name, " ", ""))
+			cleanFn := strings.ToLower(strings.ReplaceAll(fn, " ", ""))
+			if strings.Contains(cleanFn, cleanRb) {
+				return rb.Name
+			}
+		}
+	}
+
+	if fn != "" {
+		base := strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
+		clean := strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " ")
+		if !IsFloorName(clean) && len(clean) > 0 {
+			return strings.Title(strings.ToLower(clean))
+		}
+	}
+
+	return "Building 1"
+}
+
+func inferFloorDetails(ds *models.Dataset) (int, string) {
+	if ds == nil {
+		return 0, "Ground Floor"
+	}
+	if ds.ExtractedMetadata != nil {
+		lvl := 0
+		hasLvl := false
+		if l, ok := ds.ExtractedMetadata["floor_level"].(int); ok {
+			lvl = l
+			hasLvl = true
+		} else if lf, ok := ds.ExtractedMetadata["floor_level"].(float64); ok {
+			lvl = int(lf)
+			hasLvl = true
+		}
+		lbl, _ := ds.ExtractedMetadata["floor_label"].(string)
+		if hasLvl && lbl != "" && lbl != ds.Filename {
+			return lvl, lbl
+		}
+	}
+	name := ds.Filename
+	folder := ""
+	if ds.ExtractedMetadata != nil {
+		if arch, ok := ds.ExtractedMetadata["archive_entry"].(string); ok {
+			folder = filepath.Dir(arch)
+		}
+	}
+	return inferFloor(name, folder)
+}
+
+var consolidationMu sync.Mutex
+
+// ConsolidateSessionBuildings detects pseudo-buildings created from floor names
+// (e.g. "Floor 1", "Floor B1", "Floor G", "Floor 2") and merges them into the appropriate
+// real building entity (e.g. "Building A" or "Building 1").
+// Once consolidated, if any floor in the building is georeferenced, it automatically propagates
+// the georeferenced footprint, bounds, and affine transform to all sibling floors.
+func ConsolidateSessionBuildings(repo *repository.SessionRepository, store *storage.StorageManager, sessionID string) error {
+	if repo == nil || sessionID == "" {
+		return nil
+	}
+
+	consolidationMu.Lock()
+	defer consolidationMu.Unlock()
+
+	buildings, err := repo.ListBuildings(sessionID)
+	if err != nil || len(buildings) == 0 {
+		return nil
+	}
+
+	allDatasets, err := repo.ListDatasets(sessionID)
+	if err != nil {
+		return nil
+	}
+	datasetMap := make(map[string]*models.Dataset, len(allDatasets))
+	for _, ds := range allDatasets {
+		datasetMap[ds.ID] = ds
+	}
+
+	var pseudoBuildings []*models.Building
+	var realBuildings []*models.Building
+	for _, b := range buildings {
+		if IsFloorName(b.Name) {
+			pseudoBuildings = append(pseudoBuildings, b)
+		} else {
+			realBuildings = append(realBuildings, b)
+		}
+	}
+
+	// Quick check if any building has a georeferenced floor with unreferenced siblings
+	needsPropagation := false
+	for _, bld := range realBuildings {
+		hasCompleted := false
+		hasUncompleted := false
+		for _, fl := range bld.Floors {
+			for _, dID := range fl.DatasetIDs {
+				if ds := datasetMap[dID]; ds != nil {
+					if ds.GeoreferenceStatus == "completed" && ds.ExtractedMetadata != nil && ds.ExtractedMetadata["bounds"] != nil {
+						hasCompleted = true
+					} else {
+						hasUncompleted = true
+					}
+				}
+			}
+		}
+		if hasCompleted && hasUncompleted {
+			needsPropagation = true
+			break
+		}
+	}
+
+	if len(pseudoBuildings) == 0 && !needsPropagation {
+		return nil
+	}
+
+	// 1. Merge pseudo-buildings into real buildings
+	if len(pseudoBuildings) > 0 {
+		for _, pb := range pseudoBuildings {
+			for _, fl := range pb.Floors {
+				for _, dID := range fl.DatasetIDs {
+					ds := datasetMap[dID]
+					if ds == nil {
+						continue
+					}
+
+					targetName := inferBuildingFromDataset(ds, realBuildings)
+					var targetBld *models.Building
+					for _, rb := range realBuildings {
+						if strings.EqualFold(rb.Name, targetName) {
+							targetBld = rb
+							break
+						}
+					}
+
+					if targetBld == nil {
+						newBld, err := repo.CreateBuilding(sessionID, &models.Building{
+							Name:              targetName,
+							DefaultFloorLevel: 0,
+						})
+						if err == nil && newBld != nil {
+							targetBld = newBld
+							realBuildings = append(realBuildings, targetBld)
+						}
+					}
+
+					if targetBld == nil {
+						continue
+					}
+
+					lvl, lbl := inferFloorDetails(ds)
+					newMeta := make(map[string]interface{})
+					if ds.ExtractedMetadata != nil {
+						for k, v := range ds.ExtractedMetadata {
+							newMeta[k] = v
+						}
+					}
+					newMeta["building_name"] = targetBld.Name
+					newMeta["floor_level"] = lvl
+					newMeta["floor_label"] = lbl
+					newMeta["is_building_floor"] = true
+					ds.ExtractedMetadata = newMeta
+					_ = repo.UpdateDataset(sessionID, ds)
+
+					// Attach dataset to target building floor
+					floorFound := false
+					for _, tf := range targetBld.Floors {
+						if tf.Level == lvl {
+							alreadyIn := false
+							for _, id := range tf.DatasetIDs {
+								if id == dID {
+									alreadyIn = true
+									break
+								}
+							}
+							if !alreadyIn {
+								tf.DatasetIDs = append(tf.DatasetIDs, dID)
+							}
+							if tf.Name == "" || tf.Name == "Ground Floor" {
+								tf.Name = lbl
+							}
+							floorFound = true
+							break
+						}
+					}
+					if !floorFound {
+						targetBld.Floors = append(targetBld.Floors, &models.BuildingFloor{
+							ID:         repository.GenerateFloorID(),
+							BuildingID: targetBld.ID,
+							Level:      lvl,
+							Name:       lbl,
+							DatasetIDs: []string{dID},
+						})
+					}
+					_, _ = repo.UpdateBuilding(sessionID, targetBld.ID, targetBld)
+				}
+			}
+			// Delete obsolete pseudo-building
+			_, _ = repo.DeleteBuilding(sessionID, pb.ID)
+		}
+	}
+
+	// 2. Propagate georeference for all real buildings having any georeferenced floor
+	currentBuildings, _ := repo.ListBuildings(sessionID)
+	for _, bld := range currentBuildings {
+		var refDataset *models.Dataset
+		for _, fl := range bld.Floors {
+			for _, dID := range fl.DatasetIDs {
+				if ds := datasetMap[dID]; ds != nil {
+					if ds.GeoreferenceStatus == "completed" && ds.ExtractedMetadata != nil && ds.ExtractedMetadata["bounds"] != nil {
+						refDataset = ds
+						break
+					}
+				}
+			}
+			if refDataset != nil {
+				break
+			}
+		}
+
+		if refDataset != nil {
+			_ = propagateBuildingGeoreferenceInternal(repo, store, sessionID, refDataset, false)
+		}
+	}
+
+	if len(allDatasets) > 0 {
+		for _, bld := range currentBuildings {
+			modified := false
+			for _, fl := range bld.Floors {
+				validIDs := make([]string, 0, len(fl.DatasetIDs))
+				for _, dID := range fl.DatasetIDs {
+					if datasetMap[dID] != nil {
+						validIDs = append(validIDs, dID)
+					} else {
+						modified = true
+					}
+				}
+				if len(validIDs) != len(fl.DatasetIDs) {
+					fl.DatasetIDs = validIDs
+					modified = true
+				}
+			}
+			if modified {
+				_, _ = repo.UpdateBuilding(sessionID, bld.ID, bld)
+			}
+		}
+	}
+
+	return nil
+}
+
+// PropagateBuildingGeoreference propagates a georeferenced footprint, bounds, and coordinates
+// to all sibling floors within the same structural building entity.
+func (s *GeoreferenceService) PropagateBuildingGeoreference(sessionID string, refDataset *models.Dataset) error {
+	return PropagateBuildingGeoreference(s.repo, s.storage, sessionID, refDataset)
+}
+
+// PropagateBuildingGeoreference propagates a georeferenced footprint, bounds, and coordinates
+// to all sibling floors within the same structural building entity using the shared repo and storage.
+func PropagateBuildingGeoreference(repo *repository.SessionRepository, store *storage.StorageManager, sessionID string, refDataset *models.Dataset) error {
+	return propagateBuildingGeoreferenceInternal(repo, store, sessionID, refDataset, true)
+}
+
+func propagateBuildingGeoreferenceInternal(repo *repository.SessionRepository, store *storage.StorageManager, sessionID string, refDataset *models.Dataset, consolidate bool) error {
+	if refDataset == nil || sessionID == "" {
+		return nil
+	}
+	if refDataset.GeoreferenceStatus != "completed" || refDataset.ExtractedMetadata == nil || refDataset.ExtractedMetadata["bounds"] == nil {
+		return nil
+	}
+
+	if consolidate {
+		_ = ConsolidateSessionBuildings(repo, store, sessionID)
+	}
+
+	buildings, err := repo.ListBuildings(sessionID)
+	if err != nil || len(buildings) == 0 {
+		return nil
+	}
+
+	var matchedBld *models.Building
+	var refBldName string
+	if refDataset.ExtractedMetadata != nil {
+		if bn, ok := refDataset.ExtractedMetadata["building_name"].(string); ok && bn != "" {
+			refBldName = bn
+		}
+	}
+
+	for _, b := range buildings {
+		if refBldName != "" && strings.EqualFold(b.Name, refBldName) {
+			matchedBld = b
+			break
+		}
+		for _, fl := range b.Floors {
+			for _, dID := range fl.DatasetIDs {
+				if dID == refDataset.ID {
+					matchedBld = b
+					break
+				}
+			}
+			if matchedBld != nil {
+				break
+			}
+		}
+		if matchedBld != nil {
+			break
+		}
+	}
+
+	if matchedBld == nil {
+		return nil
+	}
+
+	// Update building bounds, shared transform, shared control points, and shared geometry
+	if refBounds, ok := refDataset.ExtractedMetadata["bounds"].(map[string]interface{}); ok {
+		matchedBld.Bounds = refBounds
+		matchedBld.SharedRasterGeometry = refBounds
+	} else if refMapBounds, ok := refDataset.MapLayer["bounds"].(map[string]interface{}); ok {
+		matchedBld.Bounds = refMapBounds
+		matchedBld.SharedRasterGeometry = refMapBounds
+	}
+
+	if tRaw, ok := refDataset.ExtractedMetadata["transform"].([]float64); ok && len(tRaw) == 6 {
+		matchedBld.SharedTransform = tRaw
+	} else if tIface, ok := refDataset.ExtractedMetadata["transform"].([]interface{}); ok && len(tIface) == 6 {
+		var tVals []float64
+		for _, v := range tIface {
+			tVals = append(tVals, getDim(v))
+		}
+		matchedBld.SharedTransform = tVals
+	}
+
+	if cps, err := repo.ListControlPoints(sessionID, refDataset.ID); err == nil && len(cps) > 0 {
+		matchedBld.ControlPoints = cps
+	}
+	_, _ = repo.UpdateBuilding(sessionID, matchedBld.ID, matchedBld)
+
+	// Determine reference coordinates and bounds
+	var refCoords [][]float64
+
+	if refDataset.MapLayer != nil {
+		if cList, ok := refDataset.MapLayer["coordinates"].([][]float64); ok && len(cList) == 4 {
+			refCoords = cList
+		} else if rawList, ok := refDataset.MapLayer["coordinates"].([]interface{}); ok && len(rawList) == 4 {
+			for _, item := range rawList {
+				if pt, ok := item.([]interface{}); ok && len(pt) == 2 {
+					p0 := getDim(pt[0])
+					p1 := getDim(pt[1])
+					refCoords = append(refCoords, []float64{p0, p1})
+				} else if ptF, ok := item.([]float64); ok && len(ptF) == 2 {
+					refCoords = append(refCoords, ptF)
+				}
+			}
+		}
+	}
+
+	_, normBounds := parseBoundsMap(refDataset.ExtractedMetadata["bounds"])
+	if len(refCoords) != 4 && len(normBounds) == 4 {
+		west, south, east, north := normBounds[0], normBounds[1], normBounds[2], normBounds[3]
+		refCoords = [][]float64{
+			{west, north},
+			{east, north},
+			{east, south},
+			{west, south},
+		}
+	}
+
+	for _, fl := range matchedBld.Floors {
+		for _, dID := range fl.DatasetIDs {
+			if dID == refDataset.ID {
+				continue
+			}
+			sib, err := repo.GetDataset(sessionID, dID)
+			if err != nil || sib == nil {
+				continue
+			}
+
+			sib.GeoreferenceStatus = "completed"
+			newMeta := make(map[string]interface{})
+			if sib.ExtractedMetadata != nil {
+				for k, v := range sib.ExtractedMetadata {
+					newMeta[k] = v
+				}
+			}
+			newMeta["bounds"] = refDataset.ExtractedMetadata["bounds"]
+			newMeta["crs"] = refDataset.ExtractedMetadata["crs"]
+			newMeta["inherited_from"] = refDataset.ID
+			newMeta["building_name"] = matchedBld.Name
+			newMeta["is_building_floor"] = true
+			newMeta["floor_level"] = fl.Level
+			newMeta["floor_label"] = fl.Name
+
+			// Scale affine transform to sibling's own width and height
+			sibW := getDim(newMeta["width"])
+			sibH := getDim(newMeta["height"])
+			if sibW > 0 && sibH > 0 && len(refCoords) == 4 {
+				corners := gis.RasterCorners{
+					TopLeft:     gis.CoordinatePoint{Longitude: refCoords[0][0], Latitude: refCoords[0][1]},
+					TopRight:    gis.CoordinatePoint{Longitude: refCoords[1][0], Latitude: refCoords[1][1]},
+					BottomRight: gis.CoordinatePoint{Longitude: refCoords[2][0], Latitude: refCoords[2][1]},
+					BottomLeft:  gis.CoordinatePoint{Longitude: refCoords[3][0], Latitude: refCoords[3][1]},
+				}
+				if t, _, err := gis.CalculateTransformFromCorners(corners, int(sibW), int(sibH)); err == nil {
+					newMeta["transform"] = t
+					if store != nil {
+						processedDir := filepath.Join(store.GetDatasetDir(sessionID, sib.ID), "processed")
+						_ = os.MkdirAll(processedDir, 0755)
+						baseExt := strings.ToLower(filepath.Ext(sib.Filename))
+						wExt := ".wld"
+						switch baseExt {
+						case ".png":
+							wExt = ".pgw"
+						case ".jpg", ".jpeg":
+							wExt = ".jgw"
+						}
+						_ = gis.WriteWorldFile(filepath.Join(processedDir, "georeferenced"+wExt), t)
+						if sib.StoragePath != "" {
+							_ = gis.WriteWorldFile(filepath.Join(filepath.Dir(sib.StoragePath), strings.TrimSuffix(filepath.Base(sib.StoragePath), baseExt)+wExt), t)
+						}
+						vrtPath := filepath.Join(processedDir, "georeferenced.vrt")
+						_ = gis.WriteGDALVrt(vrtPath, sib.StoragePath, int(sibW), int(sibH), t, "EPSG:4326")
+					}
+				}
+			}
+
+			sib.ExtractedMetadata = newMeta
+
+			sib.MapLayer = map[string]interface{}{
+				"id":          "lyr_" + sib.ID,
+				"name":        sib.Filename,
+				"type":        "raster",
+				"bounds":      refDataset.ExtractedMetadata["bounds"],
+				"bounds_crs":  "EPSG:4326",
+				"coordinates": refCoords,
+			}
+			if sib.GeoreferencedPath == "" {
+				sib.GeoreferencedPath = sib.StoragePath
+			}
+			if sib.ProcessedPath == "" {
+				sib.ProcessedPath = sib.StoragePath
+			}
+			_ = repo.UpdateDataset(sessionID, sib)
+
+			// Update or add layer in repository
+			lyrs, _ := repo.ListLayers(sessionID, sib.ID)
+			if len(lyrs) > 0 {
+				lyrs[0].Bounds = normBounds
+				_ = repo.SetLayers(sessionID, sib.ID, lyrs)
+			} else {
+				_ = repo.SetLayers(sessionID, sib.ID, []*models.Layer{
+					{
+						ID:        "lyr_" + sib.ID,
+						DatasetID: sib.ID,
+						Name:      sib.Filename,
+						Type:      "raster",
+						Visible:   true,
+						Opacity:   1.0,
+						Bounds:    normBounds,
+					},
+				})
+			}
+		}
+	}
+
+	return nil
 }
 
 func fileExists(p string) bool {

@@ -40,7 +40,7 @@ export default function UploadStatus({
         </div>
         <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Upload complete</h3>
         <p className="text-xs text-[#7a7a7a] max-w-sm mb-6 font-mono truncate">
-          {result.filename}
+          {result?.filename || file?.name || "Uploaded dataset"}
         </p>
         <Button
           type="button"
@@ -92,6 +92,13 @@ export default function UploadStatus({
     )
   }
 
+  if (!file && !result) {
+    return null
+  }
+
+  const fileName = file?.name || result?.filename || "Selected file"
+  const formattedSize = file?.size != null ? fileSize(file.size) : (result?.file_size != null ? fileSize(result.file_size) : "")
+
   return (
     <div className="relative bg-[#ffffff] border border-[#e0e0e0] rounded-[18px] p-6 sm:p-8 flex flex-col justify-between min-h-[320px] shadow-xs">
       <div>
@@ -99,7 +106,9 @@ export default function UploadStatus({
           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-mono border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f]">
             {state === "uploading" ? "UPLOADING CHUNKS" : "READY TO INGEST"}
           </span>
-          <span className="text-xs text-[#7a7a7a] font-mono">{fileSize(file.size)}</span>
+          {formattedSize ? (
+            <span className="text-xs text-[#7a7a7a] font-mono">{formattedSize}</span>
+          ) : null}
         </div>
 
         {/* Shadcn Attachment Component */}
@@ -118,10 +127,10 @@ export default function UploadStatus({
             </AttachmentMedia>
             <AttachmentContent className="min-w-0 flex-1">
               <AttachmentTitle className="text-xs font-semibold text-[#1d1d1f] truncate">
-                {file.name}
+                {fileName}
               </AttachmentTitle>
               <AttachmentDescription className="text-[11px] text-[#7a7a7a]">
-                {fileSize(file.size)} • Ready for spatial ingestion
+                {formattedSize ? `${formattedSize} • ` : ""}Ready for spatial ingestion
               </AttachmentDescription>
             </AttachmentContent>
             {state !== "uploading" && (

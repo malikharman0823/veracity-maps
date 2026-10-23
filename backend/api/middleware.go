@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -67,7 +68,7 @@ func (m *Middleware) Recovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("[PANIC RECOVERED] %s %s: %v", r.Method, r.URL.Path, rec)
+				log.Printf("[PANIC RECOVERED] %s %s: %v\n%s", r.Method, r.URL.Path, rec, string(debug.Stack()))
 				models.WriteError(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "An unexpected internal server error occurred", nil, nil)
 			}
 		}()

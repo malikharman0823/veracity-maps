@@ -33,12 +33,17 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 	}
 
 	format := "mtmap"
+	var req ExportRequest
+	isSelective := false
+
 	switch r.Method {
 	case http.MethodPost:
-		var req ExportRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Format != "" {
 			format = req.Format
+		}
+		if len(req.BuildingIDs) > 0 || len(req.FloorIDs) > 0 || len(req.LayerIDs) > 0 || req.Options != nil {
+			isSelective = true
 		}
 	case http.MethodGet:
 		if qFormat := r.URL.Query().Get("format"); qFormat != "" {
@@ -49,7 +54,34 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		return
 	}
 
-	filePath, filename, err := h.exportService.GenerateExport(sessionID, datasetID, format)
+	var filePath, filename string
+	var err error
+
+	if isSelective {
+		var selOpts *services.SelectiveExportOptions
+		if req.Options != nil {
+			selOpts = &services.SelectiveExportOptions{
+				IncludeBuildingConfig:   req.Options.IncludeBuildingConfig,
+				IncludeControlPoints:    req.Options.IncludeControlPoints,
+				IncludeIcons:            req.Options.IncludeIcons,
+				IncludeLayerStyles:      req.Options.IncludeLayerStyles,
+				IncludeOriginalRasters:  req.Options.IncludeOriginalRaster,
+				IncludeProcessedRasters: req.Options.IncludeProcessedRaster,
+				IncludeBaseMapSettings:  req.Options.IncludeBaseMapSettings,
+				IncludeProjectMetadata:  req.Options.IncludeProjectMetadata,
+			}
+		}
+		filePath, filename, err = h.exportService.GenerateSelectiveExport(sessionID, datasetID, services.SelectiveExportParams{
+			ProjectName: req.ProjectName,
+			BuildingIDs: req.BuildingIDs,
+			FloorIDs:    req.FloorIDs,
+			LayerIDs:    req.LayerIDs,
+			Options:     selOpts,
+		})
+	} else {
+		filePath, filename, err = h.exportService.GenerateExport(sessionID, datasetID, format)
+	}
+
 	if err != nil {
 		errCode := "EXPORT_FAILED"
 		msg := err.Error()

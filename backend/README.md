@@ -41,6 +41,7 @@ The **Veracity Maps Backend** is a modular, zero-dependency Go web service built
   - `POST /buildings/{id}/floors`: Adds a floor plan with level, label, and assigned datasets.
   - `PUT /buildings/{id}/floors/{floorId}`: Updates floor plan properties or sorting.
   - `DELETE /buildings/{id}/floors/{floorId}`: Removes a floor plan.
+  - `POST /buildings/{id}/propagate`: Propagates any georeferenced floor footprint, world files, and affine transform to all sibling floors in the building.
 
 - **Multi-Dataset ZIP Inspection & Import**:
   - `POST /datasets/inspect-archive`: Inspects uploaded archive, classifies raster files, pairs matching sidecars (`.pgw`, `.jgw`, `.tfw`, `.wld`, `.prj`), infers buildings and floors, and returns a staged token and candidate list.

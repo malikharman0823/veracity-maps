@@ -11,6 +11,7 @@ import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import { API_URL, BASEMAP_ATTRIBUTION, BASEMAP_TILE_URL, getIconUrl } from "../api"
 import { featureSummary } from "./FeatureInfo"
 import MapCoordinates from "./MapCoordinates"
+import { processIconForMap } from "../lib/iconProcessing"
 
 const BASEMAP_LAYER_ID = "basemap"
 const DATASET_SOURCE_ID = "dataset-raster-source"
@@ -329,12 +330,9 @@ export default function Map({
     if (typeof map.setMissingStyleImageResolver === "function") {
       map.setMissingStyleImageResolver(async (id) => {
         try {
-          const resp = await fetch(getIconUrl(id))
-          if (!resp.ok) return
-          const blob = await resp.blob()
-          const imgBitmap = await createImageBitmap(blob)
+          const canvasOrImg = await processIconForMap(getIconUrl(id), 36)
           if (!map.hasImage(id)) {
-            map.addImage(id, imgBitmap)
+            map.addImage(id, canvasOrImg)
           }
         } catch {}
       })
@@ -342,23 +340,21 @@ export default function Map({
 
     map.on("styleimagemissing", (e) => {
       const id = e.id
-      const img = new Image()
-      img.crossOrigin = "Anonymous"
-      img.onload = () => {
-        if (!map.hasImage(id)) map.addImage(id, img)
-      }
-      img.onerror = () => {
-        if (!map.hasImage(id)) {
-          const redCircleSvg = `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#d92d20" stroke="#fff" stroke-width="2"/></svg>`
-          const fallbackImg = new Image()
-          fallbackImg.onload = () => {
-            if (!map.hasImage(id)) map.addImage(id, fallbackImg)
+      if (map.hasImage(id)) return
+      processIconForMap(getIconUrl(id), 36)
+        .then((canvasOrImg) => {
+          if (!map.hasImage(id)) map.addImage(id, canvasOrImg)
+        })
+        .catch(() => {
+          if (!map.hasImage(id)) {
+            const redCircleSvg = `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#d92d20" stroke="#fff" stroke-width="2"/></svg>`
+            const fallbackImg = new Image()
+            fallbackImg.onload = () => {
+              if (!map.hasImage(id)) map.addImage(id, fallbackImg)
+            }
+            fallbackImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(redCircleSvg)}`
           }
-          fallbackImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(redCircleSvg)}`
-        }
-      }
-      // Add a cache buster so we don't load the broken cached SVGs from earlier
-      img.src = `${API_URL}/icons/${id}?t=${Date.now()}`
+        })
     })
 
     const defaultSvg = `<svg width="42" height="42" viewBox="0 0 42 42" xmlns="http://www.w3.org/2000/svg"><circle cx="21" cy="21" r="19.5" fill="none" stroke="#16a34a" stroke-width="3"/><line x1="21" y1="0" x2="21" y2="42" stroke="#16a34a" stroke-width="2"/><line x1="0" y1="21" x2="42" y2="21" stroke="#16a34a" stroke-width="2"/><circle cx="21" cy="21" r="21" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2"/></svg>`

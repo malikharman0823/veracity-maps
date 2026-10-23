@@ -1,4 +1,5 @@
 import axios from "axios"
+import { normalizeSavedConfigs } from "./lib/sessionLoading"
 
 function requiredSetting(name) {
   const value = import.meta.env[name]
@@ -437,13 +438,21 @@ function safeDownloadFilename(value, fallback) {
   return safe && safe !== "." && safe !== ".." ? safe : fallback
 }
 
-export async function downloadProjectExport(datasetId, projectName) {
+export async function downloadProjectExport(datasetId, projectName, exportPayload = null) {
   let response
   try {
-    response = await client.get(
-      `/datasets/${encodeURIComponent(datasetId)}/export`,
-      { responseType: "blob", timeout: 10 * 60_000 },
-    )
+    if (exportPayload && (exportPayload.layer_ids || exportPayload.options || exportPayload.building_ids)) {
+      response = await client.post(
+        `/datasets/${encodeURIComponent(datasetId)}/export`,
+        { ...exportPayload, format: "mtmap", project_name: projectName },
+        { responseType: "blob", timeout: 10 * 60_000, headers: { Accept: "application/zip" } },
+      )
+    } else {
+      response = await client.get(
+        `/datasets/${encodeURIComponent(datasetId)}/export`,
+        { responseType: "blob", timeout: 10 * 60_000 },
+      )
+    }
   } catch (error) {
     if (error.response?.data instanceof Blob) {
       try {
@@ -572,7 +581,7 @@ export async function previewBackgroundRemoval(datasetId, { color = "#ffffff", t
   return response.data.data
 }
 
-export async function applyBackgroundRemoval(datasetId, { color = "#ffffff", threshold = 30, edgeSoftness = 10 } = {}) {
+export async function applyBackgroundRemoval(datasetId, { color = "#ffffff", threshold = 30, edgeSoftness = 10, applyToAllFloors = false } = {}) {
   const response = await client.post(
     `/datasets/${encodeURIComponent(datasetId)}/background-removal`,
     {
@@ -580,6 +589,7 @@ export async function applyBackgroundRemoval(datasetId, { color = "#ffffff", thr
       color,
       threshold,
       edge_softness: edgeSoftness,
+      apply_to_all_floors: applyToAllFloors,
     },
   )
   return response.data.data
@@ -729,6 +739,12 @@ export async function deleteBuildingFloor(buildingId, floorId) {
   return response.data.data
 }
 
+export async function propagateBuildingGeoreference(buildingId) {
+  const response = await client.post(`/buildings/${encodeURIComponent(buildingId)}/propagate`)
+  return response.data.data
+}
+
+
 // -------------------------------------------------------------
 // Multi-Dataset ZIP Inspection & Import API
 // -------------------------------------------------------------
@@ -737,8 +753,8 @@ export async function inspectArchive(file, { onUploadProgress } = {}) {
   const formData = new FormData()
   formData.append("file", file)
   const response = await client.post("/datasets/inspect-archive", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress,
+    timeout: 10 * 60_000,
   })
   return response.data.data
 }
@@ -752,3 +768,34 @@ export async function importArchiveSelected(token, selections) {
   return response.data.data
 }
 
+// -------------------------------------------------------------
+// Saved Configurations API
+// -------------------------------------------------------------
+
+export async function listSavedConfigs(sessionId) {
+  const sid = sessionId || getActiveSessionId()
+  if (!sid) return []
+  const response = await client.get(`/sessions/${encodeURIComponent(sid)}/configs`)
+  return normalizeSavedConfigs(response.data.data)
+}
+
+export async function createSavedConfig(sessionId, configPayload) {
+  const sid = sessionId || getActiveSessionId()
+  if (!sid) throw new Error("No active session")
+  const response = await client.post(`/sessions/${encodeURIComponent(sid)}/configs`, configPayload)
+  return response.data.data
+}
+
+export async function getSavedConfig(sessionId, configId) {
+  const sid = sessionId || getActiveSessionId()
+  if (!sid) throw new Error("No active session")
+  const response = await client.get(`/sessions/${encodeURIComponent(sid)}/configs/${encodeURIComponent(configId)}`)
+  return response.data.data
+}
+
+export async function deleteSavedConfig(sessionId, configId) {
+  const sid = sessionId || getActiveSessionId()
+  if (!sid) throw new Error("No active session")
+  const response = await client.delete(`/sessions/${encodeURIComponent(sid)}/configs/${encodeURIComponent(configId)}`)
+  return response.data.data
+}

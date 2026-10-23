@@ -178,6 +178,17 @@ export default function useWorkspace(primaryDatasetId) {
     "Unable to save the workspace view.",
   ), [primaryDatasetId, runMutation])
 
+  const updateCamera = useCallback((camera) => {
+    // Only patch camera state on the backend; do NOT trigger full records refresh or saving spinner
+    return patchWorkspaceState(primaryDatasetId, { camera })
+      .then((nextManifest) => {
+        if (nextManifest) {
+          setManifest((prev) => (prev ? { ...prev, camera: nextManifest.camera } : prev))
+        }
+      })
+      .catch(() => undefined)
+  }, [primaryDatasetId])
+
   const attachDataset = useCallback((datasetId) => runMutation(
     async () => {
       try {
@@ -219,6 +230,7 @@ export default function useWorkspace(primaryDatasetId) {
     updateMember,
     reorderMembers,
     updateState,
+    updateCamera,
     attachDataset,
     detachDataset,
     refreshManifest: loadManifest,

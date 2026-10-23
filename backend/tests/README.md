@@ -52,6 +52,20 @@ The `tests` package houses the automated test suites for the Veracity Maps Go ba
 - **Purpose**: Unit tests for the thread-safe `SessionRepository`.
 - **Key Test**: `TestSessionRepository_Lifecycle`: Validates session creation, dataset insertion, control point CRUD, concurrent access, and TTL-based background session expiration.
 
+### 5. `multi_dataset_zip_test.go`
+- **Purpose**: Tests multi-dataset archive inspection, staged review, sidecar pairing, and selective import.
+- **Key Tests**:
+  - `TestAPI_MultiDatasetZipInspectionAndImport`: Validates discovery of multiple raster files, companion world files/projections, building and floor suggestions, and selective import execution.
+  - `TestAPI_MultiDatasetZipSlipDefense`: Validates security protections against ZIP-Slip archive entries.
+  - `TestAPI_MultiFloorInheritanceAndWorkspaceMembers`: Validates workspace manifest enrichment with multi-floor dataset members.
+
+### 6. `multi_floor_propagation_test.go`
+- **Purpose**: Tests multi-floor building hierarchy parsing, spatial footprint propagation, and pseudo-building consolidation.
+- **Key Tests**:
+  - `TestAPI_MultiFloorUploadAllFloorsParsed`: Uploads an archive with multiple building floors (e.g. Building A Basement, Ground, First, Second; Building B Ground) and verifies all floors are cleanly parsed and registered.
+  - `TestAPI_SingleGeoreferencePropagatesToEntireBuilding`: Verifies that georeferencing one floor in a building automatically propagates the spatial footprint, bounding box, scaled affine transform, and companion `.pgw` files across all sibling floors.
+  - `TestAPI_ConsolidatePseudoBuildingsAndPropagateGeoreference`: Verifies that pseudo-buildings named from floor tokens ("Floor B1", "Floor G", "Floor 1") are consolidated into the parent building ("Building A") with all floors marked `completed` and inheriting georeferencing.
+
 ---
 
 ## Running the Test Suite

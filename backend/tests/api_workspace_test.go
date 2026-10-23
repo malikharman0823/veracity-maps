@@ -158,4 +158,125 @@ func TestAPI_WorkspaceAndIcons(t *testing.T) {
 	if reloadedDs.Filename != "floorplan.png" {
 		t.Fatalf("expected reloaded dataset filename 'floorplan.png', got %s", reloadedDs.Filename)
 	}
+
+	// 9. Test Uploading second standalone dataset creates independent workspace
+	body2 := &bytes.Buffer{}
+	writer2 := multipart.NewWriter(body2)
+	part2, _ := writer2.CreateFormFile("file", "standalone_parking.png")
+	_, _ = part2.Write(createTestPNG(150, 150))
+	_ = writer2.Close()
+
+	upReq2, _ := http.NewRequest("POST", server.URL+"/upload", body2)
+	upReq2.Header.Set("Content-Type", writer2.FormDataContentType())
+	upReq2.Header.Set("X-Session-ID", sessionID)
+	upResp2, err := client.Do(upReq2)
+	if err != nil {
+		t.Fatalf("failed uploading 2nd dataset: %v", err)
+	}
+	var up2Data struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(upResp2.Body).Decode(&up2Data)
+	upResp2.Body.Close()
+	dsID2 := up2Data.Data.ID
+
+	// Check 2nd dataset workspace manifest: must only contain dsID2, NOT datasetID (clean isolated workspace!)
+	wsReq2, _ := http.NewRequest("GET", server.URL+"/datasets/"+dsID2+"/workspace", nil)
+	wsReq2.Header.Set("X-Session-ID", sessionID)
+	wsResp2, err := client.Do(wsReq2)
+	if err != nil {
+		t.Fatalf("failed getting workspace for ds2: %v", err)
+	}
+	defer wsResp2.Body.Close()
+	var wsDoc2 struct {
+		Data struct {
+			Members []map[string]interface{} `json:"members"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(wsResp2.Body).Decode(&wsDoc2)
+	if len(wsDoc2.Data.Members) != 1 {
+		t.Fatalf("expected 2nd workspace to be isolated with 1 member, got %d: %+v", len(wsDoc2.Data.Members), wsDoc2.Data.Members)
+	}
+	if wsDoc2.Data.Members[0]["dataset_id"] != dsID2 {
+		t.Fatalf("expected 2nd workspace member to be %s, got %v", dsID2, wsDoc2.Data.Members[0]["dataset_id"])
+	}
+
+	// Also check original datasetID workspace: must NOT contain dsID2 automatically
+	wsReq1, _ := http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/workspace", nil)
+	wsReq1.Header.Set("X-Session-ID", sessionID)
+	wsResp1, err := client.Do(wsReq1)
+	if err != nil {
+		t.Fatalf("failed getting workspace for ds1: %v", err)
+	}
+	defer wsResp1.Body.Close()
+	var wsDoc1 struct {
+		Data struct {
+			Members []map[string]interface{} `json:"members"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(wsResp1.Body).Decode(&wsDoc1)
+	for _, m := range wsDoc1.Data.Members {
+		if m["dataset_id"] == dsID2 {
+			t.Fatalf("original workspace should not automatically contain newly uploaded dsID2 without explicit add dataset")
+		}
+	}
+
+	// 10. Test Saved Configurations API: POST, GET list, DELETE
+	cfgPayload, _ := json.Marshal(map[string]interface{}{
+		"name":               "My Saved Campus Map",
+		"primary_dataset_id": datasetID,
+		"members":            []string{datasetID},
+	})
+	cfgReq, _ := http.NewRequest("POST", server.URL+"/sessions/"+sessionID+"/configs", bytes.NewReader(cfgPayload))
+	cfgReq.Header.Set("Content-Type", "application/json")
+	cfgResp, err := client.Do(cfgReq)
+	if err != nil {
+		t.Fatalf("failed saving config: %v", err)
+	}
+	defer cfgResp.Body.Close()
+	if cfgResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 Created from saving config, got %d", cfgResp.StatusCode)
+	}
+	var cfgRes struct {
+		Data struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(cfgResp.Body).Decode(&cfgRes)
+	createdCfg := cfgRes.Data
+	if createdCfg.ID == "" || createdCfg.Name != "My Saved Campus Map" {
+		t.Fatalf("unexpected saved config: %+v", createdCfg)
+	}
+
+	// List saved configs
+	listCfgReq, _ := http.NewRequest("GET", server.URL+"/sessions/"+sessionID+"/configs", nil)
+	listCfgResp, err := client.Do(listCfgReq)
+	if err != nil {
+		t.Fatalf("failed listing saved configs: %v", err)
+	}
+	defer listCfgResp.Body.Close()
+	var listRes struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(listCfgResp.Body).Decode(&listRes)
+	if len(listRes.Data) != 1 {
+		t.Fatalf("expected 1 saved config, got %d", len(listRes.Data))
+	}
+
+	// Delete saved config
+	delCfgReq, _ := http.NewRequest("DELETE", server.URL+"/sessions/"+sessionID+"/configs/"+createdCfg.ID, nil)
+	delCfgResp, err := client.Do(delCfgReq)
+	if err != nil {
+		t.Fatalf("failed deleting saved config: %v", err)
+	}
+	delCfgResp.Body.Close()
+	if delCfgResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from deleting saved config, got %d", delCfgResp.StatusCode)
+	}
 }

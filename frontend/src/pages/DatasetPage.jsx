@@ -17,11 +17,14 @@ import {
   updateMapProject,
   downloadProjectExport,
   mbtilesTileUrl,
+  listBuildings,
+  listDatasets,
 } from "../api"
 import DatasetInspectionPanel from "../components/DatasetInspectionPanel"
 import Map from "../components/Map"
 import { displayName } from "../components/DatasetCard"
 import DatasetMetadataOverlay from "../components/DatasetMetadataOverlay"
+import ExportProjectModal from "../components/ExportProjectModal"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -231,17 +234,45 @@ export default function DatasetPage() {
     }
   }
 
+  const [exportModalOpen, setExportModalOpen] = useState(false)
+  const [exportModalBuildings, setExportModalBuildings] = useState([])
+  const [exportModalDatasets, setExportModalDatasets] = useState([])
+  const [exportModalError, setExportModalError] = useState(null)
+
   async function handleExport() {
+    setExportModalError(null)
+    setExportModalOpen(true)
+    try {
+      const [blds, dss] = await Promise.all([
+        listBuildings().catch(() => []),
+        listDatasets().catch(() => []),
+      ])
+      const relevantBuildings = (blds || []).filter((b) =>
+        (b.floors || []).some((fl) => (fl.dataset_ids || []).includes(id))
+      )
+      setExportModalBuildings(relevantBuildings)
+      setExportModalDatasets(dss || [])
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+
+  async function handlePerformExport(payload) {
     if (exportState === "exporting") return
     setExportState("exporting")
-    setExportStatus({ message: "Preparing Veracity Maps project package…", details: "" })
+    setExportModalError(null)
     try {
-      const filename = await downloadProjectExport(id, project?.name || dataset?.filename)
+      const filename = await downloadProjectExport(id, project?.name || dataset?.filename, payload)
       setExportState("success")
       setExportStatus({ message: "Export ready", details: filename })
+      setExportModalOpen(false)
     } catch (requestError) {
+      const err = readableApiError(requestError, "Unable to export the Veracity Maps project package.")
       setExportState("error")
-      setExportStatus(readableApiError(requestError, "Unable to export the Veracity Maps project package."))
+      setExportModalError(err)
+      setExportStatus(err)
+    } finally {
+      setExportState("idle")
     }
   }
 
@@ -711,6 +742,29 @@ export default function DatasetPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExportProjectModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        manifest={{
+          members: [
+            {
+              dataset_id: id,
+              name: dataset?.filename || "Dataset Layer",
+              raster_opacity: opacity,
+              floor_level: dataset?.extracted_metadata?.floor_level ?? 0,
+              floor_label: dataset?.extracted_metadata?.floor_label ?? "Ground Floor",
+              building_name: dataset?.extracted_metadata?.building_name || "",
+            },
+          ],
+        }}
+        buildings={exportModalBuildings}
+        datasets={exportModalDatasets}
+        primaryDatasetId={id}
+        onExport={handlePerformExport}
+        exporting={exportState === "exporting"}
+        error={exportModalError}
+      />
     </div>
   )
 }

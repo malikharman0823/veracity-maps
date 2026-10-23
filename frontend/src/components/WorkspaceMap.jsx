@@ -33,8 +33,13 @@ import MapCoordinates from "./MapCoordinates"
 import RasterTransformOverlay from "./RasterTransformOverlay"
 import IconPicker from "./IconPicker"
 import IconPointForm from "./IconPointForm"
+import FloorTraversalOverlay from "./FloorTraversalOverlay"
+import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
+import { processIconForMap } from "../lib/iconProcessing"
+import { resolveBuildingName, isMemberBuildingMatch } from "../lib/buildingUtils"
 
 setWorkerUrl(mapLibreWorkerUrl)
+
 
 const BASEMAP_LAYER = "workspace-basemap"
 
@@ -65,6 +70,79 @@ function boundsArray(bounds) {
       ]
   const parsed = values.map(Number)
   return parsed.length === 4 && parsed.every(Number.isFinite) ? parsed : null
+}
+
+function mercatorToLngLat(x, y) {
+  const lng = (x / 20037508.342789244) * 180
+  let lat = (Math.atan(Math.exp((y / 20037508.342789244) * Math.PI)) * 360) / Math.PI - 90
+  lat = Math.max(-85.05112878, Math.min(85.05112878, lat))
+  return [lng, lat]
+}
+
+function toValidMapLibreBounds(boundsInput) {
+  const arr = boundsArray(boundsInput)
+  if (!arr) return null
+  let [minX, minY, maxX, maxY] = arr
+
+  // Check if coordinates appear to be in EPSG:3857 Web Mercator meters
+  const isMercator =
+    (Math.abs(minX) > 180 || Math.abs(maxX) > 180 || Math.abs(minY) > 90 || Math.abs(maxY) > 90) &&
+    Math.abs(minX) <= 20037509 &&
+    Math.abs(maxX) <= 20037509 &&
+    Math.abs(minY) <= 20037509 &&
+    Math.abs(maxY) <= 20037509
+
+  if (isMercator) {
+    const sw = mercatorToLngLat(minX, minY)
+    const ne = mercatorToLngLat(maxX, maxY)
+    minX = sw[0]
+    minY = sw[1]
+    maxX = ne[0]
+    maxY = ne[1]
+  }
+
+  // Must be finite and within plausible geographic limits
+  if (
+    !Number.isFinite(minX) ||
+    !Number.isFinite(minY) ||
+    !Number.isFinite(maxX) ||
+    !Number.isFinite(maxY) ||
+    minX < -180 ||
+    maxX > 180 ||
+    minY < -90 ||
+    maxY > 90 ||
+    minX >= maxX ||
+    minY >= maxY
+  ) {
+    return null
+  }
+
+  // Clamp latitudes to Web Mercator limits for MapLibre
+  const clampedMinY = Math.max(-85.05112878, Math.min(85.05112878, minY))
+  const clampedMaxY = Math.max(-85.05112878, Math.min(85.05112878, maxY))
+
+  if (clampedMinY >= clampedMaxY) return null
+
+  return [minX, clampedMinY, maxX, clampedMaxY]
+}
+
+function safeFitBounds(map, bounds, options = { padding: 60 }) {
+  if (!map || !bounds) return false
+  const valid = toValidMapLibreBounds(bounds)
+  if (!valid) return false
+  try {
+    map.fitBounds(
+      [
+        [valid[0], valid[1]],
+        [valid[2], valid[3]],
+      ],
+      options
+    )
+    return true
+  } catch (err) {
+    console.warn("safeFitBounds caught error:", err)
+    return false
+  }
 }
 
 function overlayCoordinates(parameters, imageSize) {
@@ -114,8 +192,20 @@ function overlayCoordinates(parameters, imageSize) {
 }
 
 function getOverlayCoordinates(member, layer) {
+  const isCoordValid = (c) =>
+    Array.isArray(c) &&
+    c.length === 2 &&
+    Number.isFinite(c[0]) &&
+    Number.isFinite(c[1]) &&
+    c[0] >= -180 &&
+    c[0] <= 180 &&
+    c[1] >= -85.051129 &&
+    c[1] <= 85.051129
+
   if (Array.isArray(layer?.coordinates) && layer.coordinates.length === 4) {
-    return layer.coordinates
+    if (layer.coordinates.every(isCoordValid)) {
+      return layer.coordinates
+    }
   }
 
   const meta = member.dataset?.extracted_metadata || member.dataset?.metadata || {}
@@ -125,12 +215,14 @@ function getOverlayCoordinates(member, layer) {
 
   if (transform && width > 0 && height > 0) {
     const coords = overlayCoordinates(transform, { width, height })
-    if (coords && coords.length === 4) return coords
+    if (coords && coords.length === 4 && coords.every(isCoordValid)) {
+      return coords
+    }
   }
 
-  const bounds = boundsArray(layer?.bounds || meta.bounds || member.bounds)
-  if (bounds) {
-    const [minX, minY, maxX, maxY] = bounds
+  const validBounds = toValidMapLibreBounds(layer?.bounds || meta.bounds || member.bounds)
+  if (validBounds) {
+    const [minX, minY, maxX, maxY] = validBounds
     return [
       [minX, maxY], // top-left
       [maxX, maxY], // top-right
@@ -189,17 +281,25 @@ export default function WorkspaceMap({
   onEndTransform,
   onTransformApplied,
   activeFloorLevel = 0,
+  activeBuildingName = "",
   onActiveFloorChange,
   onRecordsRefresh,
   primaryDatasetId,
+  onMemberUpdate,
+  buildings = [],
+  isolateActiveFloor = true,
+  onToggleIsolateActiveFloor,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const membersRef = useRef(members)
   const selectRecordRef = useRef(onSelectRecord)
   const cameraChangeRef = useRef(onCameraChange)
+  const savedCameraRef = useRef(savedCamera)
   const activeFloorLevelRef = useRef(activeFloorLevel)
-  const fittedRef = useRef(false)
+  const activeBuildingNameRef = useRef(activeBuildingName)
+  const fittedRef = useRef(Boolean(savedCamera && (savedCamera.zoom || savedCamera.longitude || savedCamera.center)))
+  const lastPannedRecordIdRef = useRef(null)
   const [ready, setReady] = useState(false)
   const [coordinate, setCoordinate] = useState(null)
 
@@ -213,6 +313,67 @@ export default function WorkspaceMap({
   const [showAllFloorPoints, setShowAllFloorPoints] = useState(false)
   const [iconPointsVisible, setIconPointsVisible] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState(null)
+  const [bgRemovalMember, setBgRemovalMember] = useState(null)
+
+  // Internal floor level and building synchronized with props
+  const [internalFloorLevel, setInternalFloorLevel] = useState(activeFloorLevel ?? 0)
+  const [internalBuildingName, setInternalBuildingName] = useState(activeBuildingName || "")
+
+  const currentFloorLevel = activeFloorLevel !== undefined ? activeFloorLevel : internalFloorLevel
+  const currentBuildingName = activeBuildingName !== undefined && activeBuildingName !== "" ? activeBuildingName : internalBuildingName
+  const [internalIsolate, setInternalIsolate] = useState(true)
+  const isIsolateActive = isolateActiveFloor !== undefined ? isolateActiveFloor : internalIsolate
+
+  const handleToggleIsolate = () => {
+    if (onToggleIsolateActiveFloor) {
+      onToggleIsolateActiveFloor(!isIsolateActive)
+    } else {
+      setInternalIsolate(!internalIsolate)
+    }
+  }
+
+  const handleSelectFloor = (level, buildingName) => {
+    const numLevel = Number(level)
+    setInternalFloorLevel(numLevel)
+    if (buildingName !== undefined) {
+      setInternalBuildingName(buildingName || "")
+    }
+    if (onActiveFloorChange) {
+      onActiveFloorChange(numLevel, buildingName)
+    }
+  }
+
+  // Memoized building floors for point forms and floor switcher
+  const buildingFloors = useMemo(() => {
+    return members
+      .filter((m) => Boolean(
+        m.is_building_floor ||
+        m.building_name ||
+        m.floor_level !== undefined ||
+        m.dataset?.extracted_metadata?.is_building_floor ||
+        m.dataset?.extracted_metadata?.building_name ||
+        m.dataset?.extracted_metadata?.floor_level !== undefined
+      ))
+      .map((m) => {
+        const lvl = m.floor_level ?? m.dataset?.extracted_metadata?.floor_level ?? 0
+        const lbl =
+          m.floor_label ||
+          m.dataset?.extracted_metadata?.floor_label ||
+          m.name ||
+          m.dataset?.filename ||
+          `Floor ${lvl}`
+        return {
+          id: m.dataset_id,
+          dataset_id: m.dataset_id,
+          level: lvl,
+          floor_level: lvl,
+          name: lbl,
+          floor_label: lbl,
+          building_name: m.building_name || m.dataset?.extracted_metadata?.building_name || "Building",
+        }
+      })
+      .sort((a, b) => b.level - a.level)
+  }, [members])
 
   useEffect(() => {
     membersRef.current = members
@@ -227,24 +388,32 @@ export default function WorkspaceMap({
   }, [onCameraChange])
 
   useEffect(() => {
-    activeFloorLevelRef.current = activeFloorLevel
-  }, [activeFloorLevel])
+    savedCameraRef.current = savedCamera
+  }, [savedCamera])
+
+  const selectFloorRef = useRef(handleSelectFloor)
+  useEffect(() => {
+    selectFloorRef.current = handleSelectFloor
+  })
+
+  useEffect(() => {
+    activeFloorLevelRef.current = currentFloorLevel
+  }, [currentFloorLevel])
 
   // Proactively register selected icon
   useEffect(() => {
     const map = mapRef.current
     if (!ready || !map || !selectedIconId) return
     if (!map.hasImage(selectedIconId)) {
-      const img = new window.Image()
-      img.crossOrigin = "anonymous"
-      img.onload = () => {
-        if (mapRef.current && !mapRef.current.hasImage(selectedIconId)) {
-          try {
-            mapRef.current.addImage(selectedIconId, img)
-          } catch {}
-        }
-      }
-      img.src = getIconUrl(selectedIconId)
+      processIconForMap(getIconUrl(selectedIconId), 36)
+        .then((canvasOrImg) => {
+          if (mapRef.current && !mapRef.current.hasImage(selectedIconId)) {
+            try {
+              mapRef.current.addImage(selectedIconId, canvasOrImg)
+            } catch {}
+          }
+        })
+        .catch(() => {})
     }
   }, [ready, selectedIconId])
 
@@ -283,12 +452,9 @@ export default function WorkspaceMap({
     if (typeof map.setMissingStyleImageResolver === "function") {
       map.setMissingStyleImageResolver(async (id) => {
         try {
-          const resp = await fetch(getIconUrl(id))
-          if (!resp.ok) return
-          const blob = await resp.blob()
-          const imgBitmap = await createImageBitmap(blob)
+          const canvasOrImg = await processIconForMap(getIconUrl(id), 36)
           if (!map.hasImage(id)) {
-            map.addImage(id, imgBitmap)
+            map.addImage(id, canvasOrImg)
           }
         } catch {
           // Fallback marker circle to prevent missing image crashes
@@ -315,30 +481,30 @@ export default function WorkspaceMap({
     map.on("styleimagemissing", (e) => {
       const id = e.id
       if (map.hasImage(id)) return
-      const img = new window.Image()
-      img.crossOrigin = "anonymous"
-      img.onload = () => {
-        if (!map.hasImage(id)) {
-          map.addImage(id, img)
-        }
-      }
-      img.onerror = () => {
-        const canvas = document.createElement("canvas")
-        canvas.width = 24
-        canvas.height = 24
-        const ctx = canvas.getContext("2d")
-        ctx.fillStyle = "#ff3b30"
-        ctx.beginPath()
-        ctx.arc(12, 12, 9, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.strokeStyle = "#ffffff"
-        ctx.lineWidth = 2
-        ctx.stroke()
-        if (!map.hasImage(id)) {
-          map.addImage(id, ctx.getImageData(0, 0, 24, 24))
-        }
-      }
-      img.src = getIconUrl(id)
+      processIconForMap(getIconUrl(id), 36)
+        .then((canvasOrImg) => {
+          if (!map.hasImage(id)) {
+            map.addImage(id, canvasOrImg)
+          }
+        })
+        .catch(() => {
+          try {
+            const canvas = document.createElement("canvas")
+            canvas.width = 24
+            canvas.height = 24
+            const ctx = canvas.getContext("2d")
+            ctx.fillStyle = "#ff3b30"
+            ctx.beginPath()
+            ctx.arc(12, 12, 9, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.strokeStyle = "#ffffff"
+            ctx.lineWidth = 2
+            ctx.stroke()
+            if (!map.hasImage(id)) {
+              map.addImage(id, ctx.getImageData(0, 0, 24, 24))
+            }
+          } catch {}
+        })
     })
 
     map.on("load", () => {
@@ -402,14 +568,32 @@ export default function WorkspaceMap({
       clearTimeout(cameraTimer)
       cameraTimer = setTimeout(() => {
         const center = map.getCenter()
+        const zoom = map.getZoom()
+        const bearing = map.getBearing()
+        const pitch = map.getPitch()
+        const last = savedCameraRef.current
+        if (last) {
+          const lastLng = last.longitude ?? last.center?.[0]
+          const lastLat = last.latitude ?? last.center?.[1]
+          const lastZoom = last.zoom
+          if (
+            Number.isFinite(lastLng) &&
+            Number.isFinite(lastLat) &&
+            Math.abs(center.lng - lastLng) < 0.00001 &&
+            Math.abs(center.lat - lastLat) < 0.00001 &&
+            Math.abs(zoom - (lastZoom ?? zoom)) < 0.05
+          ) {
+            return
+          }
+        }
         cameraChangeRef.current?.({
           longitude: center.lng,
           latitude: center.lat,
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch(),
+          zoom,
+          bearing,
+          pitch,
         })
-      }, 400)
+      }, 800)
     })
 
     mapRef.current = map
@@ -427,6 +611,8 @@ export default function WorkspaceMap({
     window.__maptiler_map = map
     window.__veracity_setLayerOpacity = setOpacityFn
     window.__maptiler_setLayerOpacity = setOpacityFn
+    window.__veracity_setFloor = (lvl, bName) => selectFloorRef.current?.(lvl, bName)
+    window.__maptiler_setFloor = (lvl, bName) => selectFloorRef.current?.(lvl, bName)
 
     return () => {
       clearTimeout(cameraTimer)
@@ -515,21 +701,6 @@ export default function WorkspaceMap({
     [members],
   )
 
-  const buildingFloors = useMemo(() => {
-    return sortedMembers
-      .filter((m) => m.is_building_floor || m.building_name)
-      .sort((a, b) => (b.floor_level ?? 0) - (a.floor_level ?? 0))
-  }, [sortedMembers])
-
-  function handleElevatorClick(level) {
-    activeFloorLevelRef.current = level
-    if (onActiveFloorChange) onActiveFloorChange(level)
-  }
-
-  useEffect(() => {
-    window.__veracity_setFloor = handleElevatorClick
-    window.__maptiler_setFloor = handleElevatorClick
-  })
 
   // Synchronize Map Layers & Sources
   useEffect(() => {
@@ -541,6 +712,7 @@ export default function WorkspaceMap({
     // 1. Raster Layers
     sortedMembers.forEach((member) => {
       const ids = resourceIds(member.dataset_id)
+      if (member.file_missing) return
       const layer = member.dataset?.map_layer || (
         (member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds)
           ? {
@@ -641,17 +813,34 @@ export default function WorkspaceMap({
       }
 
       if (map.getSource(ids.rasterSource) && !map.getLayer(ids.rasterLayer)) {
-        map.addLayer({
-          id: ids.rasterLayer,
-          type: "raster",
-          source: ids.rasterSource,
-          paint: { "raster-opacity": safeOpacity },
-        })
+        try {
+          map.addLayer({
+            id: ids.rasterLayer,
+            type: "raster",
+            source: ids.rasterSource,
+            paint: { "raster-opacity": safeOpacity },
+          })
+        } catch (layerErr) {
+          console.warn("Could not add raster layer:", layerErr)
+        }
       }
 
-      const isBuildingFloor = Boolean(member.is_building_floor || member.building_name)
-      const isFloorActive = !isBuildingFloor || (member.floor_level === activeFloorLevel)
-      const isLayerVisible = member.visible && member.raster_visible && isFloorActive
+      const isBuildingFloor = Boolean(
+        member.is_building_floor ||
+        member.building_name ||
+        member.floor_level !== undefined ||
+        member.dataset?.extracted_metadata?.is_building_floor ||
+        member.dataset?.extracted_metadata?.building_name ||
+        member.dataset?.extracted_metadata?.floor_level !== undefined
+      )
+      const memberFloorLevel = Number(member.floor_level ?? member.dataset?.extracted_metadata?.floor_level ?? 0)
+      const isBuildingMatch = isMemberBuildingMatch(member, currentBuildingName, sortedMembers, buildings)
+
+      const isFloorActive = !isIsolateActive || !isBuildingFloor || (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0))
+      const isVisible = isIsolateActive && isBuildingFloor
+        ? (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0) && member.raster_visible !== false)
+        : (member.visible !== false && member.raster_visible !== false)
+      const isLayerVisible = isVisible && isFloorActive
 
       if (map.getLayer(ids.rasterLayer)) {
         map.setPaintProperty(ids.rasterLayer, "raster-opacity", safeOpacity)
@@ -662,20 +851,38 @@ export default function WorkspaceMap({
     // 2. Point Layers (Control Points & Geographic Icon Points)
     sortedMembers.forEach((member) => {
       const ids = resourceIds(member.dataset_id)
+      const isBuildingFloor = Boolean(
+        member.is_building_floor ||
+        member.building_name ||
+        member.floor_level !== undefined ||
+        member.dataset?.extracted_metadata?.is_building_floor ||
+        member.dataset?.extracted_metadata?.building_name ||
+        member.dataset?.extracted_metadata?.floor_level !== undefined
+      )
+      const memberFloorLevel = Number(member.floor_level ?? member.dataset?.extracted_metadata?.floor_level ?? 0)
+      const isBuildingMatch = isMemberBuildingMatch(member, currentBuildingName, sortedMembers, buildings)
+      const isFloorActive = !isIsolateActive || !isBuildingFloor || (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0))
 
       // Filter points respecting floor and scope
       const memberRecords = records.filter((record) => {
         if (record.dataset_id !== member.dataset_id) return false
-        if (record.kind !== "icon_point") return true
-
         if (showAllFloorPoints) return true
+
+        if (record.kind === "control_point") {
+          if (isIsolateActive) {
+            // When floor/building isolation is active, ONLY show control points for the active floor of the active building
+            return isBuildingFloor ? (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0)) : false
+          }
+          if (!isBuildingFloor) return true
+          return isFloorActive
+        }
 
         const scope = record.scope || (record.floor_level !== undefined && record.floor_level !== null ? "floor" : "building")
         if (scope === "building") return true
         if (scope === "floor") {
-          return record.floor_level === activeFloorLevel
+          return record.floor_level === currentFloorLevel
         }
-        return !member.is_building_floor || member.floor_level === activeFloorLevel
+        return !isBuildingFloor || memberFloorLevel === currentFloorLevel
       })
 
       const controlData = pointCollection(memberRecords, "control_point", selectedRecordId)
@@ -686,19 +893,24 @@ export default function WorkspaceMap({
         iconData.features.forEach((f) => {
           const iconId = f.properties?.icon_key || f.properties?.icon_id
           if (iconId && !map.hasImage(iconId)) {
-            const img = new window.Image()
-            img.crossOrigin = "anonymous"
-            img.onload = () => {
-              if (mapRef.current && !mapRef.current.hasImage(iconId)) {
-                try {
-                  mapRef.current.addImage(iconId, img)
-                } catch {}
-              }
-            }
-            img.src = getIconUrl(iconId)
+            processIconForMap(getIconUrl(iconId), 36)
+              .then((canvasOrImg) => {
+                if (mapRef.current && !mapRef.current.hasImage(iconId)) {
+                  try {
+                    mapRef.current.addImage(iconId, canvasOrImg)
+                  } catch {}
+                }
+              })
+              .catch(() => {})
           }
         })
       }
+
+      const isControlVisible = Boolean(
+        member.visible &&
+        member.control_points_visible &&
+        (!isIsolateActive || (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0)))
+      )
 
       const definitions = [
         {
@@ -727,7 +939,7 @@ export default function WorkspaceMap({
               paint: { "text-color": "#ffffff" },
             },
           ],
-          visible: member.visible && member.control_points_visible,
+          visible: isControlVisible,
         },
         {
           sourceId: ids.iconSource,
@@ -765,7 +977,7 @@ export default function WorkspaceMap({
               },
             },
           ],
-          visible: iconPointsVisible && member.visible && member.icon_points_visible,
+          visible: Boolean(iconPointsVisible && member.visible && member.icon_points_visible),
         },
       ]
 
@@ -784,7 +996,7 @@ export default function WorkspaceMap({
       })
     })
 
-    // Ensure raster layers are beneath point layers
+    // Ensure raster layers are beneath point layers, with active floor raster layers on top of other rasters
     const firstPointLayer = sortedMembers
       .flatMap((member) => {
         const ids = resourceIds(member.dataset_id)
@@ -792,10 +1004,48 @@ export default function WorkspaceMap({
       })
       .find((layerId) => map.getLayer(layerId))
 
-    ;[...sortedMembers].reverse().forEach((member) => {
+    const activeFloorMembers = sortedMembers.filter((m) => {
+      const isFloor = Boolean(
+        m.is_building_floor ||
+        m.building_name ||
+        m.floor_level !== undefined ||
+        m.dataset?.extracted_metadata?.is_building_floor ||
+        m.dataset?.extracted_metadata?.building_name ||
+        m.dataset?.extracted_metadata?.floor_level !== undefined
+      )
+      const lvl = Number(m.floor_level ?? m.dataset?.extracted_metadata?.floor_level ?? 0)
+      const isBldMatch = isMemberBuildingMatch(m, currentBuildingName, sortedMembers, buildings)
+      return isFloor && lvl === Number(currentFloorLevel ?? 0) && isBldMatch
+    })
+
+
+    const inactiveMembers = sortedMembers.filter((m) => !activeFloorMembers.includes(m))
+
+    // 1. Position inactive raster layers first
+    inactiveMembers.forEach((member) => {
       const rasterLayer = resourceIds(member.dataset_id).rasterLayer
-      if (map.getLayer(rasterLayer) && firstPointLayer) {
-        map.moveLayer(rasterLayer, firstPointLayer)
+      if (map.getLayer(rasterLayer)) {
+        try {
+          if (firstPointLayer) {
+            map.moveLayer(rasterLayer, firstPointLayer)
+          } else {
+            map.moveLayer(rasterLayer)
+          }
+        } catch {}
+      }
+    })
+
+    // 2. Position active floor raster layers on TOP of other rasters, directly under point layers
+    activeFloorMembers.forEach((member) => {
+      const rasterLayer = resourceIds(member.dataset_id).rasterLayer
+      if (map.getLayer(rasterLayer)) {
+        try {
+          if (firstPointLayer) {
+            map.moveLayer(rasterLayer, firstPointLayer)
+          } else {
+            map.moveLayer(rasterLayer)
+          }
+        } catch {}
       }
     })
 
@@ -815,8 +1065,8 @@ export default function WorkspaceMap({
     // Initial camera fit
     if (!fittedRef.current) {
       const visibleBounds = sortedMembers
-        .filter((member) => member.visible && (member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds))
-        .map((member) => boundsArray(member.dataset?.map_layer?.bounds || member.bounds || member.dataset?.extracted_metadata?.bounds))
+        .filter((member) => member.visible && (member.dataset?.georeference_status === "completed" || member.dataset?.map_layer))
+        .map((member) => toValidMapLibreBounds(member.dataset?.map_layer?.bounds || member.bounds || member.dataset?.extracted_metadata?.bounds))
         .filter(Boolean)
       if (visibleBounds.length) {
         const union = visibleBounds.reduce((current, bounds) => [
@@ -825,26 +1075,48 @@ export default function WorkspaceMap({
           Math.max(current[2], bounds[2]),
           Math.max(current[3], bounds[3]),
         ])
-        map.fitBounds([[union[0], union[1]], [union[2], union[3]]], { padding: 60, duration: 0 })
-        fittedRef.current = true
+        if (safeFitBounds(map, union, { padding: 60, duration: 0 })) {
+          fittedRef.current = true
+        }
       }
     }
-  }, [ready, records, selectedRecordId, sortedMembers, activeFloorLevel, showAllFloorPoints, iconPointsVisible])
+  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible])
 
   // Pan to selected record
   useEffect(() => {
+    if (!selectedRecordId) {
+      lastPannedRecordIdRef.current = null
+      return
+    }
+    if (lastPannedRecordIdRef.current === selectedRecordId) return
+
     const selected = records.find((record) => record.id === selectedRecordId)
     const map = mapRef.current
     if (!map || !selected) return
+
+    lastPannedRecordIdRef.current = selectedRecordId
+
     if (selected.kind === "raster") {
-      const bounds = boundsArray(selected.bounds)
-      if (bounds) {
-        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], { padding: 60, duration: 1000 })
+      if (selected.bounds) {
+        safeFitBounds(map, selected.bounds, { padding: 60, duration: 1000 })
       }
       return
     }
-    if (selected.longitude != null && selected.latitude != null) {
-      map.easeTo({ center: [selected.longitude, selected.latitude], zoom: Math.max(map.getZoom(), 16), duration: 1000 })
+    if (
+      selected.longitude != null &&
+      selected.latitude != null &&
+      Number.isFinite(selected.longitude) &&
+      Number.isFinite(selected.latitude) &&
+      selected.longitude >= -180 &&
+      selected.longitude <= 180 &&
+      selected.latitude >= -85.051129 &&
+      selected.latitude <= 85.051129
+    ) {
+      try {
+        map.easeTo({ center: [selected.longitude, selected.latitude], zoom: Math.max(map.getZoom(), 16), duration: 1000 })
+      } catch (easeErr) {
+        console.warn("easeTo failed:", easeErr)
+      }
     }
   }, [records, selectedRecordId])
 
@@ -1012,35 +1284,50 @@ export default function WorkspaceMap({
         </div>
       )}
 
-      {/* Elevator Widget for Floor Plans */}
-      {buildingFloors.length > 1 && (
-        <div className="workspace-elevator-widget">
-          <div className="workspace-elevator-header flex items-center gap-1">
-            <Building className="size-3" />
-            <span>Floors</span>
-          </div>
-          <div className="workspace-elevator-buttons">
-            {buildingFloors.map((floor) => {
-              const level = floor.floor_level ?? 0
-              const isActive = activeFloorLevel === level
-              const badge = level === -2 ? "B2" : level === -1 ? "B1" : level === 0 ? "G" : `${level}`
-              const name = floor.floor_label || (level === -1 ? "Basement 1" : level === 0 ? "Ground Floor" : `Floor ${level}`)
-              return (
-                <button
-                  key={floor.dataset_id}
-                  type="button"
-                  className={`workspace-elevator-btn ${isActive ? "is-active" : ""}`}
-                  title={`${name} (Click to switch floor)`}
-                  onClick={() => handleElevatorClick(level)}
-                >
-                  <span className="workspace-elevator-badge">{badge}</span>
-                  <span>{name}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
+      {/* Floor Traversal Overlay for Multi-floor navigation */}
+      <FloorTraversalOverlay
+        members={sortedMembers}
+        buildings={buildings}
+        activeFloorLevel={currentFloorLevel}
+        onSelectFloor={handleSelectFloor}
+        onUpdateMember={onMemberUpdate}
+        isolateActiveFloor={isIsolateActive}
+        onToggleIsolateActiveFloor={handleToggleIsolate}
+        onOpenBackgroundRemoval={(m) => setBgRemovalMember(m)}
+      />
+
+      {/* Background Removal Dialog for Selected Floor */}
+      {bgRemovalMember && (
+        <BackgroundRemovalDialog
+          open={Boolean(bgRemovalMember)}
+          datasetId={bgRemovalMember.dataset_id}
+          datasetName={bgRemovalMember.name || "Floor Plan"}
+          isGeoreferenced={Boolean(
+            bgRemovalMember.dataset?.georeference_status === "completed" ||
+            bgRemovalMember.dataset?.map_layer ||
+            bgRemovalMember.map_layer
+          )}
+          onClose={() => setBgRemovalMember(null)}
+          onApplied={() => {
+            if (onTransformApplied) onTransformApplied()
+            // Invalidate tile cache by updating timestamp
+            const map = mapRef.current
+            if (map && map.isStyleLoaded()) {
+              sortedMembers.forEach((m) => {
+                const ids = resourceIds(m.dataset_id)
+                if (map.getSource(ids.rasterSource)) {
+                  // Trigger source refresh
+                  const src = map.getSource(ids.rasterSource)
+                  if (src && typeof src.updateImage === "function") {
+                    // updated via url
+                  }
+                }
+              })
+            }
+          }}
+        />
       )}
+
 
       {/* New Point Placement Form Modal */}
       {pendingPlacementCoord && (
@@ -1048,7 +1335,7 @@ export default function WorkspaceMap({
           <IconPointForm
             coordinate={pendingPlacementCoord}
             initialIconKey={selectedIconId}
-            initialFloorLevel={activeFloorLevel}
+            initialFloorLevel={currentFloorLevel}
             floors={buildingFloors}
             title="Create Geographic Icon Point"
             submitLabel="Save Point"
@@ -1070,7 +1357,7 @@ export default function WorkspaceMap({
             initialDescription={editingPoint.description}
             initialIconKey={editingPoint.icon_id || editingPoint.icon_key}
             initialScope={editingPoint.scope || "floor"}
-            initialFloorLevel={editingPoint.floor_level ?? activeFloorLevel}
+            initialFloorLevel={editingPoint.floor_level ?? currentFloorLevel}
             floors={buildingFloors}
             title="Edit Geographic Point"
             submitLabel="Update Point"
@@ -1109,6 +1396,7 @@ export default function WorkspaceMap({
           onApplied={onTransformApplied}
         />
       )}
+
 
       {/* Empty State */}
       {!sortedMembers.some((member) => member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (

@@ -2,6 +2,10 @@
 
 Located in [`frontend/src/lib/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/frontend/src/lib)
 
+`floorSelection.js` applies controlled workspace floor state and restores visibility for matching floor members without feeding the selection back through the map callback.
+
+`sessionLoading.js` waits for active-session recovery before starting session-scoped dashboard requests, normalizes saved-configuration API payloads, and maps workspace members to the dataset-ID list required by the saved-config API.
+
 This directory contains utility functions and pure helper logic supporting UI styling and navigation.
 
 ---

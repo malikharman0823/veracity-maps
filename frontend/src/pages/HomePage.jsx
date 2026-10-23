@@ -8,6 +8,9 @@ import {
   importMapProject,
   importDatasetZip,
   uploadDataset,
+  listSavedConfigs,
+  deleteSavedConfig,
+  ensureActiveSession,
 } from "../api"
 import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
 import UploadStatus from "../components/UploadStatus"
@@ -36,7 +39,11 @@ import {
   X,
   AlertCircle,
   Layers,
+  Bookmark,
+  Trash2,
+  ArrowUpRight,
 } from "lucide-react"
+import { loadSessionResources } from "../lib/sessionLoading"
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -52,13 +59,17 @@ export default function HomePage() {
   // Session dataset catalog state
   const [datasets, setDatasets] = useState([])
   const [loading, setLoading] = useState(true)
+  const [savedConfigs, setSavedConfigs] = useState([])
+  const [loadingConfigs, setLoadingConfigs] = useState(true)
+  const [configToDelete, setConfigToDelete] = useState(null)
+  const [deletingConfig, setDeletingConfig] = useState(false)
   const [importing, setImporting] = useState(false)
   const [datasetToDelete, setDatasetToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
   const loadDatasets = () => {
     setLoading(true)
-    listDatasets()
+    return listDatasets()
       .then(setDatasets)
       .catch((err) => {
         if (err.code !== "ERR_CANCELED") {
@@ -68,9 +79,38 @@ export default function HomePage() {
       .finally(() => setLoading(false))
   }
 
+  const loadConfigs = () => {
+    setLoadingConfigs(true)
+    return listSavedConfigs()
+      .then(setSavedConfigs)
+      .catch((err) => {
+        console.warn("Unable to load saved configurations:", err)
+      })
+      .finally(() => setLoadingConfigs(false))
+  }
+
   useEffect(() => {
-    loadDatasets()
+    loadSessionResources({
+      ensureSession: ensureActiveSession,
+      loadResources: [loadDatasets, loadConfigs],
+    }).catch((err) => {
+      console.warn("Unable to initialize the session dashboard:", err)
+    })
   }, [])
+
+  async function handleDeleteConfig(cfg) {
+    if (!cfg || deletingConfig) return
+    setDeletingConfig(true)
+    try {
+      await deleteSavedConfig(null, cfg.id)
+      setSavedConfigs((prev) => prev.filter((c) => c.id !== cfg.id))
+      setConfigToDelete(null)
+    } catch (err) {
+      console.error("Failed to delete saved config:", err)
+    } finally {
+      setDeletingConfig(false)
+    }
+  }
 
   function selectFile(nextFile) {
     setFile(nextFile)
@@ -342,6 +382,85 @@ export default function HomePage() {
             </div>
           </div>
 
+          {/* Saved Map Configurations in this Session (if any exist) */}
+          {savedConfigs.length > 0 && (
+            <div className="pt-8 border-t border-[#e0e0e0] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="size-4 text-[#0066cc]" />
+                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">
+                    Saved Configurations ({savedConfigs.length})
+                  </h2>
+                </div>
+                <span className="text-[11px] text-[#7a7a7a]">
+                  Reopen your saved map layouts, camera views, and floor layers
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {savedConfigs.map((cfg) => (
+                  <div
+                    key={cfg.id}
+                    className="group relative bg-[#ffffff] border border-[#e0e0e0] hover:border-[#0066cc]/40 rounded-[18px] p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="size-7 rounded-lg bg-[#f0f7ff] text-[#0066cc] flex items-center justify-center shrink-0">
+                            <Bookmark className="size-3.5" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-semibold text-[#1d1d1f] line-clamp-1" title={cfg.name}>
+                              {cfg.name}
+                            </h3>
+                            <span className="text-[10px] text-[#7a7a7a]">
+                              {cfg.members?.length || 1} layer(s) attached
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setConfigToDelete(cfg)}
+                          className="size-7 rounded-lg text-[#7a7a7a] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                          title="Delete saved configuration"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-2 py-2 px-2.5 rounded-lg bg-[#fafafc] border border-[#f0f0f0] text-[11px] text-[#7a7a7a] space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span>Primary:</span>
+                          <span className="font-mono text-[#1d1d1f] text-[10px]">{cfg.primary_dataset_id?.slice(0, 14)}…</span>
+                        </div>
+                        {cfg.configuration?.active_view && (
+                          <div className="flex justify-between items-center">
+                            <span>Default View:</span>
+                            <span className="uppercase text-[9px] font-semibold tracking-wider text-[#0066cc]">{cfg.configuration.active_view}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-[#f0f0f0] flex items-center justify-between">
+                      <span className="text-[10px] text-[#a0a0a0]">
+                        {cfg.created_at ? new Date(cfg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recent"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/datasets/${cfg.primary_dataset_id}/workspace?view=map`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0066cc] hover:bg-[#0055b3] text-white text-xs font-medium shadow-xs transition-colors"
+                      >
+                        <span>Open Map</span>
+                        <ArrowUpRight className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Active Datasets in this Session (if any exist) */}
           {datasets.length > 0 && (
             <div className="pt-8 border-t border-[#e0e0e0] space-y-4">
@@ -465,6 +584,49 @@ export default function HomePage() {
                 </>
               ) : (
                 <span>Delete Permanently</span>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Saved Configuration Confirmation Dialog */}
+      <AlertDialog
+        open={Boolean(configToDelete)}
+        onOpenChange={(open) => !open && setConfigToDelete(null)}
+      >
+        <AlertDialogContent className="rounded-[20px] bg-[#ffffff] border border-[#e0e0e0] text-[#1d1d1f] shadow-lg max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-semibold text-[#1d1d1f]">
+              Delete Saved Configuration?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-[#7a7a7a] mt-1.5">
+              Are you sure you want to remove{" "}
+              <strong className="text-[#1d1d1f]">
+                {configToDelete?.name}
+              </strong>
+              ? The underlying datasets will remain available in your session.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel
+              disabled={deletingConfig}
+              className="rounded-full border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f]"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDeleteConfig(configToDelete)}
+              disabled={deletingConfig}
+              className="rounded-full bg-[#ff3b30] hover:bg-[#e03126] text-white text-xs font-normal"
+            >
+              {deletingConfig ? (
+                <>
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <span>Delete Configuration</span>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
