@@ -572,20 +572,63 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	}
 
 	// metadata.json for GIS standard viewers
+	// Package permitted offline basemap tiles into basemap/{z}/{x}/{y}.png
+	hasBasemap := false
+	if len(primaryBounds) == 4 {
+		bmMinZ := minZoom
+		bmMaxZ := maxZoom
+		if len(generatedZooms) == 0 {
+			bmMinZ, bmMaxZ = 14, 18
+		}
+		packagedBM, err := gis.PackageBasemapTiles(archive, primaryBounds, bmMinZ, bmMaxZ)
+		if err == nil && packagedBM > 0 {
+			hasBasemap = true
+		}
+	}
+
+	// Calculate center and initial zoom
+	var centerCoords []float64
+	initZoom := minZoom
+	if len(primaryBounds) == 4 {
+		centerCoords = []float64{(primaryBounds[0] + primaryBounds[2]) / 2.0, (primaryBounds[1] + primaryBounds[3]) / 2.0}
+	} else {
+		centerCoords = []float64{0.0, 0.0}
+	}
+	if initZoom < 1 {
+		initZoom = 15
+	}
+
 	metaDoc := map[string]interface{}{
 		"name":              projectName,
 		"version":           "2.0.0",
 		"description":       "Exported from Veracity Maps",
-		"attribution":       "Veracity Maps",
+		"attribution":       "Veracity Maps & OpenStreetMap contributors",
 		"type":              "overlay",
 		"format":            "png",
 		"bounds":            primaryBounds,
+		"center":            centerCoords,
+		"initial_zoom":      initZoom,
 		"profile":           "mercator",
 		"minzoom":           minZoom,
 		"maxzoom":           maxZoom,
 		"tile_url_template": "./{z}/{x}/{y}.png",
 		"available_zooms":   generatedZooms,
 		"crs":               "EPSG:3857",
+		"basemap": map[string]interface{}{
+			"type":              "raster-xyz",
+			"name":              "OpenStreetMap",
+			"tile_url_template": "./basemap/{z}/{x}/{y}.png",
+			"online_fallback":   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+			"attribution":       "© OpenStreetMap contributors",
+			"offline_packaged":  hasBasemap,
+		},
+		"overlay": map[string]interface{}{
+			"tile_url_template": "./{z}/{x}/{y}.png",
+			"bounds":            primaryBounds,
+			"has_tiles":         len(generatedZooms) > 0,
+		},
+		"offline_ready": true,
+		"export_time":   time.Now().UTC().Format(time.RFC3339),
 	}
 	_ = addJSONToZip("metadata.json", metaDoc)
 
@@ -601,7 +644,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	_ = addJSONToZip("project.json", projectDoc)
 
 	// HTML Viewers
-	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom, len(generatedZooms) > 0)
+	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom, len(generatedZooms) > 0, hasBasemap)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))

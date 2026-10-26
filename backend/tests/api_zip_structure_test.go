@@ -194,8 +194,28 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	checkHTML("index.html", []string{"leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json"})
+	checkHTML("index.html", []string{"leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "L.map", "basemapLayer"})
 	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "bounds"})
 	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "ol.source.XYZ"})
 	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "api-key-input", "loadMap"})
+
+	// 8. Verify local launcher scripts exist
+	if _, ok := files["serve.bat"]; !ok {
+		t.Errorf("expected serve.bat in export archive")
+	}
+	if _, ok := files["serve.py"]; !ok {
+		t.Errorf("expected serve.py in export archive")
+	}
+
+	// 9. Verify basemap directory and tiles exist
+	hasBasemapTiles := false
+	for path := range files {
+		if strings.HasPrefix(path, "basemap/") && strings.HasSuffix(path, ".png") {
+			hasBasemapTiles = true
+			break
+		}
+	}
+	if !hasBasemapTiles {
+		t.Errorf("expected at least one basemap raster tile in basemap/{z}/{x}/{y}.png")
+	}
 }

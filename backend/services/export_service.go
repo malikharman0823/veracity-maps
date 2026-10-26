@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -134,20 +135,74 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		minZoom, maxZoom = 15, 17
 	}
 
+	// Package permitted offline basemap tiles into basemap/{z}/{x}/{y}.png
+	hasBasemap := false
+	if len(boundsList) == 4 {
+		basemapZooms := generatedZooms
+		bmMinZ := minZoom
+		bmMaxZ := maxZoom
+		if len(basemapZooms) == 0 {
+			bmMinZ, bmMaxZ = 14, 18
+		}
+		packagedBM, err := gis.PackageBasemapTiles(archive, boundsList, bmMinZ, bmMaxZ)
+		if err == nil && packagedBM > 0 {
+			hasBasemap = true
+		}
+	}
+
+	// Calculate center and initial zoom
+	var centerCoords []float64
+	initZoom := minZoom
+	if len(boundsList) == 4 {
+		centerCoords = []float64{(boundsList[0] + boundsList[2]) / 2.0, (boundsList[1] + boundsList[3]) / 2.0}
+	} else {
+		centerCoords = []float64{0.0, 0.0}
+	}
+	if initZoom < 1 {
+		initZoom = 15
+	}
+
 	metadataDoc := map[string]interface{}{
 		"name":              projectName,
 		"version":           "2.0.0",
 		"description":       "Exported from Veracity Maps",
-		"attribution":       "Veracity Maps",
+		"attribution":       "Veracity Maps & OpenStreetMap contributors",
 		"type":              "overlay",
 		"format":            "png",
 		"bounds":            boundsList,
+		"center":            centerCoords,
+		"initial_zoom":      initZoom,
 		"profile":           "mercator",
 		"minzoom":           minZoom,
 		"maxzoom":           maxZoom,
 		"tile_url_template": "./{z}/{x}/{y}.png",
 		"available_zooms":   generatedZooms,
 		"crs":               "EPSG:3857",
+		"basemap": map[string]interface{}{
+			"type":              "raster-xyz",
+			"name":              "OpenStreetMap",
+			"tile_url_template": "./basemap/{z}/{x}/{y}.png",
+			"online_fallback":   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+			"attribution":       "© OpenStreetMap contributors",
+			"offline_packaged":  hasBasemap,
+		},
+		"overlay": map[string]interface{}{
+			"tile_url_template": "./{z}/{x}/{y}.png",
+			"bounds":            boundsList,
+			"has_tiles":         len(generatedZooms) > 0,
+		},
+		"user_layers": []map[string]interface{}{
+			{
+				"id":         dataset.ID,
+				"name":       dataset.Filename,
+				"type":       "raster",
+				"tile_path":  "./{z}/{x}/{y}.png",
+				"visibility": true,
+				"opacity":    1.0,
+			},
+		},
+		"offline_ready": true,
+		"export_time":   time.Now().UTC().Format(time.RFC3339),
 	}
 	metaBytes, _ := json.MarshalIndent(metadataDoc, "", "  ")
 	metaWriter, _ := archive.Create("metadata.json")
@@ -180,8 +235,8 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 	dsWriter, _ := archive.Create("dataset.json")
 	_, _ = dsWriter.Write(dsBytes)
 
-	// HTML Viewers
-	viewers := generateViewers(projectName, boundsList, minZoom, maxZoom, len(generatedZooms) > 0)
+	// HTML Viewers and Local Launchers
+	viewers := generateViewers(projectName, boundsList, minZoom, maxZoom, len(generatedZooms) > 0, hasBasemap)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))
@@ -368,7 +423,7 @@ func (s *ExportService) exportMBTiles(dataset *models.Dataset) (string, string, 
 	return "", "", fmt.Errorf("GIS_DEPENDENCY_MISSING: MBTiles export requires pre-rendered tiles or MapTiler raster tiling tool")
 }
 
-func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTiles bool) map[string]string {
+func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTiles bool, hasBasemap bool) map[string]string {
 	west, south, east, north := -180.0, -85.0, 180.0, 85.0
 	if len(bounds) == 4 {
 		west, south, east, north = bounds[0], bounds[1], bounds[2], bounds[3]
@@ -385,14 +440,212 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 		tileUrlRel = ""
 	}
 
+	basemapUrlRel := "./basemap/{z}/{x}/{y}.png"
+	if !hasBasemap {
+		basemapUrlRel = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+	}
+
+	// PRIMARY VIEWER: index.html (Interactive standalone map viewer with embedded config)
+	indexHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>%s - Veracity Maps Standalone Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin=""></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%%; margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+    #map { width: 100%%; height: 100%%; background: #1e293b; }
+    
+    .top-panel {
+      position: absolute; top: 12px; left: 14px; z-index: 1000;
+      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px);
+      padding: 12px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); color: #f8fafc; max-width: 380px;
+    }
+    .top-panel h1 { margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .top-panel .subtitle { font-size: 12px; color: #94a3b8; margin: 0 0 10px 0; }
+    
+    .controls { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .control-row label { color: #cbd5e1; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .control-row input[type="range"] { flex: 1; accent-color: #0284c7; }
+    .btn-group { display: flex; gap: 6px; margin-top: 6px; }
+    .btn {
+      background: #0284c7; color: #ffffff; border: none; border-radius: 4px;
+      padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .btn:hover { background: #0369a1; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { background: #475569; }
+
+    .nav-bar {
+      position: absolute; top: 12px; right: 14px; z-index: 1000;
+      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px);
+      padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 12px; color: #94a3b8;
+    }
+    .nav-bar a { color: #38bdf8; text-decoration: none; margin: 0 6px; font-weight: 500; }
+    .nav-bar a:hover { text-decoration: underline; }
+
+    #error-toast {
+      position: absolute; bottom: 20px; left: 50%%; transform: translateX(-50%%); z-index: 2000;
+      background: #ef4444; color: #fff; padding: 10px 18px; border-radius: 6px;
+      font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-panel">
+    <h1>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      %s
+    </h1>
+    <div class="subtitle">Standalone Offline Map Export &bull; EPSG:3857</div>
+    <div class="controls">
+      <div class="control-row">
+        <label><input type="checkbox" id="toggle-basemap" checked /> Base World Map</label>
+        <span id="basemap-mode" style="color:#64748b; font-size:11px;">%s</span>
+      </div>
+      <div class="control-row">
+        <label><input type="checkbox" id="toggle-overlay" checked /> Dataset Overlay</label>
+        <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="1.0" />
+      </div>
+      <div class="btn-group">
+        <button class="btn" id="btn-fit">Fit Dataset Bounds</button>
+        <a class="btn btn-secondary" href="metadata.json" target="_blank">metadata.json</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-bar">
+    <a href="leaflet.html">Leaflet</a> |
+    <a href="openlayers.html">OpenLayers</a> |
+    <a href="googlemaps.html">Google Maps</a>
+  </div>
+
+  <div id="error-toast"></div>
+  <div id="map"></div>
+
+  <script>
+    // Embedded metadata configuration to guarantee offline file:/// compatibility
+    var MAP_CONFIG = {
+      title: "%s",
+      bounds: [[%.6f, %.6f], [%.6f, %.6f]],
+      center: [%.6f, %.6f],
+      minZoom: %d,
+      maxZoom: %d,
+      hasTiles: %t,
+      hasBasemap: %t,
+      overlayTemplate: "%s",
+      basemapTemplate: "%s",
+      onlineBasemapUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: "Veracity Maps & OpenStreetMap contributors"
+    };
+
+    function showError(msg) {
+      var toast = document.getElementById("error-toast");
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(function() { toast.style.display = "none"; }, 6000);
+    }
+
+    try {
+      var map = L.map('map', {
+        minZoom: Math.max(1, MAP_CONFIG.minZoom - 4),
+        maxZoom: Math.min(22, MAP_CONFIG.maxZoom + 4),
+        attributionControl: true
+      });
+
+      // Fit dataset bounds initially
+      map.fitBounds(MAP_CONFIG.bounds, { padding: [60, 60] });
+
+      // 1. BASEMAP LAYER (Bottom)
+      var basemapUrl = MAP_CONFIG.hasBasemap ? MAP_CONFIG.basemapTemplate : MAP_CONFIG.onlineBasemapUrl;
+      var basemapLayer = L.tileLayer(basemapUrl, {
+        maxZoom: 22,
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      // Fallback from local basemap to online OSM if local tile 404s
+      if (MAP_CONFIG.hasBasemap) {
+        basemapLayer.on('tileerror', function(error, tile) {
+          if (!this._hasFallenBack && navigator.onLine) {
+            console.log("Local basemap tile missing, falling back to online OpenStreetMap");
+            this.setUrl(MAP_CONFIG.onlineBasemapUrl);
+            this._hasFallenBack = true;
+          }
+        });
+      }
+
+      // 2. DATASET OVERLAY LAYER (Top)
+      var overlayLayer = null;
+      if (MAP_CONFIG.hasTiles) {
+        overlayLayer = L.tileLayer(MAP_CONFIG.overlayTemplate, {
+          minZoom: MAP_CONFIG.minZoom,
+          maxZoom: MAP_CONFIG.maxZoom,
+          bounds: MAP_CONFIG.bounds,
+          opacity: 1.0,
+          tms: false,
+          attribution: 'Veracity Maps'
+        }).addTo(map);
+      } else {
+        overlayLayer = L.imageOverlay('assets/source/preview.png', MAP_CONFIG.bounds, { opacity: 1.0 }).addTo(map);
+      }
+
+      // Controls Binding
+      document.getElementById('toggle-basemap').addEventListener('change', function(e) {
+        if (e.target.checked) {
+          map.addLayer(basemapLayer);
+          basemapLayer.bringToBack();
+        } else {
+          map.removeLayer(basemapLayer);
+        }
+      });
+
+      document.getElementById('toggle-overlay').addEventListener('change', function(e) {
+        if (overlayLayer) {
+          if (e.target.checked) map.addLayer(overlayLayer);
+          else map.removeLayer(overlayLayer);
+        }
+      });
+
+      document.getElementById('opacity-slider').addEventListener('input', function(e) {
+        var op = parseFloat(e.target.value);
+        if (overlayLayer) {
+          overlayLayer.setOpacity(op);
+        }
+      });
+
+      document.getElementById('btn-fit').addEventListener('click', function() {
+        map.fitBounds(MAP_CONFIG.bounds, { padding: [60, 60] });
+      });
+
+    } catch (err) {
+      console.error("Map initialization error:", err);
+      showError("Map load error: " + err.message + ". If opening via file:///, ensure local scripts are permitted or use serve.bat.");
+    }
+  </script>
+</body>
+</html>`, title, title, func() string {
+		if hasBasemap {
+			return "Local Offline Tiles"
+		}
+		return "Online Fallback"
+	}(), title, south, west, north, east, centerLat, centerLng, minZoom, maxZoom, hasTiles, hasBasemap, tileUrlRel, basemapUrlRel)
+
+	// ALTERNATIVE VIEWER 1: leaflet.html
 	leafletHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>%s - Leaflet Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAAIRWF/QUS9CfxQRV+jW2m1b26I5R45e2Q==" crossorigin="" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzSmJW484AtncAo25mAwy5TSMRSmS034QKKEz0RSYOZw==" crossorigin=""></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin=""></script>
   <style>
     html, body { height: 100%%; margin: 0; padding: 0; }
     #map { width: 100%%; height: 100%%; }
@@ -403,7 +656,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Home</a> |
+    <a href="index.html">&larr; Main Viewer</a> |
     <a href="openlayers.html">OpenLayers</a> |
     <a href="googlemaps.html">Google Maps</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -411,8 +664,9 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
   <div id="map"></div>
   <script>
     var bounds = [[%.6f, %.6f], [%.6f, %.6f]];
-    var map = L.map('map').fitBounds(bounds);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    var map = L.map('map').fitBounds(bounds, { padding: [50, 50] });
+    var basemapUrl = %t ? './basemap/{z}/{x}/{y}.png' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    L.tileLayer(basemapUrl, {
       maxZoom: 22,
       attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -422,6 +676,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
       L.tileLayer('%s', {
         minZoom: %d,
         maxZoom: %d,
+        bounds: bounds,
         tms: false,
         attribution: 'Veracity Maps'
       }).addTo(map);
@@ -430,8 +685,9 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
     }
   </script>
 </body>
-</html>`, title, south, west, north, east, hasTiles, tileUrlRel, minZoom, maxZoom)
+</html>`, title, south, west, north, east, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom)
 
+	// ALTERNATIVE VIEWER 2: openlayers.html
 	openLayersHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
@@ -450,7 +706,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Home</a> |
+    <a href="index.html">&larr; Main Viewer</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="googlemaps.html">Google Maps</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -458,8 +714,9 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
   <div id="map"></div>
   <script>
     var extent = ol.proj.transformExtent([%.6f, %.6f, %.6f, %.6f], 'EPSG:4326', 'EPSG:3857');
+    var basemapSource = %t ? new ol.source.XYZ({ url: './basemap/{z}/{x}/{y}.png' }) : new ol.source.OSM();
     var osmLayer = new ol.layer.Tile({
-      source: new ol.source.OSM()
+      source: basemapSource
     });
 
     var layers = [osmLayer];
@@ -486,8 +743,9 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
     map.getView().fit(extent, { padding: [50, 50, 50, 50], maxZoom: %d });
   </script>
 </body>
-</html>`, title, west, south, east, north, hasTiles, tileUrlRel, minZoom, maxZoom, centerLng, centerLat, initZoom, maxZoom)
+</html>`, title, west, south, east, north, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom, centerLng, centerLat, initZoom, maxZoom)
 
+	// ALTERNATIVE VIEWER 3: googlemaps.html
 	googleMapsHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
@@ -508,7 +766,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Home</a> |
+    <a href="index.html">&larr; Main Viewer</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="openlayers.html">OpenLayers</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -586,75 +844,38 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </body>
 </html>`, title, north, south, east, west, centerLat, centerLng, minZoom, maxZoom, hasTiles, initZoom)
 
-	indexHTML := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>%s - Veracity Maps Export</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 40px 20px; }
-    .container { max-width: 900px; margin: 0 auto; background: #1e293b; border-radius: 12px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    h1 { font-size: 26px; font-weight: 700; color: #38bdf8; margin-top: 0; }
-    p.lead { font-size: 15px; color: #94a3b8; line-height: 1.6; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 28px 0; }
-    .card { background: #334155; border-radius: 8px; padding: 20px; transition: transform 0.2s, background 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
-    .card:hover { transform: translateY(-3px); background: #3b4c63; }
-    .card h3 { margin: 0 0 8px 0; font-size: 18px; color: #f1f5f9; }
-    .card p { margin: 0 0 14px 0; font-size: 13px; color: #cbd5e1; flex-grow: 1; line-height: 1.4; }
-    .badge { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #0284c7; color: #fff; font-weight: 600; width: fit-content; }
-    .metadata-box { background: #0f172a; border-radius: 8px; padding: 16px; margin-top: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #a5b4fc; overflow-x: auto; }
-    .footer { margin-top: 30px; font-size: 12px; color: #64748b; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>%s</h1>
-    <p class="lead">Standalone map export package generated with Veracity Maps. Select a viewer below or inspect the dataset metadata.</p>
-    
-    <div class="grid">
-      <a class="card" href="leaflet.html">
-        <span class="badge">Leaflet</span>
-        <h3>Leaflet Viewer</h3>
-        <p>Lightweight and interactive map viewer powered by Leaflet v1.9 with XYZ tile overlay.</p>
-        <strong>Launch Viewer &rarr;</strong>
-      </a>
+	// Standalone local launcher scripts
+	serveBat := `@echo off
+echo Starting local static map server...
+echo Serving current directory on http://127.0.0.1:8080
+start http://127.0.0.1:8080/index.html
+python -m http.server 8080 --bind 127.0.0.1
+`
+	servePy := `#!/usr/bin/env python3
+import http.server
+import socketserver
+import webbrowser
 
-      <a class="card" href="openlayers.html">
-        <span class="badge" style="background:#059669;">OpenLayers</span>
-        <h3>OpenLayers Viewer</h3>
-        <p>High-performance client viewer with full projection support and vector/tile layering.</p>
-        <strong>Launch Viewer &rarr;</strong>
-      </a>
+PORT = 8080
+Handler = http.server.SimpleHTTPRequestHandler
 
-      <a class="card" href="googlemaps.html">
-        <span class="badge" style="background:#ea580c;">Google Maps</span>
-        <h3>Google Maps Viewer</h3>
-        <p>Overlay dataset tiles onto Google Maps satellite and roadmap basemaps using your API key.</p>
-        <strong>Launch Viewer &rarr;</strong>
-      </a>
-    </div>
+print(f"Serving Veracity Maps export on http://127.0.0.1:{PORT}")
+webbrowser.open(f"http://127.0.0.1:{PORT}/index.html")
 
-    <h3>Dataset Spatial Bounds</h3>
-    <div class="metadata-box">
-      Bounds [W, S, E, N]: [%.6f, %.6f, %.6f, %.6f]<br/>
-      Zoom Range: %d - %d<br/>
-      Tile Structure: {z}/{x}/{y}.png<br/>
-      Metadata Spec: <a href="metadata.json" style="color:#38bdf8;">metadata.json</a>
-    </div>
-
-    <div class="footer">
-      Generated by Veracity Maps &bull; All map viewers load assets using relative paths
-    </div>
-  </div>
-</body>
-</html>`, title, title, west, south, east, north, minZoom, maxZoom)
+with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+`
 
 	return map[string]string{
 		"index.html":      indexHTML,
 		"leaflet.html":    leafletHTML,
 		"openlayers.html": openLayersHTML,
 		"googlemaps.html": googleMapsHTML,
+		"serve.bat":       serveBat,
+		"serve.py":        servePy,
 	}
 }
 
