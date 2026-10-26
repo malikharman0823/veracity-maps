@@ -280,7 +280,9 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		}
 
 		entryExt := strings.ToLower(filepath.Ext(file.Name))
-		if SupportedRasterExtensions[entryExt] != "" {
+		// Ignore any assets stored in icons/ folder so they are never imported as floorplan rasters
+		isIconDir := strings.HasPrefix(cleanEntry, "icons/") || strings.Contains(cleanEntry, "/icons/")
+		if SupportedRasterExtensions[entryExt] != "" && !isIconDir {
 			if primaryRaster == "" {
 				primaryRaster = cleanName
 			}
@@ -1078,7 +1080,8 @@ func (s *DatasetService) InspectArchive(sessionID string, header *multipart.File
 		}
 		allEntryNames[cleanName] = f
 		ext := strings.ToLower(filepath.Ext(cleanName))
-		if SupportedRasterExtensions[ext] != "" {
+		isIconDir := strings.HasPrefix(cleanName, "icons/") || strings.Contains(cleanName, "/icons/")
+		if SupportedRasterExtensions[ext] != "" && !isIconDir {
 			rasterFiles = append(rasterFiles, f)
 		}
 	}

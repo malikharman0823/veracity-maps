@@ -949,10 +949,11 @@ export default function WorkspaceMap({
               id: ids.iconCircle,
               type: "circle",
               paint: {
-                "circle-radius": ["case", ["get", "selected"], 18, 0],
-                "circle-color": "rgba(0, 102, 204, 0.25)",
+                "circle-radius": ["case", ["get", "selected"], 16, 0],
+                "circle-color": "rgba(0, 102, 204, 0.2)",
                 "circle-stroke-color": "#0066cc",
                 "circle-stroke-width": ["case", ["get", "selected"], 2, 0],
+                "circle-translate": [0, -12],
               },
             },
             {
@@ -997,13 +998,6 @@ export default function WorkspaceMap({
     })
 
     // Ensure raster layers are beneath point layers, with active floor raster layers on top of other rasters
-    const firstPointLayer = sortedMembers
-      .flatMap((member) => {
-        const ids = resourceIds(member.dataset_id)
-        return [ids.controlCircle, ids.controlLabel, ids.iconCircle, ids.iconSymbol, ids.iconLabel]
-      })
-      .find((layerId) => map.getLayer(layerId))
-
     const activeFloorMembers = sortedMembers.filter((m) => {
       const isFloor = Boolean(
         m.is_building_floor ||
@@ -1018,7 +1012,6 @@ export default function WorkspaceMap({
       return isFloor && lvl === Number(currentFloorLevel ?? 0) && isBldMatch
     })
 
-
     const inactiveMembers = sortedMembers.filter((m) => !activeFloorMembers.includes(m))
 
     // 1. Position inactive raster layers first
@@ -1026,27 +1019,32 @@ export default function WorkspaceMap({
       const rasterLayer = resourceIds(member.dataset_id).rasterLayer
       if (map.getLayer(rasterLayer)) {
         try {
-          if (firstPointLayer) {
-            map.moveLayer(rasterLayer, firstPointLayer)
-          } else {
-            map.moveLayer(rasterLayer)
-          }
+          map.moveLayer(rasterLayer)
         } catch {}
       }
     })
 
-    // 2. Position active floor raster layers on TOP of other rasters, directly under point layers
+    // 2. Position active floor raster layers on TOP of other rasters
     activeFloorMembers.forEach((member) => {
       const rasterLayer = resourceIds(member.dataset_id).rasterLayer
       if (map.getLayer(rasterLayer)) {
         try {
-          if (firstPointLayer) {
-            map.moveLayer(rasterLayer, firstPointLayer)
-          } else {
-            map.moveLayer(rasterLayer)
-          }
+          map.moveLayer(rasterLayer)
         } catch {}
       }
+    })
+
+    // 3. ALWAYS elevate all point layers (controls and icons) to the top of the stack above all rasters
+    sortedMembers.forEach((member) => {
+      const ids = resourceIds(member.dataset_id)
+      const pointLayers = [ids.controlCircle, ids.controlLabel, ids.iconCircle, ids.iconSymbol, ids.iconLabel]
+      pointLayers.forEach((layerId) => {
+        if (map.getLayer(layerId)) {
+          try {
+            map.moveLayer(layerId)
+          } catch {}
+        }
+      })
     })
 
     // Cleanup stale layers

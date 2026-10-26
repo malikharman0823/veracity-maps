@@ -186,6 +186,60 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		}
 	}
 
+	// Export Icon Points and Icon Assets into separate icons/ directory
+	iconPoints, _ := s.repo.ListIconPoints(sessionID, dataset.ID, "")
+	if len(iconPoints) > 0 {
+		iconAssetsCopied := make(map[string]bool)
+		for _, pt := range iconPoints {
+			if pt.IconID != "" && !iconAssetsCopied[pt.IconID] {
+				cleanIconID := filepath.Base(pt.IconID)
+				ext := filepath.Ext(cleanIconID)
+				var candidates []string
+				if ext != "" {
+					candidates = append(candidates, cleanIconID)
+				} else {
+					for _, e := range []string{".png", ".svg", ".webp", ".ico"} {
+						candidates = append(candidates, cleanIconID+e)
+					}
+				}
+				searchDirs := []string{
+					filepath.Join("frontend", "public", "icons"),
+					filepath.Join("..", "frontend", "public", "icons"),
+					filepath.Join("..", "..", "frontend", "public", "icons"),
+				}
+				var foundPath string
+				var foundName string
+				for _, dir := range searchDirs {
+					for _, cand := range candidates {
+						p := filepath.Join(dir, cand)
+						if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+							foundPath = p
+							foundName = cand
+							break
+						}
+					}
+					if foundPath != "" {
+						break
+					}
+				}
+				if foundPath != "" {
+					if f, err := os.Open(foundPath); err == nil {
+						if iw, err := archive.Create("icons/assets/" + foundName); err == nil {
+							_, _ = io.Copy(iw, f)
+						}
+						_ = f.Close()
+						iconAssetsCopied[pt.IconID] = true
+					}
+				}
+			}
+		}
+		if ipBytes, err := json.MarshalIndent(iconPoints, "", "  "); err == nil {
+			if ipWriter, err := archive.Create("icons/icon_points.json"); err == nil {
+				_, _ = ipWriter.Write(ipBytes)
+			}
+		}
+	}
+
 	return zipPath, stem + ".zip", nil
 }
 
