@@ -135,20 +135,7 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		minZoom, maxZoom = 15, 17
 	}
 
-	// Package permitted offline basemap tiles into basemap/{z}/{x}/{y}.png
 	hasBasemap := false
-	if len(boundsList) == 4 {
-		basemapZooms := generatedZooms
-		bmMinZ := minZoom
-		bmMaxZ := maxZoom
-		if len(basemapZooms) == 0 {
-			bmMinZ, bmMaxZ = 14, 18
-		}
-		packagedBM, err := gis.PackageBasemapTiles(archive, boundsList, bmMinZ, bmMaxZ)
-		if err == nil && packagedBM > 0 {
-			hasBasemap = true
-		}
-	}
 
 	// Calculate center and initial zoom
 	var centerCoords []float64
@@ -181,10 +168,10 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		"basemap": map[string]interface{}{
 			"type":              "raster-xyz",
 			"name":              "OpenStreetMap",
-			"tile_url_template": "./basemap/{z}/{x}/{y}.png",
+			"tile_url_template": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
 			"online_fallback":   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
 			"attribution":       "© OpenStreetMap contributors",
-			"offline_packaged":  hasBasemap,
+			"offline_packaged":  false,
 		},
 		"overlay": map[string]interface{}{
 			"tile_url_template": "./{z}/{x}/{y}.png",
@@ -201,148 +188,35 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 				"opacity":    1.0,
 			},
 		},
-		"offline_ready": true,
-		"export_time":   time.Now().UTC().Format(time.RFC3339),
-	}
-	metaBytes, _ := json.MarshalIndent(metadataDoc, "", "  ")
-	metaWriter, _ := archive.Create("metadata.json")
-	_, _ = metaWriter.Write(metaBytes)
-
-	// mapstudio.json document
-	projectDoc := map[string]interface{}{
-		"format":  "mapstudio-folder",
-		"version": 1,
-		"project": map[string]interface{}{
-			"name":          projectName,
-			"configuration": projectConfig,
-		},
 		"dataset": map[string]interface{}{
 			"filename":            dataset.Filename,
 			"content_type":        dataset.ContentType,
-			"source_asset":        "assets/source/" + filepath.Base(dataset.StoragePath),
 			"georeference_status": dataset.GeoreferenceStatus,
 			"extracted_metadata":  dataset.ExtractedMetadata,
 			"map_layer":           dataset.MapLayer,
 		},
-		"control_points": points,
+		"offline_ready": true,
+		"export_time":   time.Now().UTC().Format(time.RFC3339),
 	}
-	projBytes, _ := json.MarshalIndent(projectDoc, "", "  ")
-	projWriter, _ := archive.Create("mapstudio.json")
-	_, _ = projWriter.Write(projBytes)
+	if len(points) > 0 {
+		metadataDoc["control_points"] = points
+	}
+	if len(iconPoints) > 0 {
+		metadataDoc["icon_points"] = iconPoints
+	}
+	if projectConfig != nil {
+		metadataDoc["project_configuration"] = projectConfig
+	}
 
-	// dataset.json document
-	dsBytes, _ := json.MarshalIndent(dataset, "", "  ")
-	dsWriter, _ := archive.Create("dataset.json")
-	_, _ = dsWriter.Write(dsBytes)
+	metaBytes, _ := json.MarshalIndent(metadataDoc, "", "  ")
+	metaWriter, _ := archive.Create("metadata.json")
+	_, _ = metaWriter.Write(metaBytes)
 
-	// HTML Viewers and Local Launchers
+	// HTML Viewers (index.html [MapLibre], leaflet.html, openlayers.html, googlemaps.html)
 	viewers := generateViewers(projectName, boundsList, minZoom, maxZoom, len(generatedZooms) > 0, hasBasemap)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))
-	}
-
-	// Source Asset
-	srcFile, err := os.Open(dataset.StoragePath)
-	if err == nil {
-		defer srcFile.Close()
-		assetWriter, err := archive.Create("assets/source/" + filepath.Base(dataset.StoragePath))
-		if err == nil {
-			_, _ = io.Copy(assetWriter, srcFile)
-		}
-	}
-
-	// World file sidecar if present
-	baseExt := strings.ToLower(filepath.Ext(dataset.Filename))
-	worldExt := ".wld"
-	switch baseExt {
-	case ".png":
-		worldExt = ".pgw"
-	case ".jpg", ".jpeg":
-		worldExt = ".jgw"
-	}
-	srcWorldFile := filepath.Join(filepath.Dir(dataset.StoragePath), strings.TrimSuffix(filepath.Base(dataset.Filename), baseExt)+worldExt)
-	if fileExists(srcWorldFile) {
-		if wf, err := os.Open(srcWorldFile); err == nil {
-			defer wf.Close()
-			if ww, err := archive.Create("assets/source/" + filepath.Base(srcWorldFile)); err == nil {
-				_, _ = io.Copy(ww, wf)
-			}
-		}
-	}
-
-	// Processed transparent raster if present
-	transparentPNG := filepath.Join(filepath.Dir(dataset.StoragePath), "processed", "processed_transparent.png")
-	if fileExists(transparentPNG) {
-		if tf, err := os.Open(transparentPNG); err == nil {
-			defer tf.Close()
-			if tw, err := archive.Create("processed/processed_transparent.png"); err == nil {
-				_, _ = io.Copy(tw, tf)
-			}
-		}
-	}
-
-	// Rendered composite map image with markers burned in
-	if compositePath != "" && fileExists(compositePath) {
-		if cf, err := os.Open(compositePath); err == nil {
-			defer cf.Close()
-			if cw, err := archive.Create("processed/composite_rendered_map.png"); err == nil {
-				_, _ = io.Copy(cw, cf)
-			}
-		}
-	}
-
-	// Export Icon Points and Icon Assets into separate icons/ directory
-	if len(iconPoints) > 0 {
-		iconAssetsCopied := make(map[string]bool)
-		for _, pt := range iconPoints {
-			if pt.IconID != "" && !iconAssetsCopied[pt.IconID] {
-				cleanIconID := filepath.Base(pt.IconID)
-				ext := filepath.Ext(cleanIconID)
-				var candidates []string
-				if ext != "" {
-					candidates = append(candidates, cleanIconID)
-				} else {
-					for _, e := range []string{".png", ".svg", ".webp", ".ico"} {
-						candidates = append(candidates, cleanIconID+e)
-					}
-				}
-				searchDirs := []string{
-					filepath.Join("frontend", "public", "icons"),
-					filepath.Join("..", "frontend", "public", "icons"),
-					filepath.Join("..", "..", "frontend", "public", "icons"),
-				}
-				var foundPath string
-				var foundName string
-				for _, dir := range searchDirs {
-					for _, cand := range candidates {
-						p := filepath.Join(dir, cand)
-						if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-							foundPath = p
-							foundName = cand
-							break
-						}
-					}
-					if foundPath != "" {
-						break
-					}
-				}
-				if foundPath != "" {
-					if f, err := os.Open(foundPath); err == nil {
-						if iw, err := archive.Create("icons/assets/" + foundName); err == nil {
-							_, _ = io.Copy(iw, f)
-						}
-						_ = f.Close()
-						iconAssetsCopied[pt.IconID] = true
-					}
-				}
-			}
-		}
-		if ipBytes, err := json.MarshalIndent(iconPoints, "", "  "); err == nil {
-			if ipWriter, err := archive.Create("icons/icon_points.json"); err == nil {
-				_, _ = ipWriter.Write(ipBytes)
-			}
-		}
 	}
 
 	return zipPath, stem + ".zip", nil
@@ -523,15 +397,15 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
         <button class="btn btn-secondary" id="btn-reset-north">Reset North</button>
         <a class="btn btn-secondary" href="metadata.json" target="_blank">metadata.json</a>
       </div>
-      <div id="local-notice">Running via local file. If tiles do not appear due to browser sandbox limits, double-click <strong>serve.bat</strong> or run <strong>python serve.py</strong>.</div>
+      <div id="local-notice">Running via local file. Tiles load directly from ./{z}/{x}/{y}.png.</div>
     </div>
   </div>
 
   <div class="nav-bar">
-    <a href="maplibre.html">MapLibre GL</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="openlayers.html">OpenLayers</a> |
-    <a href="googlemaps.html">Google Maps</a>
+    <a href="googlemaps.html">Google Maps</a> |
+    <a href="metadata.json" target="_blank">metadata.json</a>
   </div>
 
   <div id="error-toast"></div>
@@ -653,7 +527,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 
     } catch (err) {
       console.error("MapLibre initialization error:", err);
-      showError("Map load warning: " + err.message + ". Run serve.bat for local HTTP serving.");
+      showError("Map load warning: " + err.message);
     }
   </script>
 </body>
@@ -663,71 +537,6 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 		}
 		return "Online Fallback"
 	}(), title, west, south, east, north, centerLng, centerLat, minZoom, maxZoom, hasTiles, hasBasemap, tileUrlRel, basemapUrlRel)
-
-	// DEDICATED MAPLIBRE VIEWER: maplibre.html
-	maplibreHTML := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>%s - MapLibre GL Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <style>
-    html, body { height: 100%%; margin: 0; padding: 0; }
-    #map { width: 100%%; height: 100%%; }
-    .nav-bar { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
-    .nav-bar a { color: #1e40af; text-decoration: none; margin: 0 6px; font-weight: 500; }
-    .nav-bar a:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="nav-bar">
-    <a href="index.html">&larr; Main Viewer</a> |
-    <a href="leaflet.html">Leaflet</a> |
-    <a href="openlayers.html">OpenLayers</a> |
-    <a href="googlemaps.html">Google Maps</a> |
-    <a href="metadata.json" target="_blank">metadata.json</a>
-  </div>
-  <div id="map"></div>
-  <script>
-    var bounds = [%.6f, %.6f, %.6f, %.6f];
-    var basemapUrl = %t ? './basemap/{z}/{x}/{y}.png' : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-    var hasTiles = %t;
-
-    var sources = {
-      'basemap': {
-        type: 'raster',
-        tiles: [basemapUrl],
-        tileSize: 256,
-        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }
-    };
-    var layers = [{ id: 'basemap-layer', type: 'raster', source: 'basemap' }];
-
-    if (hasTiles) {
-      sources['overlay'] = {
-        type: 'raster',
-        tiles: ['%s'],
-        tileSize: 256,
-        bounds: bounds,
-        minzoom: %d,
-        maxzoom: %d,
-        attribution: 'Veracity Maps'
-      };
-      layers.push({ id: 'overlay-layer', type: 'raster', source: 'overlay', paint: { 'raster-opacity': 0.9 } });
-    }
-
-    var map = new maplibregl.Map({
-      container: 'map',
-      style: { version: 8, sources: sources, layers: layers },
-      bounds: bounds,
-      fitBoundsOptions: { padding: 50 }
-    });
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-  </script>
-</body>
-</html>`, title, west, south, east, north, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom)
 
 	// ALTERNATIVE VIEWER 1: leaflet.html
 	leafletHTML := fmt.Sprintf(`<!DOCTYPE html>
@@ -748,7 +557,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Main Viewer</a> |
+    <a href="index.html">&larr; MapLibre</a> |
     <a href="openlayers.html">OpenLayers</a> |
     <a href="googlemaps.html">Google Maps</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -798,7 +607,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Main Viewer</a> |
+    <a href="index.html">&larr; MapLibre</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="googlemaps.html">Google Maps</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -858,7 +667,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </head>
 <body>
   <div class="nav-bar">
-    <a href="index.html">&larr; Main Viewer</a> |
+    <a href="index.html">&larr; MapLibre</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="openlayers.html">OpenLayers</a> |
     <a href="metadata.json" target="_blank">metadata.json</a>
@@ -936,39 +745,11 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 </body>
 </html>`, title, north, south, east, west, centerLat, centerLng, minZoom, maxZoom, hasTiles, initZoom)
 
-	// Standalone local launcher scripts
-	serveBat := `@echo off
-echo Starting local static map server...
-echo Serving current directory on http://127.0.0.1:8080
-start http://127.0.0.1:8080/index.html
-python -m http.server 8080 --bind 127.0.0.1
-`
-	servePy := `#!/usr/bin/env python3
-import http.server
-import socketserver
-import webbrowser
-
-PORT = 8080
-Handler = http.server.SimpleHTTPRequestHandler
-
-print(f"Serving Veracity Maps export on http://127.0.0.1:{PORT}")
-webbrowser.open(f"http://127.0.0.1:{PORT}/index.html")
-
-with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nServer stopped.")
-`
-
 	return map[string]string{
 		"index.html":      indexHTML,
-		"maplibre.html":   maplibreHTML,
 		"leaflet.html":    leafletHTML,
 		"openlayers.html": openLayersHTML,
 		"googlemaps.html": googleMapsHTML,
-		"serve.bat":       serveBat,
-		"serve.py":        servePy,
 	}
 }
 

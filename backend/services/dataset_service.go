@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -239,6 +240,8 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 	var allRasters []string
 	rasterRelPaths := make(map[string]string)
 	var totalExtracted int64
+	var lowestZoomTile string
+	lowestZoom := 999
 
 	for _, file := range zipReader.File {
 		cleanEntry := filepath.ToSlash(file.Name)
@@ -289,6 +292,18 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		// Ignore any assets stored in icons/ folder or tile pyramids so they are never imported as floorplan rasters
 		isIconDir := strings.HasPrefix(cleanEntry, "icons/") || strings.Contains(cleanEntry, "/icons/")
 		isXYZTile := isTilePath(cleanEntry)
+		if isXYZTile && SupportedRasterExtensions[entryExt] != "" {
+			parts := strings.Split(cleanEntry, "/")
+			if len(parts) >= 3 {
+				zPart := parts[len(parts)-3]
+				if z, err := strconv.Atoi(zPart); err == nil {
+					if z < lowestZoom {
+						lowestZoom = z
+						lowestZoomTile = cleanName
+					}
+				}
+			}
+		}
 		if SupportedRasterExtensions[entryExt] != "" && !isIconDir && !isXYZTile {
 			// Check if this image is an icon marker rather than a map floorplan
 			if !isIconAsset(filepath.Base(cleanName), 0, 0, false) {
@@ -329,6 +344,13 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 				}
 			}
 		}
+	}
+
+	// If archive is a pure tile pyramid (e.g. exported Viewscape tile package), use the lowest-zoom tile as primary raster
+	if primaryRaster == "" && lowestZoomTile != "" {
+		primaryRaster = lowestZoomTile
+		allRasters = append(allRasters, lowestZoomTile)
+		rasterRelPaths[lowestZoomTile] = "tile_overview.png"
 	}
 
 	if primaryRaster == "" {
@@ -604,40 +626,57 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		}
 	}
 
-	// Check metadata.json for bounds fallback
+	// Check metadata.json for bounds and control points fallback
 	metaJSONPath := filepath.Join(extractDir, "metadata.json")
 	if fileExists(metaJSONPath) {
 		if data, err := os.ReadFile(metaJSONPath); err == nil {
 			var mDoc struct {
-				Bounds []float64 `json:"bounds"`
+				Name          string                 `json:"name"`
+				Bounds        []float64              `json:"bounds"`
+				ControlPoints []*models.ControlPoint `json:"control_points"`
 			}
-			if err := json.Unmarshal(data, &mDoc); err == nil && len(mDoc.Bounds) == 4 {
-				west, south, east, north := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
-				if east > west && north > south {
-					if dataset.ExtractedMetadata["bounds"] == nil {
-						dataset.ExtractedMetadata["bounds"] = map[string]interface{}{
-							"min_x": west,
-							"min_y": south,
-							"max_x": east,
-							"max_y": north,
+			if err := json.Unmarshal(data, &mDoc); err == nil {
+				if len(mDoc.Bounds) == 4 {
+					west, south, east, north := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
+					if east > west && north > south {
+						if dataset.ExtractedMetadata["bounds"] == nil {
+							dataset.ExtractedMetadata["bounds"] = map[string]interface{}{
+								"min_x": west,
+								"min_y": south,
+								"max_x": east,
+								"max_y": north,
+							}
+						}
+						if dataset.MapLayer == nil {
+							dataset.MapLayer = map[string]interface{}{
+								"id":         "lyr_" + datasetID,
+								"name":       dataset.Filename,
+								"type":       "raster",
+								"bounds":     dataset.ExtractedMetadata["bounds"],
+								"bounds_crs": "EPSG:4326",
+								"coordinates": [][]float64{
+									{west, north},
+									{east, north},
+									{east, south},
+									{west, south},
+								},
+							}
+						}
+						dataset.GeoreferenceStatus = "completed"
+					}
+				}
+				if len(mDoc.ControlPoints) > 0 {
+					existingPts, _ := s.repo.ListControlPoints(sessionID, datasetID)
+					if len(existingPts) == 0 {
+						for _, p := range mDoc.ControlPoints {
+							p.DatasetID = datasetID
+						}
+						_ = s.repo.SetControlPoints(sessionID, datasetID, mDoc.ControlPoints)
+						dataset.GeoreferenceStatus = "completed"
+						if dataset.GeoreferencedPath == "" {
+							dataset.GeoreferencedPath = primaryRaster
 						}
 					}
-					if dataset.MapLayer == nil {
-						dataset.MapLayer = map[string]interface{}{
-							"id":         "lyr_" + datasetID,
-							"name":       dataset.Filename,
-							"type":       "raster",
-							"bounds":     dataset.ExtractedMetadata["bounds"],
-							"bounds_crs": "EPSG:4326",
-							"coordinates": [][]float64{
-								{west, north},
-								{east, north},
-								{east, south},
-								{west, south},
-							},
-						}
-					}
-					dataset.GeoreferenceStatus = "completed"
 				}
 			}
 		}
@@ -974,42 +1013,53 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		}
 	}
 
-	// Restore icon points if present
+	// Restore icon points if present in icons/icon_points.json or metadata.json
+	var iconPoints []*models.IconPoint
 	iconPointsPath := filepath.Join(extractDir, "icons", "icon_points.json")
 	if fileExists(iconPointsPath) {
 		if data, err := os.ReadFile(iconPointsPath); err == nil {
-			var iconPoints []*models.IconPoint
-			if json.Unmarshal(data, &iconPoints) == nil && len(iconPoints) > 0 {
-				for _, ip := range iconPoints {
-					// Associate with the new primary dataset ID if it was tied to the previous export dataset
-					if ip.DatasetID == "" || len(allCreatedDatasets) == 1 {
-						ip.DatasetID = dataset.ID
-					} else {
-						// Check if it matches any floor dataset
-						matched := false
-						for _, ds := range allCreatedDatasets {
-							if ds.ID == ip.DatasetID {
-								matched = true
-								break
-							}
-						}
-						if !matched {
-							ip.DatasetID = dataset.ID
-						}
+			_ = json.Unmarshal(data, &iconPoints)
+		}
+	}
+	if len(iconPoints) == 0 && fileExists(metaJSONPath) {
+		if data, err := os.ReadFile(metaJSONPath); err == nil {
+			var mDoc struct {
+				IconPoints []*models.IconPoint `json:"icon_points"`
+			}
+			if json.Unmarshal(data, &mDoc) == nil && len(mDoc.IconPoints) > 0 {
+				iconPoints = mDoc.IconPoints
+			}
+		}
+	}
+	if len(iconPoints) > 0 {
+		for _, ip := range iconPoints {
+			// Associate with the new primary dataset ID if it was tied to the previous export dataset
+			if ip.DatasetID == "" || len(allCreatedDatasets) == 1 {
+				ip.DatasetID = dataset.ID
+			} else {
+				// Check if it matches any floor dataset
+				matched := false
+				for _, ds := range allCreatedDatasets {
+					if ds.ID == ip.DatasetID {
+						matched = true
+						break
 					}
-					if ip.BuildingID == "" {
-						if bld, ok := dataset.ExtractedMetadata["building_name"].(string); ok && bld != "" {
-							ip.BuildingID = bld
-						}
-					}
-					if ip.FloorLevel == 0 {
-						if fl, ok := dataset.ExtractedMetadata["floor_level"].(int); ok {
-							ip.FloorLevel = fl
-						}
-					}
-					_, _ = s.repo.CreateIconPoint(sessionID, ip)
+				}
+				if !matched {
+					ip.DatasetID = dataset.ID
 				}
 			}
+			if ip.BuildingID == "" {
+				if bld, ok := dataset.ExtractedMetadata["building_name"].(string); ok && bld != "" {
+					ip.BuildingID = bld
+				}
+			}
+			if ip.FloorLevel == 0 {
+				if fl, ok := dataset.ExtractedMetadata["floor_level"].(int); ok {
+					ip.FloorLevel = fl
+				}
+			}
+			_, _ = s.repo.CreateIconPoint(sessionID, ip)
 		}
 	}
 

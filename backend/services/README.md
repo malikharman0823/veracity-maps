@@ -37,38 +37,22 @@ The `services` package contains the core business logic of Veracity Maps, coordi
   │
   ├── {z}/
   │   └── {x}/
+  │   └── {x}/
   │       └── {y}.png
-  ├── basemap/
-  │   └── {z}/
-  │       └── {x}/
-  │           └── {y}.png
-  ├── index.html
-  ├── maplibre.html
-  ├── leaflet.html
-  ├── openlayers.html
   ├── googlemaps.html
+  ├── index.html
+  ├── leaflet.html
   ├── metadata.json
-  ├── mapstudio.json
-  ├── project.json
-  ├── serve.bat
-  ├── serve.py
-  ├── assets/source/
-  ├── processed/
-  └── icons/
+  └── openlayers.html
   ```
-- **Root Files & Convention**:
-  - `{z}/{x}/{y}.png`: Dynamically generated numbered zoom directories representing standard XYZ map tiles covering the georeferenced dataset bounds.
-  - `basemap/{z}/{x}/{y}.png`: Packaged offline raster basemap tiles covering the dataset's geographic extent across the supported zoom range.
-  - `index.html`: Primary standalone interactive map viewer powered by **MapLibre GL JS** with embedded metadata (`MAP_CONFIG`), WebGL acceleration, 3D pitch/rotation controls, offline base world map support with online OSM fallback, layer visibility toggles, opacity slider, bounds fitting, and local server launcher notice.
-  - `maplibre.html`: Dedicated standalone viewer powered by MapLibre GL JS with NavigationControl and 3D pitch/bearing visualization.
-  - `leaflet.html`: Interactive viewer powered by Leaflet v1.9 with XYZ tile layer and local/online base map.
+- **Root Files & Convention (Strict Viewscape Compatibility)**:
+  - `{z}/{x}/{y}.png`: Dynamically generated numbered zoom directories representing standard XYZ map tiles covering the georeferenced dataset bounds (e.g. `18/`, `19/`, `20/`, `21/`).
+  - `index.html`: Primary standalone interactive map viewer powered by **MapLibre GL JS** with embedded metadata (`MAP_CONFIG`), WebGL acceleration, 3D pitch/rotation controls, OSM basemap, dataset overlay toggle, opacity slider, and bounds fitting.
+  - `leaflet.html`: Interactive viewer powered by Leaflet v1.9 with XYZ tile layer and OpenStreetMap base map.
   - `openlayers.html`: Standalone OpenLayers v10 viewer configured with `ol.source.XYZ` and projection reprojection.
   - `googlemaps.html`: Google Maps JS API viewer using `google.maps.ImageMapType` overlay; accepts API key via user input or `?key=YOUR_KEY` parameter without hardcoded secrets.
-  - `metadata.json`: Valid JSON metadata detailing dataset name, version, geographic bounds `[west, south, east, north]`, center coordinates, initial zoom, min/max zoom levels, tile template (`./{z}/{x}/{y}.png`), basemap configuration and local paths, user layers, attribution, and offline status.
-  - `mapstudio.json` & `project.json`: Retained at root for 100% roundtrip project reopening compatibility via `/map-projects/import`.
-  - `serve.bat` & `serve.py`: Standalone one-click local launchers that spin up a secure, local-only static HTTP server on `http://127.0.0.1:8080` for browsers with strict `file:///` sandbox policies.
-  - `icons/`: Contains `icon_points.json` and `assets/` subfolder preserving point annotations.
+  - `metadata.json`: Valid JSON metadata detailing dataset name, version, geographic bounds `[west, south, east, north]`, center coordinates, initial zoom, min/max zoom levels, tile template (`./{z}/{x}/{y}.png`), basemap configuration, user layers, attribution, and embedded `control_points` and `icon_points` for roundtrip re-opening in Veracity Maps.
 - **Key Methods**:
-  - `GenerateExport(sessionID, datasetID, format)`: Exports standard `.zip` (`mtmap`) containing root tile folders, `basemap/`, all standalone viewers, and local launchers.
+  - `GenerateExport(sessionID, datasetID, format)`: Exports standard `.zip` (`mtmap`) containing only numeric zoom tile folders, `metadata.json`, and the 4 HTML viewers (`index.html`, `leaflet.html`, `openlayers.html`, `googlemaps.html`).
   - `GenerateSelectiveExport(sessionID, primaryDatasetID, params)`: Exports selective project hierarchies with options for buildings, floors, raster types, and styling.
 

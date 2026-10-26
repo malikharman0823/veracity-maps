@@ -121,17 +121,18 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 4. Verify all root-level viewer and metadata files
+	// 4. Verify all root-level viewer and metadata files (EXACTLY 5 root files)
 	expectedRootFiles := []string{
 		"index.html",
-		"maplibre.html",
 		"leaflet.html",
 		"openlayers.html",
 		"googlemaps.html",
 		"metadata.json",
 	}
 
+	expectedRootMap := make(map[string]bool)
 	for _, name := range expectedRootFiles {
+		expectedRootMap[name] = true
 		zf, exists := files[name]
 		if !exists {
 			t.Errorf("expected root file missing: %s", name)
@@ -142,7 +143,22 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 5. Verify metadata.json contents
+	// 5. Verify NO unwanted folders or extra root files exist (strict Viewscape compatibility)
+	for name := range files {
+		parts := strings.Split(name, "/")
+		if len(parts) == 1 {
+			if !expectedRootMap[name] {
+				t.Errorf("unwanted root file found in export archive: %s", name)
+			}
+		} else {
+			// Top-level directory MUST be strictly a numeric zoom level
+			if _, err := strconv.Atoi(parts[0]); err != nil {
+				t.Errorf("unwanted non-numeric folder '%s' in archive entry: %s (Viewscape requires only numeric zoom folders)", parts[0], name)
+			}
+		}
+	}
+
+	// 6. Verify metadata.json contents
 	if metaFile, ok := files["metadata.json"]; ok {
 		rc, err := metaFile.Open()
 		if err != nil {
@@ -161,14 +177,17 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		if metaDoc["tile_url_template"] != "./{z}/{x}/{y}.png" {
 			t.Errorf("expected tile_url_template ./{z}/{x}/{y}.png, got: %v", metaDoc["tile_url_template"])
 		}
+		if metaDoc["control_points"] == nil {
+			t.Errorf("expected control_points preserved in metadata.json")
+		}
 	}
 
-	// 6. Verify numbered zoom directories exist
+	// 7. Verify numbered zoom directories exist
 	if len(numberedDirZooms) == 0 {
 		t.Errorf("expected at least one numbered zoom folder (e.g. 15, 16, etc.) in georeferenced export, got 0")
 	}
 
-	// 7. Verify HTML files use valid relative paths and do not contain hardcoded secrets
+	// 8. Verify HTML files use valid relative paths and do not contain hardcoded secrets
 	checkHTML := func(name string, requiredKeywords []string) {
 		zf, ok := files[name]
 		if !ok {
@@ -195,29 +214,48 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	checkHTML("index.html", []string{"maplibre.html", "leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "maplibregl.Map", "basemap-layer"})
-	checkHTML("maplibre.html", []string{"maplibregl.Map", "basemap-layer", "bounds"})
-	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "bounds"})
-	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "ol.source.XYZ"})
-	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "api-key-input", "loadMap"})
+	checkHTML("index.html", []string{"leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "maplibregl.Map", "basemap-layer"})
+	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "bounds", "index.html"})
+	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "ol.source.XYZ", "index.html"})
+	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "api-key-input", "loadMap", "index.html"})
 
-	// 8. Verify local launcher scripts exist
-	if _, ok := files["serve.bat"]; !ok {
-		t.Errorf("expected serve.bat in export archive")
+	// 9. Verify Roundtrip Re-opening: Uploading this exported ZIP to a fresh session succeeds
+	newSess := repo.CreateSession()
+	var reimportBuf bytes.Buffer
+	mw := multipart.NewWriter(&reimportBuf)
+	formPart, err := mw.CreateFormFile("file", "viewscape_export.zip")
+	if err != nil {
+		t.Fatalf("failed creating form file: %v", err)
 	}
-	if _, ok := files["serve.py"]; !ok {
-		t.Errorf("expected serve.py in export archive")
+	_, _ = formPart.Write(zipBytes)
+	_ = mw.Close()
+
+	reimportReq, _ := http.NewRequest("POST", server.URL+"/upload", &reimportBuf)
+	reimportReq.Header.Set("Content-Type", mw.FormDataContentType())
+	reimportReq.Header.Set("X-Session-ID", newSess.ID)
+	reimportResp, err := client.Do(reimportReq)
+	if err != nil || reimportResp.StatusCode != http.StatusCreated {
+		t.Fatalf("re-uploading exported zip failed: %v, status: %d", err, reimportResp.StatusCode)
+	}
+	defer reimportResp.Body.Close()
+
+	var reimportDoc struct {
+		Data struct {
+			ID                 string `json:"id"`
+			GeoreferenceStatus string `json:"georeference_status"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(reimportResp.Body).Decode(&reimportDoc)
+	if reimportDoc.Data.ID == "" {
+		t.Errorf("re-imported dataset ID is empty")
+	}
+	if reimportDoc.Data.GeoreferenceStatus != "completed" {
+		t.Errorf("expected re-imported dataset georeference_status 'completed', got: %s", reimportDoc.Data.GeoreferenceStatus)
 	}
 
-	// 9. Verify basemap directory and tiles exist
-	hasBasemapTiles := false
-	for path := range files {
-		if strings.HasPrefix(path, "basemap/") && strings.HasSuffix(path, ".png") {
-			hasBasemapTiles = true
-			break
-		}
-	}
-	if !hasBasemapTiles {
-		t.Errorf("expected at least one basemap raster tile in basemap/{z}/{x}/{y}.png")
+	// Verify control points restored in new session
+	restoredPts, err := repo.ListControlPoints(newSess.ID, reimportDoc.Data.ID)
+	if err != nil || len(restoredPts) != 4 {
+		t.Errorf("expected 4 restored control points in re-imported session, got %d (err: %v)", len(restoredPts), err)
 	}
 }
