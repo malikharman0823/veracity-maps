@@ -149,7 +149,7 @@ func fetchOnlineTile(client *http.Client, baseURL, userAgent string, z, x, y int
 }
 
 // generateOfflineFallbackTile generates a clean 256x256 land/grid tile when offline
-func generateOfflineFallbackTile(z, x, y int) image.Image {
+func generateOfflineFallbackTile(_, _, _ int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, 256, 256))
 	bgColor := color.RGBA{R: 242, G: 239, B: 233, A: 255} // OpenStreetMap land color
 	draw.Draw(img, img.Bounds(), &image.Uniform{bgColor}, image.Point{}, draw.Src)
