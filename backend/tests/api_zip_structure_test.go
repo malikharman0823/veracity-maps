@@ -121,9 +121,10 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 4. Verify all 5 root-level files
+	// 4. Verify all root-level viewer and metadata files
 	expectedRootFiles := []string{
 		"index.html",
+		"maplibre.html",
 		"leaflet.html",
 		"openlayers.html",
 		"googlemaps.html",
@@ -194,7 +195,8 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	checkHTML("index.html", []string{"leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "L.map", "basemapLayer"})
+	checkHTML("index.html", []string{"maplibre.html", "leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "maplibregl.Map", "basemap-layer"})
+	checkHTML("maplibre.html", []string{"maplibregl.Map", "basemap-layer", "bounds"})
 	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "bounds"})
 	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "ol.source.XYZ"})
 	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "api-key-input", "loadMap"})

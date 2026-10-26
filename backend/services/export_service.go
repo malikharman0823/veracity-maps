@@ -445,15 +445,15 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 		basemapUrlRel = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 	}
 
-	// PRIMARY VIEWER: index.html (Interactive standalone map viewer with embedded config)
+	// PRIMARY VIEWER: index.html (Interactive standalone map viewer powered by MapLibre GL JS)
 	indexHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>%s - Veracity Maps Standalone Viewer</title>
+  <title>%s - Veracity Maps MapLibre Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%%; margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
@@ -472,7 +472,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
     .control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .control-row label { color: #cbd5e1; cursor: pointer; display: flex; align-items: center; gap: 6px; }
     .control-row input[type="range"] { flex: 1; accent-color: #0284c7; }
-    .btn-group { display: flex; gap: 6px; margin-top: 6px; }
+    .btn-group { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
     .btn {
       background: #0284c7; color: #ffffff; border: none; border-radius: 4px;
       padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
@@ -496,6 +496,10 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
       background: #ef4444; color: #fff; padding: 10px 18px; border-radius: 6px;
       font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none;
     }
+    #local-notice {
+      display: none; margin-top: 8px; padding: 6px 10px; background: rgba(234, 88, 12, 0.2);
+      border: 1px solid rgba(234, 88, 12, 0.4); border-radius: 4px; font-size: 11px; color: #fed7aa;
+    }
   </style>
 </head>
 <body>
@@ -504,7 +508,7 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
       %s
     </h1>
-    <div class="subtitle">Standalone Offline Map Export &bull; EPSG:3857</div>
+    <div class="subtitle">MapLibre GL Standalone Map &bull; WebGL Accelerated &bull; EPSG:3857</div>
     <div class="controls">
       <div class="control-row">
         <label><input type="checkbox" id="toggle-basemap" checked /> Base World Map</label>
@@ -516,12 +520,15 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
       </div>
       <div class="btn-group">
         <button class="btn" id="btn-fit">Fit Dataset Bounds</button>
+        <button class="btn btn-secondary" id="btn-reset-north">Reset North</button>
         <a class="btn btn-secondary" href="metadata.json" target="_blank">metadata.json</a>
       </div>
+      <div id="local-notice">Running via local file. If tiles do not appear due to browser sandbox limits, double-click <strong>serve.bat</strong> or run <strong>python serve.py</strong>.</div>
     </div>
   </div>
 
   <div class="nav-bar">
+    <a href="maplibre.html">MapLibre GL</a> |
     <a href="leaflet.html">Leaflet</a> |
     <a href="openlayers.html">OpenLayers</a> |
     <a href="googlemaps.html">Google Maps</a>
@@ -531,10 +538,10 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
   <div id="map"></div>
 
   <script>
-    // Embedded metadata configuration to guarantee offline file:/// compatibility
+    // Embedded metadata configuration
     var MAP_CONFIG = {
       title: "%s",
-      bounds: [[%.6f, %.6f], [%.6f, %.6f]],
+      bounds: [%.6f, %.6f, %.6f, %.6f], // [west, south, east, north]
       center: [%.6f, %.6f],
       minZoom: %d,
       maxZoom: %d,
@@ -546,6 +553,11 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
       attribution: "Veracity Maps & OpenStreetMap contributors"
     };
 
+    if (window.location.protocol === 'file:') {
+      var notice = document.getElementById('local-notice');
+      if (notice) notice.style.display = 'block';
+    }
+
     function showError(msg) {
       var toast = document.getElementById("error-toast");
       toast.textContent = msg;
@@ -554,79 +566,94 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
     }
 
     try {
-      var map = L.map('map', {
-        minZoom: Math.max(1, MAP_CONFIG.minZoom - 4),
-        maxZoom: Math.min(22, MAP_CONFIG.maxZoom + 4),
-        attributionControl: true
-      });
+      var basemapTileUrl = MAP_CONFIG.hasBasemap ? MAP_CONFIG.basemapTemplate : MAP_CONFIG.onlineBasemapUrl;
+      
+      var mapSources = {
+        'basemap-source': {
+          type: 'raster',
+          tiles: [basemapTileUrl],
+          tileSize: 256,
+          attribution: '&copy; <a href="https://openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
+          maxzoom: 19
+        }
+      };
 
-      // Fit dataset bounds initially
-      map.fitBounds(MAP_CONFIG.bounds, { padding: [60, 60] });
+      var mapLayers = [
+        {
+          id: 'basemap-layer',
+          type: 'raster',
+          source: 'basemap-source'
+        }
+      ];
 
-      // 1. BASEMAP LAYER (Bottom)
-      var basemapUrl = MAP_CONFIG.hasBasemap ? MAP_CONFIG.basemapTemplate : MAP_CONFIG.onlineBasemapUrl;
-      var basemapLayer = L.tileLayer(basemapUrl, {
-        maxZoom: 22,
-        attribution: '&copy; <a href="https://openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
-      }).addTo(map);
-
-      // Fallback from local basemap to online OSM if local tile 404s
-      if (MAP_CONFIG.hasBasemap) {
-        basemapLayer.on('tileerror', function(error, tile) {
-          if (!this._hasFallenBack && navigator.onLine) {
-            console.log("Local basemap tile missing, falling back to online OpenStreetMap");
-            this.setUrl(MAP_CONFIG.onlineBasemapUrl);
-            this._hasFallenBack = true;
+      if (MAP_CONFIG.hasTiles) {
+        mapSources['dataset-source'] = {
+          type: 'raster',
+          tiles: [MAP_CONFIG.overlayTemplate],
+          tileSize: 256,
+          bounds: MAP_CONFIG.bounds,
+          minzoom: MAP_CONFIG.minZoom,
+          maxzoom: MAP_CONFIG.maxZoom,
+          attribution: 'Veracity Maps'
+        };
+        mapLayers.push({
+          id: 'dataset-overlay-layer',
+          type: 'raster',
+          source: 'dataset-source',
+          paint: {
+            'raster-opacity': 1.0
           }
         });
       }
 
-      // 2. DATASET OVERLAY LAYER (Top)
-      var overlayLayer = null;
-      if (MAP_CONFIG.hasTiles) {
-        overlayLayer = L.tileLayer(MAP_CONFIG.overlayTemplate, {
-          minZoom: MAP_CONFIG.minZoom,
-          maxZoom: MAP_CONFIG.maxZoom,
-          bounds: MAP_CONFIG.bounds,
-          opacity: 1.0,
-          tms: false,
-          attribution: 'Veracity Maps'
-        }).addTo(map);
-      } else {
-        overlayLayer = L.imageOverlay('assets/source/preview.png', MAP_CONFIG.bounds, { opacity: 1.0 }).addTo(map);
-      }
+      var map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: mapSources,
+          layers: mapLayers
+        },
+        center: MAP_CONFIG.center,
+        zoom: Math.max(1, MAP_CONFIG.minZoom),
+        minZoom: 0,
+        maxZoom: 22,
+        bounds: MAP_CONFIG.bounds,
+        fitBoundsOptions: { padding: 60 }
+      });
+
+      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 
       // Controls Binding
       document.getElementById('toggle-basemap').addEventListener('change', function(e) {
-        if (e.target.checked) {
-          map.addLayer(basemapLayer);
-          basemapLayer.bringToBack();
-        } else {
-          map.removeLayer(basemapLayer);
+        if (map.getLayer('basemap-layer')) {
+          map.setLayoutProperty('basemap-layer', 'visibility', e.target.checked ? 'visible' : 'none');
         }
       });
 
       document.getElementById('toggle-overlay').addEventListener('change', function(e) {
-        if (overlayLayer) {
-          if (e.target.checked) map.addLayer(overlayLayer);
-          else map.removeLayer(overlayLayer);
+        if (map.getLayer('dataset-overlay-layer')) {
+          map.setLayoutProperty('dataset-overlay-layer', 'visibility', e.target.checked ? 'visible' : 'none');
         }
       });
 
       document.getElementById('opacity-slider').addEventListener('input', function(e) {
         var op = parseFloat(e.target.value);
-        if (overlayLayer) {
-          overlayLayer.setOpacity(op);
+        if (map.getLayer('dataset-overlay-layer')) {
+          map.setPaintProperty('dataset-overlay-layer', 'raster-opacity', op);
         }
       });
 
       document.getElementById('btn-fit').addEventListener('click', function() {
-        map.fitBounds(MAP_CONFIG.bounds, { padding: [60, 60] });
+        map.fitBounds(MAP_CONFIG.bounds, { padding: 60, duration: 800 });
+      });
+
+      document.getElementById('btn-reset-north').addEventListener('click', function() {
+        map.resetNorthPitch({ duration: 600 });
       });
 
     } catch (err) {
-      console.error("Map initialization error:", err);
-      showError("Map load error: " + err.message + ". If opening via file:///, ensure local scripts are permitted or use serve.bat.");
+      console.error("MapLibre initialization error:", err);
+      showError("Map load warning: " + err.message + ". Run serve.bat for local HTTP serving.");
     }
   </script>
 </body>
@@ -635,7 +662,72 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 			return "Local Offline Tiles"
 		}
 		return "Online Fallback"
-	}(), title, south, west, north, east, centerLat, centerLng, minZoom, maxZoom, hasTiles, hasBasemap, tileUrlRel, basemapUrlRel)
+	}(), title, west, south, east, north, centerLng, centerLat, minZoom, maxZoom, hasTiles, hasBasemap, tileUrlRel, basemapUrlRel)
+
+	// DEDICATED MAPLIBRE VIEWER: maplibre.html
+	maplibreHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>%s - MapLibre GL Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
+  <style>
+    html, body { height: 100%%; margin: 0; padding: 0; }
+    #map { width: 100%%; height: 100%%; }
+    .nav-bar { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+    .nav-bar a { color: #1e40af; text-decoration: none; margin: 0 6px; font-weight: 500; }
+    .nav-bar a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="nav-bar">
+    <a href="index.html">&larr; Main Viewer</a> |
+    <a href="leaflet.html">Leaflet</a> |
+    <a href="openlayers.html">OpenLayers</a> |
+    <a href="googlemaps.html">Google Maps</a> |
+    <a href="metadata.json" target="_blank">metadata.json</a>
+  </div>
+  <div id="map"></div>
+  <script>
+    var bounds = [%.6f, %.6f, %.6f, %.6f];
+    var basemapUrl = %t ? './basemap/{z}/{x}/{y}.png' : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    var hasTiles = %t;
+
+    var sources = {
+      'basemap': {
+        type: 'raster',
+        tiles: [basemapUrl],
+        tileSize: 256,
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }
+    };
+    var layers = [{ id: 'basemap-layer', type: 'raster', source: 'basemap' }];
+
+    if (hasTiles) {
+      sources['overlay'] = {
+        type: 'raster',
+        tiles: ['%s'],
+        tileSize: 256,
+        bounds: bounds,
+        minzoom: %d,
+        maxzoom: %d,
+        attribution: 'Veracity Maps'
+      };
+      layers.push({ id: 'overlay-layer', type: 'raster', source: 'overlay', paint: { 'raster-opacity': 0.9 } });
+    }
+
+    var map = new maplibregl.Map({
+      container: 'map',
+      style: { version: 8, sources: sources, layers: layers },
+      bounds: bounds,
+      fitBoundsOptions: { padding: 50 }
+    });
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+  </script>
+</body>
+</html>`, title, west, south, east, north, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom)
 
 	// ALTERNATIVE VIEWER 1: leaflet.html
 	leafletHTML := fmt.Sprintf(`<!DOCTYPE html>
@@ -871,6 +963,7 @@ with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
 
 	return map[string]string{
 		"index.html":      indexHTML,
+		"maplibre.html":   maplibreHTML,
 		"leaflet.html":    leafletHTML,
 		"openlayers.html": openLayersHTML,
 		"googlemaps.html": googleMapsHTML,

@@ -43,6 +43,7 @@ The `services` package contains the core business logic of Veracity Maps, coordi
   │       └── {x}/
   │           └── {y}.png
   ├── index.html
+  ├── maplibre.html
   ├── leaflet.html
   ├── openlayers.html
   ├── googlemaps.html
@@ -58,7 +59,8 @@ The `services` package contains the core business logic of Veracity Maps, coordi
 - **Root Files & Convention**:
   - `{z}/{x}/{y}.png`: Dynamically generated numbered zoom directories representing standard XYZ map tiles covering the georeferenced dataset bounds.
   - `basemap/{z}/{x}/{y}.png`: Packaged offline raster basemap tiles covering the dataset's geographic extent across the supported zoom range.
-  - `index.html`: Primary standalone interactive map viewer powered by Leaflet with embedded metadata (`MAP_CONFIG`), offline base world map support with online OSM fallback, layer visibility toggles, opacity slider, bounds fitting, and zero dependency on external servers or running backends.
+  - `index.html`: Primary standalone interactive map viewer powered by **MapLibre GL JS** with embedded metadata (`MAP_CONFIG`), WebGL acceleration, 3D pitch/rotation controls, offline base world map support with online OSM fallback, layer visibility toggles, opacity slider, bounds fitting, and local server launcher notice.
+  - `maplibre.html`: Dedicated standalone viewer powered by MapLibre GL JS with NavigationControl and 3D pitch/bearing visualization.
   - `leaflet.html`: Interactive viewer powered by Leaflet v1.9 with XYZ tile layer and local/online base map.
   - `openlayers.html`: Standalone OpenLayers v10 viewer configured with `ol.source.XYZ` and projection reprojection.
   - `googlemaps.html`: Google Maps JS API viewer using `google.maps.ImageMapType` overlay; accepts API key via user input or `?key=YOUR_KEY` parameter without hardcoded secrets.
