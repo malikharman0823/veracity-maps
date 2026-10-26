@@ -174,20 +174,31 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		if metaDoc["name"] == nil || metaDoc["bounds"] == nil {
 			t.Errorf("metadata.json missing required fields: %v", metaDoc)
 		}
-		if metaDoc["tile_url_template"] != "./{z}/{x}/{y}.png" {
-			t.Errorf("expected tile_url_template ./{z}/{x}/{y}.png, got: %v", metaDoc["tile_url_template"])
+		if metaDoc["format"] != "hybrid" {
+			t.Errorf("expected format 'hybrid', got: %v", metaDoc["format"])
+		}
+		if metaDoc["scale"] != "1.000000" {
+			t.Errorf("expected scale '1.000000', got: %v", metaDoc["scale"])
 		}
 		if metaDoc["control_points"] == nil {
 			t.Errorf("expected control_points preserved in metadata.json")
 		}
 	}
 
-	// 7. Verify numbered zoom directories exist
+	// 7. Verify numbered zoom directories exist and tiles are extensionless {z}/{x}/{y}
 	if len(numberedDirZooms) == 0 {
 		t.Errorf("expected at least one numbered zoom folder (e.g. 15, 16, etc.) in georeferenced export, got 0")
 	}
+	for name := range files {
+		parts := strings.Split(name, "/")
+		if len(parts) == 3 {
+			if strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".jpg") {
+				t.Errorf("tile entry should be extensionless, but got: %s", name)
+			}
+		}
+	}
 
-	// 8. Verify HTML files use valid relative paths and do not contain hardcoded secrets
+	// 8. Verify HTML files match the exact MapTiler templates and do not contain hardcoded secrets
 	checkHTML := func(name string, requiredKeywords []string) {
 		zf, ok := files[name]
 		if !ok {
@@ -214,10 +225,10 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	checkHTML("index.html", []string{"leaflet.html", "openlayers.html", "googlemaps.html", "metadata.json", "MAP_CONFIG", "maplibregl.Map", "basemap-layer"})
-	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "bounds", "index.html"})
-	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "ol.source.XYZ", "index.html"})
-	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "api-key-input", "loadMap", "index.html"})
+	checkHTML("index.html", []string{"tileviewer", "tileserver(data)", "hybrid"})
+	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "mapExtent", "{z}/{x}/{y}"})
+	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "{z}/{x}/{y}"})
+	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "init"})
 
 	// 9. Verify Roundtrip Re-opening: Uploading this exported ZIP to a fresh session succeeds
 	newSess := repo.CreateSession()

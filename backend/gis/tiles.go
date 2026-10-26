@@ -81,10 +81,9 @@ func DetermineTileZooms(bounds []float64, width, height int) (minZoom, maxZoom i
 		targetZoom = 22
 	}
 
-	// For floorplans/architectural drawings, zoom is typically 16-20
 	minZoom = targetZoom
-	if minZoom < 14 {
-		minZoom = 14
+	if minZoom < 0 {
+		minZoom = 0
 	}
 	maxZoom = minZoom + 2
 	if maxZoom > 21 {
@@ -223,8 +222,8 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 				rescaleSubImage(tileImg, tilePixelX0, tilePixelY0, tilePixelX1, tilePixelY1,
 					srcImg, srcPixelX0, srcPixelY0, srcPixelX1, srcPixelY1)
 
-				// Create ZIP entry: "{z}/{x}/{y}.png"
-				tileEntryName := fmt.Sprintf("%d/%d/%d.png", z, x, y)
+				// Create ZIP entry: "{z}/{x}/{y}" (matching MapTiler hybrid tile package)
+				tileEntryName := fmt.Sprintf("%d/%d/%d", z, x, y)
 				entryWriter, err := archive.Create(tileEntryName)
 				if err != nil {
 					continue

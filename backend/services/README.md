@@ -38,21 +38,22 @@ The `services` package contains the core business logic of Veracity Maps, coordi
   ├── {z}/
   │   └── {x}/
   │   └── {x}/
-  │       └── {y}.png
+  │   └── {x}/
+  │       └── {y}
   ├── googlemaps.html
   ├── index.html
   ├── leaflet.html
   ├── metadata.json
   └── openlayers.html
   ```
-- **Root Files & Convention (Strict Viewscape Compatibility)**:
-  - `{z}/{x}/{y}.png`: Dynamically generated numbered zoom directories representing standard XYZ map tiles covering the georeferenced dataset bounds (e.g. `18/`, `19/`, `20/`, `21/`).
-  - `index.html`: Primary standalone interactive map viewer powered by **MapLibre GL JS** with embedded metadata (`MAP_CONFIG`), WebGL acceleration, 3D pitch/rotation controls, OSM basemap, dataset overlay toggle, opacity slider, and bounds fitting.
-  - `leaflet.html`: Interactive viewer powered by Leaflet v1.9 with XYZ tile layer and OpenStreetMap base map.
-  - `openlayers.html`: Standalone OpenLayers v10 viewer configured with `ol.source.XYZ` and projection reprojection.
-  - `googlemaps.html`: Google Maps JS API viewer using `google.maps.ImageMapType` overlay; accepts API key via user input or `?key=YOUR_KEY` parameter without hardcoded secrets.
-  - `metadata.json`: Valid JSON metadata detailing dataset name, version, geographic bounds `[west, south, east, north]`, center coordinates, initial zoom, min/max zoom levels, tile template (`./{z}/{x}/{y}.png`), basemap configuration, user layers, attribution, and embedded `control_points` and `icon_points` for roundtrip re-opening in Veracity Maps.
+- **Root Files & Convention (Strict MapTiler & Viewscape Compatibility)**:
+  - `{z}/{x}/{y}`: Extensionless XYZ map tiles (e.g. `7/90/53`) covering the georeferenced dataset bounds with markers and annotations composited directly into the raster tiles.
+  - `index.html`: Exact MapTiler `tileviewer` template using `https://cdn.maptiler.com/tileviewer/v1/` calling `tileserver(data)`.
+  - `leaflet.html`: Standalone viewer powered by Leaflet v1.7.1 using `L.tileLayer('{z}/{x}/{y}', options)`.
+  - `openlayers.html`: Standalone OpenLayers v6.12.0 viewer configured with `url: "{z}/{x}/{y}"`.
+  - `googlemaps.html`: Google Maps JS API viewer using `google.maps.ImageMapType` overlay returning `zoom + "/" + x + "/" + y`.
+  - `metadata.json`: Exact MapTiler metadata format (`"format": "hybrid"`, `"version": "1.1.0"`, `"scale": "1.000000"`, `"profile": "mercator"`, `"bounds": [west, south, east, north]`), with preserved `control_points` and `icon_points` for roundtrip re-opening in Veracity Maps.
 - **Key Methods**:
-  - `GenerateExport(sessionID, datasetID, format)`: Exports standard `.zip` (`mtmap`) containing only numeric zoom tile folders, `metadata.json`, and the 4 HTML viewers (`index.html`, `leaflet.html`, `openlayers.html`, `googlemaps.html`).
+  - `GenerateExport(sessionID, datasetID, format)`: Exports standard `.zip` (`mtmap`) matching the exact MapTiler package containing numeric zoom folders, `metadata.json`, and the 4 HTML viewers (`index.html`, `leaflet.html`, `openlayers.html`, `googlemaps.html`).
   - `GenerateSelectiveExport(sessionID, primaryDatasetID, params)`: Exports selective project hierarchies with options for buildings, floors, raster types, and styling.
 

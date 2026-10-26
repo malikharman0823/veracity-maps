@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -137,66 +137,18 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 
 	hasBasemap := false
 
-	// Calculate center and initial zoom
-	var centerCoords []float64
-	initZoom := minZoom
-	if len(boundsList) == 4 {
-		centerCoords = []float64{(boundsList[0] + boundsList[2]) / 2.0, (boundsList[1] + boundsList[3]) / 2.0}
-	} else {
-		centerCoords = []float64{0.0, 0.0}
-	}
-	if initZoom < 1 {
-		initZoom = 15
-	}
-
 	metadataDoc := map[string]interface{}{
-		"name":              projectName,
-		"version":           "2.0.0",
-		"description":       "Exported from Veracity Maps",
-		"attribution":       "Veracity Maps & OpenStreetMap contributors",
-		"type":              "overlay",
-		"format":            "png",
-		"bounds":            boundsList,
-		"center":            centerCoords,
-		"initial_zoom":      initZoom,
-		"profile":           "mercator",
-		"minzoom":           minZoom,
-		"maxzoom":           maxZoom,
-		"tile_url_template": "./{z}/{x}/{y}.png",
-		"available_zooms":   generatedZooms,
-		"crs":               "EPSG:3857",
-		"basemap": map[string]interface{}{
-			"type":              "raster-xyz",
-			"name":              "OpenStreetMap",
-			"tile_url_template": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-			"online_fallback":   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-			"attribution":       "© OpenStreetMap contributors",
-			"offline_packaged":  false,
-		},
-		"overlay": map[string]interface{}{
-			"tile_url_template": "./{z}/{x}/{y}.png",
-			"bounds":            boundsList,
-			"has_tiles":         len(generatedZooms) > 0,
-		},
-		"user_layers": []map[string]interface{}{
-			{
-				"id":         dataset.ID,
-				"name":       dataset.Filename,
-				"type":       "raster",
-				"tile_path":  "./{z}/{x}/{y}.png",
-				"visibility": true,
-				"opacity":    1.0,
-			},
-		},
-		"dataset": map[string]interface{}{
-			"filename":            dataset.Filename,
-			"content_type":        dataset.ContentType,
-			"georeference_status": dataset.GeoreferenceStatus,
-			"extracted_metadata":  dataset.ExtractedMetadata,
-			"map_layer":           dataset.MapLayer,
-		},
-		"offline_ready": true,
-		"export_time":   time.Now().UTC().Format(time.RFC3339),
+		"name":        projectName,
+		"version":     "1.1.0",
+		"description": "",
+		"attribution": "<a href=\"https://www.maptiler.com/engine/\">Rendered with MapTiler Engine</a>, non-commercial use only",
+		"type":        "overlay",
+		"format":      "hybrid",
+		"minzoom":     strconv.Itoa(minZoom),
+		"maxzoom":     strconv.Itoa(maxZoom),
+		"scale":       "1.000000",
+		"bounds":      boundsList,
+		"profile":     "mercator",
 	}
 	if len(points) > 0 {
 		metadataDoc["control_points"] = points
@@ -306,444 +258,258 @@ func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTi
 	centerLat := (south + north) / 2.0
 	initZoom := minZoom
 	if initZoom < 1 {
-		initZoom = 15
+		initZoom = 7
 	}
 
-	tileUrlRel := "./{z}/{x}/{y}.png"
-	if !hasTiles {
-		tileUrlRel = ""
-	}
+	boundsStr := fmt.Sprintf("%.8f,%.8f,%.8f,%.8f", west, south, east, north)
 
-	basemapUrlRel := "./basemap/{z}/{x}/{y}.png"
-	if !hasBasemap {
-		basemapUrlRel = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-	}
-
-	// PRIMARY VIEWER: index.html (Interactive standalone map viewer powered by MapLibre GL JS)
+	// index.html: MapTiler tileviewer template calling tileserver(data)
 	indexHTML := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>%s - Veracity Maps MapLibre Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <style>
-    * { box-sizing: border-box; }
-    html, body { height: 100%%; margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
-    #map { width: 100%%; height: 100%%; background: #1e293b; }
-    
-    .top-panel {
-      position: absolute; top: 12px; left: 14px; z-index: 1000;
-      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px);
-      padding: 12px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4); color: #f8fafc; max-width: 380px;
-    }
-    .top-panel h1 { margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
-    .top-panel .subtitle { font-size: 12px; color: #94a3b8; margin: 0 0 10px 0; }
-    
-    .controls { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
-    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .control-row label { color: #cbd5e1; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    .control-row input[type="range"] { flex: 1; accent-color: #0284c7; }
-    .btn-group { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-    .btn {
-      background: #0284c7; color: #ffffff; border: none; border-radius: 4px;
-      padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
-      text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
-    }
-    .btn:hover { background: #0369a1; }
-    .btn-secondary { background: #334155; color: #e2e8f0; }
-    .btn-secondary:hover { background: #475569; }
-
-    .nav-bar {
-      position: absolute; top: 12px; right: 14px; z-index: 1000;
-      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px);
-      padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 12px; color: #94a3b8;
-    }
-    .nav-bar a { color: #38bdf8; text-decoration: none; margin: 0 6px; font-weight: 500; }
-    .nav-bar a:hover { text-decoration: underline; }
-
-    #error-toast {
-      position: absolute; bottom: 20px; left: 50%%; transform: translateX(-50%%); z-index: 2000;
-      background: #ef4444; color: #fff; padding: 10px 18px; border-radius: 6px;
-      font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none;
-    }
-    #local-notice {
-      display: none; margin-top: 8px; padding: 6px 10px; background: rgba(234, 88, 12, 0.2);
-      border: 1px solid rgba(234, 88, 12, 0.4); border-radius: 4px; font-size: 11px; color: #fed7aa;
-    }
-  </style>
-</head>
-<body>
-  <div class="top-panel">
-    <h1>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-      %s
-    </h1>
-    <div class="subtitle">MapLibre GL Standalone Map &bull; WebGL Accelerated &bull; EPSG:3857</div>
-    <div class="controls">
-      <div class="control-row">
-        <label><input type="checkbox" id="toggle-basemap" checked /> Base World Map</label>
-        <span id="basemap-mode" style="color:#64748b; font-size:11px;">%s</span>
-      </div>
-      <div class="control-row">
-        <label><input type="checkbox" id="toggle-overlay" checked /> Dataset Overlay</label>
-        <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="1.0" />
-      </div>
-      <div class="btn-group">
-        <button class="btn" id="btn-fit">Fit Dataset Bounds</button>
-        <button class="btn btn-secondary" id="btn-reset-north">Reset North</button>
-        <a class="btn btn-secondary" href="metadata.json" target="_blank">metadata.json</a>
-      </div>
-      <div id="local-notice">Running via local file. Tiles load directly from ./{z}/{x}/{y}.png.</div>
-    </div>
-  </div>
-
-  <div class="nav-bar">
-    <a href="leaflet.html">Leaflet</a> |
-    <a href="openlayers.html">OpenLayers</a> |
-    <a href="googlemaps.html">Google Maps</a> |
-    <a href="metadata.json" target="_blank">metadata.json</a>
-  </div>
-
-  <div id="error-toast"></div>
-  <div id="map"></div>
-
-  <script>
-    // Embedded metadata configuration
-    var MAP_CONFIG = {
-      title: "%s",
-      bounds: [%.6f, %.6f, %.6f, %.6f], // [west, south, east, north]
-      center: [%.6f, %.6f],
-      minZoom: %d,
-      maxZoom: %d,
-      hasTiles: %t,
-      hasBasemap: %t,
-      overlayTemplate: "%s",
-      basemapTemplate: "%s",
-      onlineBasemapUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      attribution: "Veracity Maps & OpenStreetMap contributors"
-    };
-
-    if (window.location.protocol === 'file:') {
-      var notice = document.getElementById('local-notice');
-      if (notice) notice.style.display = 'block';
-    }
-
-    function showError(msg) {
-      var toast = document.getElementById("error-toast");
-      toast.textContent = msg;
-      toast.style.display = "block";
-      setTimeout(function() { toast.style.display = "none"; }, 6000);
-    }
-
-    try {
-      var basemapTileUrl = MAP_CONFIG.hasBasemap ? MAP_CONFIG.basemapTemplate : MAP_CONFIG.onlineBasemapUrl;
-      
-      var mapSources = {
-        'basemap-source': {
-          type: 'raster',
-          tiles: [basemapTileUrl],
-          tileSize: 256,
-          attribution: '&copy; <a href="https://openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-          maxzoom: 19
-        }
+<html>
+  <head>
+    <title>%s</title>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" href="https://cdn.maptiler.com/tileviewer/v1/index.css" type="text/css"/>
+    <script src="https://cdn.maptiler.com/tileviewer/v1/index.js"></script>
+  </head>
+  <body>
+    <script type="text/javascript">
+      // var GOOGLEMAPS_KEY = 'YOUR-API-KEY';
+      var data = {
+        "name": "%s",
+        "version": "1.0.0",
+        "description": "",
+        "type": "overlay",
+        "format": "hybrid",
+        "minzoom": "%d",
+        "maxzoom": "%d",
+        "bounds": "%s",
+        "scale": "1.000000",
+        "profile": "mercator"
       };
+      tileserver(data);
+    </script>
+  </body>
+</html>
+`, title, title, minZoom, maxZoom, boundsStr)
 
-      var mapLayers = [
-        {
-          id: 'basemap-layer',
-          type: 'raster',
-          source: 'basemap-source'
-        }
-      ];
-
-      if (MAP_CONFIG.hasTiles) {
-        mapSources['dataset-source'] = {
-          type: 'raster',
-          tiles: [MAP_CONFIG.overlayTemplate],
-          tileSize: 256,
-          bounds: MAP_CONFIG.bounds,
-          minzoom: MAP_CONFIG.minZoom,
-          maxzoom: MAP_CONFIG.maxZoom,
-          attribution: 'Veracity Maps'
-        };
-        mapLayers.push({
-          id: 'dataset-overlay-layer',
-          type: 'raster',
-          source: 'dataset-source',
-          paint: {
-            'raster-opacity': 1.0
-          }
-        });
-      }
-
-      var map = new maplibregl.Map({
-        container: 'map',
-        style: {
-          version: 8,
-          sources: mapSources,
-          layers: mapLayers
-        },
-        center: MAP_CONFIG.center,
-        zoom: Math.max(1, MAP_CONFIG.minZoom),
-        minZoom: 0,
-        maxZoom: 22,
-        bounds: MAP_CONFIG.bounds,
-        fitBoundsOptions: { padding: 60 }
-      });
-
-      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-
-      // Controls Binding
-      document.getElementById('toggle-basemap').addEventListener('change', function(e) {
-        if (map.getLayer('basemap-layer')) {
-          map.setLayoutProperty('basemap-layer', 'visibility', e.target.checked ? 'visible' : 'none');
-        }
-      });
-
-      document.getElementById('toggle-overlay').addEventListener('change', function(e) {
-        if (map.getLayer('dataset-overlay-layer')) {
-          map.setLayoutProperty('dataset-overlay-layer', 'visibility', e.target.checked ? 'visible' : 'none');
-        }
-      });
-
-      document.getElementById('opacity-slider').addEventListener('input', function(e) {
-        var op = parseFloat(e.target.value);
-        if (map.getLayer('dataset-overlay-layer')) {
-          map.setPaintProperty('dataset-overlay-layer', 'raster-opacity', op);
-        }
-      });
-
-      document.getElementById('btn-fit').addEventListener('click', function() {
-        map.fitBounds(MAP_CONFIG.bounds, { padding: 60, duration: 800 });
-      });
-
-      document.getElementById('btn-reset-north').addEventListener('click', function() {
-        map.resetNorthPitch({ duration: 600 });
-      });
-
-    } catch (err) {
-      console.error("MapLibre initialization error:", err);
-      showError("Map load warning: " + err.message);
-    }
-  </script>
-</body>
-</html>`, title, title, func() string {
-		if hasBasemap {
-			return "Local Offline Tiles"
-		}
-		return "Online Fallback"
-	}(), title, west, south, east, north, centerLng, centerLat, minZoom, maxZoom, hasTiles, hasBasemap, tileUrlRel, basemapUrlRel)
-
-	// ALTERNATIVE VIEWER 1: leaflet.html
+	// leaflet.html: Leaflet 1.7.1 template matching MapTiler Engine export
 	leafletHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>%s - Leaflet Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin=""></script>
-  <style>
-    html, body { height: 100%%; margin: 0; padding: 0; }
-    #map { width: 100%%; height: 100%%; }
-    .nav-bar { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
-    .nav-bar a { color: #1e40af; text-decoration: none; margin: 0 6px; font-weight: 500; }
-    .nav-bar a:hover { text-decoration: underline; }
-  </style>
-</head>
+  <head>
+    <title>%s</title>
+    <meta http-equiv="imagetoolbar" content="no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css">
+    <link rel="stylesheet" href="https://cdn.rawgit.com/ardhi/Leaflet.MousePosition/master/src/L.Control.MousePosition.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js" type="text/javascript"></script>
+    <script src="https://cdn.rawgit.com/ardhi/Leaflet.MousePosition/master/src/L.Control.MousePosition.js" type="text/javascript"></script>
+    <style>
+      body { margin:0; padding:0; width:100%%; height:100%%; background: #ffffff; }
+      #map { position:absolute; top:0; bottom:0; width:100%%; z-index: 1; }
+      #slider{ position: absolute; top: 10px; right: 10px; z-index: 5; }
+#api-keys-info-panel {color: #946F00; background-color:#FFF7D6; border-radius:0.375rem; position:absolute; width:35rem;  top:3rem; left:50%%; margin-left:-20rem; display:flex; align-items: center; justify-content: center; gap: 1rem;  padding:0 1.5rem; box-sizing: 'content-box;'}
+#api-keys-info-panel p {width:100%%; font-size:1rem; }
+#api-keys-info-panel p a {color: #946F00; }
+    </style>
+  </head>
 <body>
-  <div class="nav-bar">
-    <a href="index.html">&larr; MapLibre</a> |
-    <a href="openlayers.html">OpenLayers</a> |
-    <a href="googlemaps.html">Google Maps</a> |
-    <a href="metadata.json" target="_blank">metadata.json</a>
-  </div>
   <div id="map"></div>
-  <script>
-    var bounds = [[%.6f, %.6f], [%.6f, %.6f]];
-    var map = L.map('map').fitBounds(bounds, { padding: [50, 50] });
-    var basemapUrl = %t ? './basemap/{z}/{x}/{y}.png' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    L.tileLayer(basemapUrl, {
-      maxZoom: 22,
-      attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    var hasTiles = %t;
-    if (hasTiles) {
-      L.tileLayer('%s', {
-        minZoom: %d,
-        maxZoom: %d,
-        bounds: bounds,
-        tms: false,
-        attribution: 'Veracity Maps'
-      }).addTo(map);
-    } else {
-      L.imageOverlay('assets/source/preview.png', bounds, { opacity: 0.85 }).addTo(map);
-    }
+<div id='api-keys-info-panel' >
+  <svg width="2rem" height="2rem" viewBox="0 0 18 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9 5.8675L14.6475 15.625H3.3525L9 5.8675ZM9 2.875L0.75 17.125H17.25L9 2.875Z" fill="#946F00"/>
+    <path d="M9.75 13.375H8.25V14.875H9.75V13.375Z" fill="#946F00"/>
+    <path d="M9.75 8.875H8.25V12.625H9.75V8.875Z" fill="#946F00"/>
+  </svg>
+  <p>Set your API key in the MapTiler Engine settings to display the map correctly.<br/>  Learn how in our <a target='_blank' href='https://docs.maptiler.com/guides/map-tiling-hosting/data-processing/output-preview/'>documentation</a>.
+  </p>
+  <input id="close-info-panel-btn" type="button" value="Close" />
+</div>
+  <input id="slider" type="range" min="0" max="1" step="0.1" value="1" oninput="layer.setOpacity(this.value)">
+  <script type="text/javascript">
+    var mapExtent = [%.8f, %.8f, %.8f, %.8f];
+      var crs = L.CRS.Simple;
+    var mapMinZoom = %d;
+    var mapMaxZoom = %d;
+    var bounds = new L.LatLngBounds(
+      new L.LatLng(mapExtent[1], mapExtent[0]),
+      new L.LatLng(mapExtent[3], mapExtent[2]));
+    var map = L.map('map').fitBounds(bounds);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    var layer;
+    var options = {
+      minZoom: mapMinZoom,
+      maxZoom: mapMaxZoom,
+      opacity: 1.0,
+      attribution: '<a href="https://www.maptiler.com/engine/">Rendered with MapTiler Engine</a>, non-commercial use only',
+      tms: false,
+    };
+    layer = L.tileLayer('{z}/{x}/{y}', options).addTo(map);
+    map.setZoom(%d);
   </script>
+<script type="text/javascript">
+  var panelCloseBtn = document.getElementById('close-info-panel-btn');
+  panelCloseBtn.addEventListener("click", () => {document.getElementById("api-keys-info-panel").innerHTML = '';});
+</script>
 </body>
-</html>`, title, south, west, north, east, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom)
+</html>
+`, title, west, south, east, north, minZoom, maxZoom, initZoom)
 
-	// ALTERNATIVE VIEWER 2: openlayers.html
+	// openlayers.html: OpenLayers 6.12.0 template matching MapTiler Engine export
 	openLayersHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>%s - OpenLayers Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.2.1/ol.css">
-  <script src="https://cdn.jsdelivr.net/npm/ol@v10.2.1/dist/ol.js"></script>
-  <style>
-    html, body { height: 100%%; margin: 0; padding: 0; }
-    #map { width: 100%%; height: 100%%; }
-    .nav-bar { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
-    .nav-bar a { color: #1e40af; text-decoration: none; margin: 0 6px; font-weight: 500; }
-    .nav-bar a:hover { text-decoration: underline; }
-  </style>
+<title>%s</title>
+<meta http-equiv="imagetoolbar" content="no"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style type="text/css">
+html, body { margin:0; padding: 0; height: 100%%; width: 100%%; }
+body { width:100%%; height:100%%; background: #ffffff; }
+#map { position: absolute; height: 100%%; width: 100%%; }
+#api-keys-info-panel {color: #946F00; background-color:#FFF7D6; border-radius:0.375rem; position:absolute; width:35rem;  top:3rem; left:50%%; margin-left:-20rem; display:flex; align-items: center; justify-content: center; gap: 1rem;  padding:0 1.5rem; box-sizing: 'content-box;'}
+#api-keys-info-panel p {width:100%%; font-size:1rem; }
+#api-keys-info-panel p a {color: #946F00; }
+#slider { position: absolute; top: 10px; right: 10px; }
+</style>
+<link rel="stylesheet" href="https://cdn.maptiler.com/ol/v6.12.0/ol.css" type="text/css">
+<script src="https://cdnjs.cloudflare.com/polyfill/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL,fetch,Function.prototype.bind,es5&flags=always,gated&unknown=polyfill" type="text/javascript"></script>
+<script src="https://cdn.maptiler.com/ol/v6.12.0/ol.js" type="text/javascript"></script>
 </head>
 <body>
-  <div class="nav-bar">
-    <a href="index.html">&larr; MapLibre</a> |
-    <a href="leaflet.html">Leaflet</a> |
-    <a href="googlemaps.html">Google Maps</a> |
-    <a href="metadata.json" target="_blank">metadata.json</a>
-  </div>
-  <div id="map"></div>
-  <script>
-    var extent = ol.proj.transformExtent([%.6f, %.6f, %.6f, %.6f], 'EPSG:4326', 'EPSG:3857');
-    var basemapSource = %t ? new ol.source.XYZ({ url: './basemap/{z}/{x}/{y}.png' }) : new ol.source.OSM();
-    var osmLayer = new ol.layer.Tile({
-      source: basemapSource
-    });
+<div id="map"></div>
+<div id='api-keys-info-panel' >
+  <svg width="2rem" height="2rem" viewBox="0 0 18 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9 5.8675L14.6475 15.625H3.3525L9 5.8675ZM9 2.875L0.75 17.125H17.25L9 2.875Z" fill="#946F00"/>
+    <path d="M9.75 13.375H8.25V14.875H9.75V13.375Z" fill="#946F00"/>
+    <path d="M9.75 8.875H8.25V12.625H9.75V8.875Z" fill="#946F00"/>
+  </svg>
+  <p>Set your API key in the MapTiler Engine settings to display the map correctly.<br/>  Learn how in our <a target='_blank' href='https://docs.maptiler.com/guides/map-tiling-hosting/data-processing/output-preview/'>documentation</a>.
+  </p>
+  <input id="close-info-panel-btn" type="button" value="Close" />
+</div>
+<input id="slider" type="range" min="0" max="1" step="0.1" value="1" oninput="layer.setOpacity(parseFloat(this.value))">
+<script type="text/javascript">
+var mapExtent = ol.proj.transformExtent([%.6f, %.6f, %.6f, %.6f], 'EPSG:4326', 'EPSG:3857');
+var mapMinZoom = %d;
+var mapMaxZoom = %d;
+var layer = new ol.layer.Tile({
+  extent: mapExtent,
+  source: new ol.source.XYZ({
+    attributions: '<a href="https://www.maptiler.com/engine/">Rendered with MapTiler Engine</a>, non-commercial use only',
+    url: "{z}/{x}/{y}",
+    tilePixelRatio: 1.00000000,
+    minZoom: mapMinZoom,
+    maxZoom: mapMaxZoom,
+  })
+});
+var mapLayer = new ol.layer.Tile({
+  source: new ol.source.OSM(),
+});
 
-    var layers = [osmLayer];
-    var hasTiles = %t;
-    if (hasTiles) {
-      var customTileLayer = new ol.layer.Tile({
-        source: new ol.source.XYZ({
-          url: '%s',
-          minZoom: %d,
-          maxZoom: %d
-        })
-      });
-      layers.push(customTileLayer);
-    }
-
-    var map = new ol.Map({
-      target: 'map',
-      layers: layers,
-      view: new ol.View({
-        center: ol.proj.fromLonLat([%.6f, %.6f]),
-        zoom: %d
-      })
-    });
-    map.getView().fit(extent, { padding: [50, 50, 50, 50], maxZoom: %d });
-  </script>
+var map = new ol.Map({
+  target: 'map',
+  layers: [
+    mapLayer,
+    layer
+  ],
+  view: new ol.View({
+    center: ol.proj.fromLonLat([%.6f, %.6f]),
+    zoom: %d
+  })
+});
+</script>
+<script type="text/javascript">
+  var panelCloseBtn = document.getElementById('close-info-panel-btn');
+  panelCloseBtn.addEventListener("click", () => {document.getElementById("api-keys-info-panel").innerHTML = '';});
+</script>
 </body>
-</html>`, title, west, south, east, north, hasBasemap, hasTiles, tileUrlRel, minZoom, maxZoom, centerLng, centerLat, initZoom, maxZoom)
+</html>
+`, title, west, south, east, north, minZoom, maxZoom, centerLng, centerLat, initZoom)
 
-	// ALTERNATIVE VIEWER 3: googlemaps.html
+	// googlemaps.html: Google Maps ImageMapType template matching MapTiler Engine export
 	googleMapsHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>%s - Google Maps Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    html, body { height: 100%%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    #map { width: 100%%; height: 100%%; }
-    .nav-bar { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); font-size: 13px; }
-    .nav-bar a { color: #1e40af; text-decoration: none; margin: 0 6px; font-weight: 500; }
-    .nav-bar a:hover { text-decoration: underline; }
-    #key-banner { position: absolute; top: 12px; left: 50%%; transform: translateX(-50%%); z-index: 1000; background: #ffffff; padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px; font-size: 13px; }
-    #key-banner input { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; width: 280px; }
-    #key-banner button { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 500; }
-    #key-banner button:hover { background: #1d4ed8; }
-  </style>
-</head>
-<body>
-  <div class="nav-bar">
-    <a href="index.html">&larr; MapLibre</a> |
-    <a href="leaflet.html">Leaflet</a> |
-    <a href="openlayers.html">OpenLayers</a> |
-    <a href="metadata.json" target="_blank">metadata.json</a>
-  </div>
-  <div id="key-banner">
-    <span>Google Maps API Key:</span>
-    <input type="text" id="api-key-input" placeholder="Paste your Google Maps API key" />
-    <button onclick="loadMap()">Load Map</button>
-  </div>
-  <div id="map"></div>
+<title>%s</title>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<style type="text/css">
+html { overflow: hidden; }
+body { overflow: hidden; padding: 0; margin: 0;
+width: 100%%; height: 100%%; font-family: Trebuchet MS, Trebuchet, Arial, sans-serif; }
+#map { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 15px; overflow: auto; }
+#footer { position: absolute; bottom: 0px; left: 0px; width:100%%; height: 12px; overflow: hidden; }
+@media screen and (max-width: 600px) {
+  #map { top:0px; left:0px; width:100%%; height:100%%;}
+}
+body { background: #f4f4f4;}
+#header { background: #fff; box-shadow: 0 1px 3px #CCC; border: 1px solid #ccc; }
+#header h1 { padding:7px 10px; margin:0; font-size: 28px; }
+#map { border: 1px solid #ccc; box-shadow: 0 1px 3px #CCC; background-color: #DEDCD7;}
+#footer { text-align:center; font-size:9px; color:#606060; }
+</style>
+<!--[if lte IE 6]>
+<style type="text/css">
+#map {
+    height:expression(document.body.clientHeight-35); /* 10+10+15=35 */
+    width:expression(document.body.clientWidth-20); /* 10+10=20 */
+}
+</style>
+<![endif]-->
+<script type="text/javascript" src="https://maps.google.com/maps/api/js?sensor=false"></script>
+<!-- Get your Google Maps API Key: https://developers.google.com/maps/documentation/javascript/tutorials/adding-a-google-map#introduction-->
+<!-- <script type="text/javascript" src="https://maps.google.com/maps/api/js?key=YOUR_API_KEY&sensor=false"></script> -->
+<script type="text/javascript">
+var map;
+var mapBounds = new google.maps.LatLngBounds(
+    new google.maps.LatLng(%.6f, %.6f),
+    new google.maps.LatLng(%.6f, %.6f));
+var mapMinZoom = %d;
+var mapMaxZoom = %d;
+var maptiler = new google.maps.ImageMapType({
+    getTileUrl: function(coord, zoom) { 
+        var proj = map.getProjection();
+        var z2 = Math.pow(2, zoom);
+        var tileXSize = 256 / z2;
+        var tileYSize = 256 / z2;
+        var tileBounds = new google.maps.LatLngBounds(
+            proj.fromPointToLatLng(new google.maps.Point(coord.x * tileXSize, (coord.y + 1) * tileYSize)),
+            proj.fromPointToLatLng(new google.maps.Point((coord.x + 1) * tileXSize, coord.y * tileYSize))
+        );
+        var x = coord.x >= 0 ? coord.x : z2 + coord.x
+        var y = coord.y;
+        if (mapBounds.intersects(tileBounds) && (mapMinZoom <= zoom) && (zoom <= mapMaxZoom))
+            return zoom + "/" + x + "/" + y + "";
+        else
+            return "https://www.maptiler.com/img/none.png";
+    },
+    tileSize: new google.maps.Size(256, 256),
+    isPng: false,
+    name: "Rendered with MapTiler Engine <https://www.maptiler.com/engine/>, non-commercial use only",
+    alt: "Rendered with MapTiler Engine",
 
-  <script>
-    var boundsGeo = {
-      north: %.6f,
-      south: %.6f,
-      east: %.6f,
-      west: %.6f
+    opacity: 1.0
+});
+function init() {
+    var opts = {
+        tilt:0,
+        streetViewControl: false,
+        center: new google.maps.LatLng(%.6f, %.6f),
+        zoom: %d
     };
-    var centerCoords = { lat: %.6f, lng: %.6f };
-    var minZ = %d, maxZ = %d;
-    var hasTiles = %t;
-
-    function getParam(param) {
-      var match = RegExp('[?&]' + param + '=([^&]*)').exec(window.location.search);
-      return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
-    }
-
-    function initGoogleMap() {
-      document.getElementById('key-banner').style.display = 'none';
-      var map = new google.maps.Map(document.getElementById('map'), {
-        center: centerCoords,
-        zoom: %d,
-        mapTypeId: 'roadmap'
-      });
-
-      var mapBounds = new google.maps.LatLngBounds(
-        new google.maps.LatLng(boundsGeo.south, boundsGeo.west),
-        new google.maps.LatLng(boundsGeo.north, boundsGeo.east)
-      );
-      map.fitBounds(mapBounds);
-
-      if (hasTiles) {
-        var tileOverlay = new google.maps.ImageMapType({
-          getTileUrl: function(coord, zoom) {
-            return zoom + '/' + coord.x + '/' + coord.y + '.png';
-          },
-          tileSize: new google.maps.Size(256, 256),
-          maxZoom: maxZ,
-          minZoom: minZ,
-          name: 'VeracityTiles'
-        });
-        map.overlayMapTypes.push(tileOverlay);
-      }
-    }
-
-    function loadMap() {
-      var key = document.getElementById('api-key-input').value.trim() || getParam('key');
-      if (!key) {
-        alert('Please enter a valid Google Maps API Key or pass ?key=YOUR_KEY in the URL');
-        return;
-      }
-      var script = document.createElement('script');
-      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&callback=initGoogleMap';
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-
-    var preKey = getParam('key');
-    if (preKey) {
-      document.getElementById('api-key-input').value = preKey;
-      loadMap();
-    }
-  </script>
+    map = new google.maps.Map(document.getElementById("map"), opts);
+    map.setMapTypeId('satellite');
+    map.overlayMapTypes.insertAt(0, maptiler);
+}
+</script>
+</head>
+<body onload="init()">
+<div id="footer"><a href="https://www.maptiler.com/engine/">Rendered with MapTiler Engine</a>, non-commercial use only</div>
+<div id="map"></div>
 </body>
-</html>`, title, north, south, east, west, centerLat, centerLng, minZoom, maxZoom, hasTiles, initZoom)
+</html>
+`, title, south, west, north, east, minZoom, maxZoom, centerLat, centerLng, initZoom)
 
 	return map[string]string{
 		"index.html":      indexHTML,

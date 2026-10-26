@@ -292,7 +292,7 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		// Ignore any assets stored in icons/ folder or tile pyramids so they are never imported as floorplan rasters
 		isIconDir := strings.HasPrefix(cleanEntry, "icons/") || strings.Contains(cleanEntry, "/icons/")
 		isXYZTile := isTilePath(cleanEntry)
-		if isXYZTile && SupportedRasterExtensions[entryExt] != "" {
+		if isXYZTile && (SupportedRasterExtensions[entryExt] != "" || entryExt == "") {
 			parts := strings.Split(cleanEntry, "/")
 			if len(parts) >= 3 {
 				zPart := parts[len(parts)-3]
@@ -515,7 +515,19 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 
 	originalPrimaryRaster := primaryRaster
 	// Ensure primary raster is saved in its own datasetDir folder
-	primaryTarget := filepath.Join(datasetDir, filepath.Base(primaryRaster))
+	primaryBase := filepath.Base(primaryRaster)
+	if filepath.Ext(primaryBase) == "" {
+		if strings.EqualFold(meta.Driver, "PNG") {
+			primaryBase += ".png"
+		} else if strings.EqualFold(meta.Driver, "JPEG") {
+			primaryBase += ".jpg"
+		} else if strings.EqualFold(meta.Driver, "TIFF") {
+			primaryBase += ".tif"
+		} else {
+			primaryBase += ".png"
+		}
+	}
+	primaryTarget := filepath.Join(datasetDir, primaryBase)
 	if data, readErr := os.ReadFile(primaryRaster); readErr == nil {
 		_ = os.WriteFile(primaryTarget, data, 0644)
 		primaryRaster = primaryTarget
