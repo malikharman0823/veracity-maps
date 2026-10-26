@@ -135,8 +135,6 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 		minZoom, maxZoom = 15, 17
 	}
 
-	hasBasemap := false
-
 	metadataDoc := map[string]interface{}{
 		"name":        projectName,
 		"version":     "1.1.0",
@@ -164,8 +162,8 @@ func (s *ExportService) exportMTMAP(sessionID string, dataset *models.Dataset, e
 	metaWriter, _ := archive.Create("metadata.json")
 	_, _ = metaWriter.Write(metaBytes)
 
-	// HTML Viewers (index.html [MapLibre], leaflet.html, openlayers.html, googlemaps.html)
-	viewers := generateViewers(projectName, boundsList, minZoom, maxZoom, len(generatedZooms) > 0, hasBasemap)
+	// HTML Viewers (index.html, leaflet.html, openlayers.html, googlemaps.html)
+	viewers := generateViewers(projectName, boundsList, minZoom, maxZoom)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))
@@ -249,7 +247,7 @@ func (s *ExportService) exportMBTiles(dataset *models.Dataset) (string, string, 
 	return "", "", fmt.Errorf("GIS_DEPENDENCY_MISSING: MBTiles export requires pre-rendered tiles or MapTiler raster tiling tool")
 }
 
-func generateViewers(title string, bounds []float64, minZoom, maxZoom int, hasTiles bool, hasBasemap bool) map[string]string {
+func generateViewers(title string, bounds []float64, minZoom, maxZoom int) map[string]string {
 	west, south, east, north := -180.0, -85.0, 180.0, 85.0
 	if len(bounds) == 4 {
 		west, south, east, north = bounds[0], bounds[1], bounds[2], bounds[3]

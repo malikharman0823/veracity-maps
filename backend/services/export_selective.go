@@ -644,7 +644,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	_ = addJSONToZip("project.json", projectDoc)
 
 	// HTML Viewers
-	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom, len(generatedZooms) > 0, hasBasemap)
+	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))
