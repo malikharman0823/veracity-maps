@@ -371,7 +371,7 @@ export default function DatasetInspectionPanel({
           {selectedIconPoint && (
             <div className="mt-2 pt-3 border-t border-hairline">
               <MetadataRows rows={[
-                ["Icon", selectedIconPoint.icon_key],
+                ["Icon", selectedIconPoint.icon_id || selectedIconPoint.icon_key || "-"],
                 ["Desc", selectedIconPoint.description || "-"],
               ]} />
               
@@ -380,7 +380,7 @@ export default function DatasetInspectionPanel({
                   <IconPointForm
                     coordinate={selectedIconPoint}
                     initialDescription={selectedIconPoint.description}
-                    initialIconKey={selectedIconPoint.icon_key}
+                    initialIconKey={selectedIconPoint.icon_id || selectedIconPoint.icon_key}
                     icons={icons}
                     submitLabel="Save changes"
                     title="Edit Annotation"

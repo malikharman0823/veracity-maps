@@ -107,6 +107,12 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		return nil, fmt.Errorf("CORRUPTED_FILE: %w", err)
 	}
 
+	// Guard: Treat icon images (PNGs, JPEGs, etc.) as icons only, not as big background map rasters
+	if isIconAsset(filename, meta.Width, meta.Height, meta.IsGeoreferenced) {
+		_ = storage.SafeRemoveAll(datasetDir)
+		return nil, fmt.Errorf("ICON_ASSET_NOT_A_MAP: '%s' (%dx%d) is recognized as an icon marker symbol, not a map or floorplan raster. Icons should be used as map annotations/markers, not as background raster layers.", filename, meta.Width, meta.Height)
+	}
+
 	extractedMeta := map[string]interface{}{
 		"driver":               meta.Driver,
 		"width":                meta.Width,
@@ -280,14 +286,48 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		}
 
 		entryExt := strings.ToLower(filepath.Ext(file.Name))
-		// Ignore any assets stored in icons/ folder so they are never imported as floorplan rasters
+		// Ignore any assets stored in icons/ folder or tile pyramids so they are never imported as floorplan rasters
 		isIconDir := strings.HasPrefix(cleanEntry, "icons/") || strings.Contains(cleanEntry, "/icons/")
-		if SupportedRasterExtensions[entryExt] != "" && !isIconDir {
-			if primaryRaster == "" {
-				primaryRaster = cleanName
+		isXYZTile := isTilePath(cleanEntry)
+		if SupportedRasterExtensions[entryExt] != "" && !isIconDir && !isXYZTile {
+			// Check if this image is an icon marker rather than a map floorplan
+			if !isIconAsset(filepath.Base(cleanName), 0, 0, false) {
+				if primaryRaster == "" {
+					primaryRaster = cleanName
+				}
+				allRasters = append(allRasters, cleanName)
+				rasterRelPaths[cleanName] = cleanEntry
 			}
-			allRasters = append(allRasters, cleanName)
-			rasterRelPaths[cleanName] = cleanEntry
+		}
+	}
+
+	// Prioritize mapstudio.json source_asset if present
+	mapstudioCandidatePath := filepath.Join(extractDir, "mapstudio.json")
+	if fileExists(mapstudioCandidatePath) {
+		if data, err := os.ReadFile(mapstudioCandidatePath); err == nil {
+			var doc struct {
+				Dataset struct {
+					SourceAsset string `json:"source_asset"`
+					Filename    string `json:"filename"`
+				} `json:"dataset"`
+			}
+			if json.Unmarshal(data, &doc) == nil {
+				targetAsset := doc.Dataset.SourceAsset
+				if targetAsset == "" && doc.Dataset.Filename != "" {
+					targetAsset = doc.Dataset.Filename
+				}
+				if targetAsset != "" {
+					for _, rPath := range allRasters {
+						rRel := rasterRelPaths[rPath]
+						if strings.EqualFold(filepath.Base(rPath), filepath.Base(targetAsset)) ||
+							strings.EqualFold(rRel, filepath.ToSlash(targetAsset)) ||
+							strings.EqualFold(filepath.Base(rRel), filepath.Base(targetAsset)) {
+							primaryRaster = rPath
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -941,6 +981,32 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 			var iconPoints []*models.IconPoint
 			if json.Unmarshal(data, &iconPoints) == nil && len(iconPoints) > 0 {
 				for _, ip := range iconPoints {
+					// Associate with the new primary dataset ID if it was tied to the previous export dataset
+					if ip.DatasetID == "" || len(allCreatedDatasets) == 1 {
+						ip.DatasetID = dataset.ID
+					} else {
+						// Check if it matches any floor dataset
+						matched := false
+						for _, ds := range allCreatedDatasets {
+							if ds.ID == ip.DatasetID {
+								matched = true
+								break
+							}
+						}
+						if !matched {
+							ip.DatasetID = dataset.ID
+						}
+					}
+					if ip.BuildingID == "" {
+						if bld, ok := dataset.ExtractedMetadata["building_name"].(string); ok && bld != "" {
+							ip.BuildingID = bld
+						}
+					}
+					if ip.FloorLevel == 0 {
+						if fl, ok := dataset.ExtractedMetadata["floor_level"].(int); ok {
+							ip.FloorLevel = fl
+						}
+					}
 					_, _ = s.repo.CreateIconPoint(sessionID, ip)
 				}
 			}
@@ -1081,8 +1147,11 @@ func (s *DatasetService) InspectArchive(sessionID string, header *multipart.File
 		allEntryNames[cleanName] = f
 		ext := strings.ToLower(filepath.Ext(cleanName))
 		isIconDir := strings.HasPrefix(cleanName, "icons/") || strings.Contains(cleanName, "/icons/")
-		if SupportedRasterExtensions[ext] != "" && !isIconDir {
-			rasterFiles = append(rasterFiles, f)
+		isXYZTile := isTilePath(cleanName)
+		if SupportedRasterExtensions[ext] != "" && !isIconDir && !isXYZTile {
+			if !isIconAsset(filepath.Base(cleanName), 0, 0, false) {
+				rasterFiles = append(rasterFiles, f)
+			}
 		}
 	}
 
@@ -2041,4 +2110,61 @@ func (s *DatasetService) LocateOrRestoreDatasetImage(dataset *models.Dataset) st
 	}
 
 	return ""
+}
+
+// isIconAsset determines whether an image file is an icon/symbol marker rather than a spatial map raster.
+func isIconAsset(filename string, width, height int, isGeoreferenced bool) bool {
+	if isGeoreferenced {
+		return false
+	}
+	clean := strings.ToLower(filepath.Base(filename))
+	cleanWithoutExt := strings.TrimSuffix(clean, filepath.Ext(clean))
+
+	// Direct icon directory or icon prefix naming
+	if strings.HasPrefix(clean, "icon-") || strings.HasPrefix(clean, "icon_") || strings.HasPrefix(clean, "ico_") {
+		return true
+	}
+
+	// Known default icon names
+	for _, def := range []string{"cinema", "fingerprint", "key", "locked-with-key", "locked", "person-police-officer", "security-lock", "shield", "unlocked", "video-call", "camera", "001-camera"} {
+		if cleanWithoutExt == def || strings.Contains(cleanWithoutExt, def) {
+			if width <= 256 && height <= 256 {
+				return true
+			}
+		}
+	}
+
+	// Tiny pictorial images (standard icon dimensions <= 96x96 without spatial sidecars)
+	if width > 0 && height > 0 && width <= 96 && height <= 96 {
+		return true
+	}
+
+	return false
+}
+
+// isTilePath returns true if a zip path represents an XYZ map tile (e.g. 15/123/456.png).
+func isTilePath(relPath string) bool {
+	clean := filepath.ToSlash(relPath)
+	parts := strings.Split(clean, "/")
+	if len(parts) >= 3 {
+		// Last part is y.ext, middle is x, previous is z
+		yPart := strings.TrimSuffix(parts[len(parts)-1], filepath.Ext(parts[len(parts)-1]))
+		xPart := parts[len(parts)-2]
+		zPart := parts[len(parts)-3]
+		isDigits := func(s string) bool {
+			if s == "" {
+				return false
+			}
+			for _, r := range s {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			return true
+		}
+		if isDigits(zPart) && isDigits(xPart) && isDigits(yPart) {
+			return true
+		}
+	}
+	return false
 }

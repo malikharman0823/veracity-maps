@@ -3,11 +3,14 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -249,5 +252,186 @@ func TestAPI_IconPointsCRUD(t *testing.T) {
 	defer getResp.Body.Close()
 	if getResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for deleted point, got %d", getResp.StatusCode)
+	}
+}
+
+// TestAPI_ReopenZipWithIconsDoesNotTreatIconAsRaster verifies that exporting a map with icons
+// and reopening/importing the .zip archive restores the main floorplan raster and icon points,
+// without turning cinema.png/icons into background map rasters.
+func TestAPI_ReopenZipWithIconsDoesNotTreatIconAsRaster(t *testing.T) {
+	server, _, tempDir := createTestServer(t)
+	defer server.Close()
+	defer os.RemoveAll(tempDir)
+
+	client := server.Client()
+
+	sessResp, err := client.Post(server.URL+"/sessions", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed creating session: %v", err)
+	}
+	sessionID := sessResp.Header.Get("X-Session-ID")
+	sessResp.Body.Close()
+
+	// 1. Upload floorplan
+	dsID := uploadTestImage(t, client, server.URL, sessionID, "floorplan.png", 300, 300)
+
+	// 2. Add control points and georeference
+	for i, cp := range []struct {
+		imgX, imgY, lng, lat float64
+	}{
+		{0, 0, -122.42, 37.78},
+		{290, 0, -122.41, 37.78},
+		{290, 290, -122.41, 37.77},
+		{0, 290, -122.42, 37.77},
+	} {
+		cpBody, _ := json.Marshal(map[string]interface{}{
+			"image_x":   cp.imgX,
+			"image_y":   cp.imgY,
+			"longitude": cp.lng,
+			"latitude":  cp.lat,
+		})
+		cpReq, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/datasets/%s/control-points", server.URL, dsID), bytes.NewReader(cpBody))
+		cpReq.Header.Set("Content-Type", "application/json")
+		cpReq.Header.Set("X-Session-ID", sessionID)
+		resp, err := client.Do(cpReq)
+		if err != nil {
+			t.Fatalf("failed creating control point %d: %v", i, err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("failed creating control point %d: code %d, body: %s", i, resp.StatusCode, string(b))
+		}
+		resp.Body.Close()
+	}
+
+	geoReq, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/datasets/%s/georeference", server.URL, dsID), bytes.NewReader([]byte(`{"method":"affine"}`)))
+	geoReq.Header.Set("Content-Type", "application/json")
+	geoReq.Header.Set("X-Session-ID", sessionID)
+	geoResp, err := client.Do(geoReq)
+	if err != nil || geoResp.StatusCode != http.StatusOK {
+		t.Fatalf("failed georeferencing: %v", err)
+	}
+	geoResp.Body.Close()
+
+	// 3. Add an icon point with "cinema"
+	iconBody, _ := json.Marshal(map[string]interface{}{
+		"name":        "Main Cinema",
+		"description": "Cinema hall marker",
+		"icon_id":     "cinema",
+		"longitude":   -122.415,
+		"latitude":    37.775,
+		"scope":       "floor",
+		"floor_level": 0,
+		"floor_label": "Ground Floor",
+	})
+	ipReq, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/datasets/%s/icon-points", server.URL, dsID), bytes.NewReader(iconBody))
+	ipReq.Header.Set("Content-Type", "application/json")
+	ipReq.Header.Set("X-Session-ID", sessionID)
+	ipResp, err := client.Do(ipReq)
+	if err != nil || ipResp.StatusCode != http.StatusCreated {
+		t.Fatalf("failed creating cinema icon point: %v", err)
+	}
+	ipResp.Body.Close()
+
+	// 4. Export archive
+	expReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/datasets/%s/export", server.URL, dsID), nil)
+	expReq.Header.Set("X-Session-ID", sessionID)
+	expResp, err := client.Do(expReq)
+	if err != nil || expResp.StatusCode != http.StatusOK {
+		t.Fatalf("failed exporting dataset: %v", err)
+	}
+	defer expResp.Body.Close()
+
+	zipBytes, err := io.ReadAll(expResp.Body)
+	if err != nil || len(zipBytes) == 0 {
+		t.Fatalf("failed reading export zip bytes")
+	}
+
+	// 5. Create a new clean session and import the exported zip
+	newSessResp, err := client.Post(server.URL+"/sessions", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed creating new session: %v", err)
+	}
+	newSessionID := newSessResp.Header.Get("X-Session-ID")
+	newSessResp.Body.Close()
+
+	// Upload zip to new session
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "exported_project.zip")
+	if err != nil {
+		t.Fatalf("failed creating form file: %v", err)
+	}
+	_, _ = part.Write(zipBytes)
+	_ = writer.Close()
+
+	uploadReq, _ := http.NewRequest(http.MethodPost, server.URL+"/upload", &body)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadReq.Header.Set("X-Session-ID", newSessionID)
+	uploadResp, err := client.Do(uploadReq)
+	if err != nil || uploadResp.StatusCode != http.StatusCreated {
+		t.Fatalf("failed uploading exported zip to new session: %v (code %d)", err, uploadResp.StatusCode)
+	}
+	defer uploadResp.Body.Close()
+
+	var uploadDoc struct {
+		Data *models.Dataset `json:"data"`
+	}
+	_ = json.NewDecoder(uploadResp.Body).Decode(&uploadDoc)
+	if uploadDoc.Data == nil {
+		t.Fatalf("expected dataset data in upload response")
+	}
+
+	importedDsID := uploadDoc.Data.ID
+
+	// 6. Verify that only the floorplan raster was registered, not cinema.png!
+	listReq, _ := http.NewRequest(http.MethodGet, server.URL+"/datasets", nil)
+	listReq.Header.Set("X-Session-ID", newSessionID)
+	listResp, err := client.Do(listReq)
+	if err != nil || listResp.StatusCode != http.StatusOK {
+		t.Fatalf("failed listing datasets: %v", err)
+	}
+	defer listResp.Body.Close()
+
+	var listDoc struct {
+		Data []*models.Dataset `json:"data"`
+	}
+	_ = json.NewDecoder(listResp.Body).Decode(&listDoc)
+	for _, ds := range listDoc.Data {
+		cleanName := strings.ToLower(ds.Filename)
+		if strings.Contains(cleanName, "cinema") {
+			t.Fatalf("FAIL: Icon image '%s' was incorrectly registered as a raster layer dataset!", ds.Filename)
+		}
+	}
+
+	// 7. Verify icon points were properly restored and associated with the new dataset
+	recordsReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/datasets/%s/workspace/records", server.URL, importedDsID), nil)
+	recordsReq.Header.Set("X-Session-ID", newSessionID)
+	recordsResp, err := client.Do(recordsReq)
+	if err != nil || recordsResp.StatusCode != http.StatusOK {
+		t.Fatalf("failed getting workspace records: %v", err)
+	}
+	defer recordsResp.Body.Close()
+
+	var recordsDoc struct {
+		Data struct {
+			Records []map[string]interface{} `json:"records"`
+			Total   int                      `json:"total"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(recordsResp.Body).Decode(&recordsDoc)
+
+	foundRestoredIcon := false
+	for _, rec := range recordsDoc.Data.Records {
+		if rec["kind"] == "icon_point" {
+			foundRestoredIcon = true
+			name, _ := rec["name"].(string)
+			if name != "Main Cinema" {
+				t.Errorf("expected restored icon point name 'Main Cinema', got %v", name)
+			}
+		}
+	}
+	if !foundRestoredIcon {
+		t.Fatalf("expected restored cinema icon point in workspace records")
 	}
 }

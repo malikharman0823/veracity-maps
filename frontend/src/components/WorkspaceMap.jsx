@@ -978,7 +978,7 @@ export default function WorkspaceMap({
               },
             },
           ],
-          visible: Boolean(iconPointsVisible && member.visible && member.icon_points_visible),
+          visible: Boolean(iconPointsVisible && member.visible && member.icon_points_visible !== false),
         },
       ]
 

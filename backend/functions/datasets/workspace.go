@@ -1414,6 +1414,23 @@ func (h *Handler) GetIcon(w http.ResponseWriter, r *http.Request, iconName strin
 		filepath.Join("..", "..", "frontend", "public", "icons"),
 	}
 
+	// Also search any session datasets for extracted custom icons
+	sessionID := models.GetSessionID(r)
+	if sessionID != "" {
+		sessionDir := filepath.Join("temp", "sessions", sessionID)
+		if fileExists(sessionDir) {
+			_ = filepath.Walk(sessionDir, func(path string, info os.FileInfo, err error) error {
+				if err == nil && info.IsDir() {
+					cleanDir := filepath.ToSlash(path)
+					if strings.HasSuffix(cleanDir, "/icons/assets") || strings.HasSuffix(cleanDir, "/icons") {
+						searchDirs = append(searchDirs, path)
+					}
+				}
+				return nil
+			})
+		}
+	}
+
 	for _, dir := range searchDirs {
 		for _, candidate := range candidates {
 			p := filepath.Join(dir, candidate)

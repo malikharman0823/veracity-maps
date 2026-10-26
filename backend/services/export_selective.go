@@ -541,16 +541,51 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	}
 	_ = addJSONToZip("mapstudio.json", mapStudioDoc)
 
+	// Render XYZ tiles if georeferenced
+	var generatedZooms []int
+	tileSourceImage := primaryDs.StoragePath
+	transparentPNGCheck := filepath.Join(filepath.Dir(primaryDs.StoragePath), "processed", "processed_transparent.png")
+	if fileExists(transparentPNGCheck) {
+		tileSourceImage = transparentPNGCheck
+	}
+
+	// Render composite raster with markers burned onto a copy of the background raster
+	compositePath, _ := createCompositeRasterWithMarkers(tileSourceImage, pts, allIconPoints, primaryBounds, sessionID)
+	tileSourceImage = compositePath
+
+	if len(primaryBounds) == 4 && (primaryDs.GeoreferenceStatus == "georeferenced" || fileExists(tileSourceImage)) {
+		zooms, tileErr := gis.GenerateRasterTiles(archive, tileSourceImage, primaryBounds)
+		if tileErr == nil && len(zooms) > 0 {
+			generatedZooms = zooms
+			for _, z := range zooms {
+				archiveResources = append(archiveResources, fmt.Sprintf("%d/", z))
+			}
+		}
+	}
+
+	minZoom, maxZoom := 0, 0
+	if len(generatedZooms) > 0 {
+		minZoom = generatedZooms[0]
+		maxZoom = generatedZooms[len(generatedZooms)-1]
+	} else if len(primaryBounds) == 4 {
+		minZoom, maxZoom = 15, 17
+	}
+
 	// metadata.json for GIS standard viewers
 	metaDoc := map[string]interface{}{
-		"name":        projectName,
-		"version":     "2.0.0",
-		"description": "Exported from Veracity Maps",
-		"attribution": "Veracity Maps",
-		"type":        "overlay",
-		"format":      "png",
-		"bounds":      primaryBounds,
-		"profile":     "mercator",
+		"name":              projectName,
+		"version":           "2.0.0",
+		"description":       "Exported from Veracity Maps",
+		"attribution":       "Veracity Maps",
+		"type":              "overlay",
+		"format":            "png",
+		"bounds":            primaryBounds,
+		"profile":           "mercator",
+		"minzoom":           minZoom,
+		"maxzoom":           maxZoom,
+		"tile_url_template": "./{z}/{x}/{y}.png",
+		"available_zooms":   generatedZooms,
+		"crs":               "EPSG:3857",
 	}
 	_ = addJSONToZip("metadata.json", metaDoc)
 
@@ -566,7 +601,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	_ = addJSONToZip("project.json", projectDoc)
 
 	// HTML Viewers
-	viewers := generateViewers(projectName, primaryBounds)
+	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom, len(generatedZooms) > 0)
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))

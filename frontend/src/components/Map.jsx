@@ -707,7 +707,7 @@ export default function Map({
           properties: {
             ...point,
             label: iconPointLabel(index),
-            icon: point.icon_key || "",
+            icon: point.icon_id || point.icon_key || point.icon || "",
             selected: point.id === selectedIconPointId
           }
         }))

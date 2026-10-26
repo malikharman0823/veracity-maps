@@ -13,6 +13,7 @@ The `services` package contains the core business logic of Veracity Maps, coordi
 - **Key Methods**:
   - `HandleUpload(sessionID string, fileHeader *multipart.FileHeader) (*models.Dataset, error)`: Entry point for uploads.
   - `handleSingleRasterUpload`: Streams file to disk, verifies header via `gis.InspectRasterFile`, auto-creates default map layers, and registers dataset in the session repository.
+  - `isIconAsset`: Guard preventing icon images (e.g. `001-camera.png`, `icon-*.png`, tiny pictorial PNGs/JPEGs) from being imported and georeferenced as giant background map rasters; directs them to be used as icon markers/annotations instead.
   - `handleZipUpload`: Securely extracts ZIP files, enforces path containment against canonical directory boundaries, locates all raster floor plans (filtering out macOS resource forks `__MACOSX`, `.DS_Store`), automatically detects building identities and floor levels, creates `models.Building` and `models.BuildingFloor` structures, and attaches all floors to the workspace manifest.
   - `PropagateBuildingGeoreference(sessionID, refDataset)`: Propagates spatial footprint, affine transformations, scaled world files, and layer coordinates across all sibling floors in the same building entity.
   - `ListDatasets`, `GetDataset`, `DeleteDataset`: CRUD delegates interacting with the repository and storage managers.
@@ -28,11 +29,35 @@ The `services` package contains the core business logic of Veracity Maps, coordi
   - `ConsolidateSessionBuildings(repo, store, sessionID)`: Scans the session for pseudo-buildings created from floor tokens (e.g. "Floor 1", "Floor B1", "Floor G", "Floor 2"), merges their datasets and floors into their real parent building (e.g. "Building A" or "Building 1"), cleans up obsolete pseudo-building records, and automatically triggers building-wide georeference propagation so all sibling floors inherit the spatial footprint and become georeferenced.
   - `IsFloorName(name)`: Pure function classifying whether a name string represents a floor or level indicator rather than a structural building name.
 
-### 3. `export_service.go`
-- **Purpose**: Compiles dataset assets into downloadable archives.
+### 3. `export_service.go` & `export_selective.go`
+- **Purpose**: Compiles dataset assets into downloadable archives following standard GIS web-tile structures.
+- **Root-Level ZIP Structure**:
+  ```text
+  veracity-maps-export.zip
+  │
+  ├── {z}/
+  │   └── {x}/
+  │       └── {y}.png
+  ├── index.html
+  ├── leaflet.html
+  ├── openlayers.html
+  ├── googlemaps.html
+  ├── metadata.json
+  ├── mapstudio.json
+  ├── project.json
+  ├── assets/source/
+  └── icons/
+  ```
+- **Root Files & Convention**:
+  - `{z}/{x}/{y}.png`: Dynamically generated numbered zoom directories representing standard XYZ map tiles covering the georeferenced dataset bounds.
+  - `index.html`: Portal landing page with viewer switcher, dataset summary, and spatial bounds.
+  - `leaflet.html`: Standalone interactive viewer powered by Leaflet v1.9 with XYZ tile layer and OSM base map.
+  - `openlayers.html`: Standalone OpenLayers v10 viewer configured with `ol.source.XYZ` and projection reprojection.
+  - `googlemaps.html`: Google Maps JS API viewer using `google.maps.ImageMapType` overlay; accepts API key via user input or `?key=YOUR_KEY` parameter without hardcoded secrets.
+  - `metadata.json`: Valid JSON metadata detailing dataset name, version, geographic bounds `[west, south, east, north]`, min/max zoom levels, tile template (`./{z}/{x}/{y}.png`), and coordinate reference system (`EPSG:3857`).
+  - `mapstudio.json` & `project.json`: Retained at root for 100% roundtrip project reopening compatibility via `/map-projects/import`.
+  - `icons/`: Contains `icon_points.json` and `assets/` subfolder preserving point annotations.
 - **Key Methods**:
-  - `GenerateExport(sessionID, datasetID, format)`:
-    - `"mtmap"`: Packages the source raster, georeferenced TIF/VRT, world file, projection, and a `manifest.json` into a compressed `.mtmap` ZIP bundle.
-    - `"vrt"`: Returns the GDAL VRT XML descriptor.
-    - `"png"` / `"jpg"`: Returns the processed raster image.
-    - `"geotiff"`: Returns the georeferenced TIFF.
+  - `GenerateExport(sessionID, datasetID, format)`: Exports standard `.zip` (`mtmap`) containing the root tile folders and all 5 standalone viewers.
+  - `GenerateSelectiveExport(sessionID, primaryDatasetID, params)`: Exports selective project hierarchies with options for buildings, floors, raster types, and styling.
+
