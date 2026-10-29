@@ -23,8 +23,8 @@ func LoadConfig() *Config {
 	host := getEnv("HOST", "0.0.0.0")
 
 	baseDir, err := os.Getwd()
-	if err != nil {
-		baseDir = "."
+	if err != nil || os.Getenv("VERCEL") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		baseDir = os.TempDir()
 	}
 
 	sessionStorageDir := getEnv("SESSION_STORAGE_DIR", filepath.Join(baseDir, "temp", "sessions"))

@@ -69,9 +69,17 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 				IncludeProcessedRasters: req.Options.IncludeProcessedRaster,
 				IncludeBaseMapSettings:  req.Options.IncludeBaseMapSettings,
 				IncludeProjectMetadata:  req.Options.IncludeProjectMetadata,
+				ZoomConfig:              req.Options.ZoomConfig,
 			}
+		} else if req.ZoomConfig != nil {
+			selOpts = services.DefaultSelectiveExportOptions()
+			selOpts.ZoomConfig = req.ZoomConfig
+		}
+		if selOpts != nil && selOpts.ZoomConfig == nil && req.ZoomConfig != nil {
+			selOpts.ZoomConfig = req.ZoomConfig
 		}
 		filePath, filename, err = h.exportService.GenerateSelectiveExport(sessionID, datasetID, services.SelectiveExportParams{
+			Format:      format,
 			ProjectName: req.ProjectName,
 			BuildingIDs: req.BuildingIDs,
 			FloorIDs:    req.FloorIDs,

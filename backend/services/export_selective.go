@@ -15,16 +15,25 @@ import (
 	"github.com/malikharman0823/veracity-maps/models"
 )
 
+// ZoomConfiguration controls initial, min, and max camera zoom levels and preset in exported Viewscape
+type ZoomConfiguration struct {
+	InitialZoom *int   `json:"initial_zoom,omitempty"`
+	MinZoom     *int   `json:"min_zoom,omitempty"`
+	MaxZoom     *int   `json:"max_zoom,omitempty"`
+	Preset      string `json:"preset,omitempty"`
+}
+
 // SelectiveExportOptions controls what supporting assets and metadata are included
 type SelectiveExportOptions struct {
-	IncludeBuildingConfig   bool `json:"include_building_configuration"`
-	IncludeControlPoints    bool `json:"include_control_points"`
-	IncludeIcons            bool `json:"include_icons"`
-	IncludeLayerStyles      bool `json:"include_layer_styles"`
-	IncludeOriginalRasters  bool `json:"include_original_rasters"`
-	IncludeProcessedRasters bool `json:"include_processed_rasters"`
-	IncludeBaseMapSettings  bool `json:"include_base_map_settings"`
-	IncludeProjectMetadata  bool `json:"include_project_metadata"`
+	IncludeBuildingConfig   bool               `json:"include_building_configuration"`
+	IncludeControlPoints    bool               `json:"include_control_points"`
+	IncludeIcons            bool               `json:"include_icons"`
+	IncludeLayerStyles      bool               `json:"include_layer_styles"`
+	IncludeOriginalRasters  bool               `json:"include_original_rasters"`
+	IncludeProcessedRasters bool               `json:"include_processed_rasters"`
+	IncludeBaseMapSettings  bool               `json:"include_base_map_settings"`
+	IncludeProjectMetadata  bool               `json:"include_project_metadata"`
+	ZoomConfig              *ZoomConfiguration `json:"zoom_config,omitempty"`
 }
 
 // DefaultSelectiveExportOptions returns sensible defaults for selective export
@@ -38,11 +47,13 @@ func DefaultSelectiveExportOptions() *SelectiveExportOptions {
 		IncludeProcessedRasters: true,
 		IncludeBaseMapSettings:  false,
 		IncludeProjectMetadata:  true,
+		ZoomConfig:              nil,
 	}
 }
 
 // SelectiveExportParams specifies the requested scope and options
 type SelectiveExportParams struct {
+	Format      string
 	ProjectName string
 	BuildingIDs []string
 	FloorIDs    []string
@@ -70,6 +81,16 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	primaryDs, err := s.repo.GetDataset(sessionID, primaryDatasetID)
 	if err != nil {
 		return "", "", fmt.Errorf("DATASET_NOT_FOUND: Primary dataset not found: %w", err)
+	}
+
+	exportDir := filepath.Join(s.storage.GetDatasetDir(sessionID, primaryDatasetID), "exports")
+	_ = os.MkdirAll(exportDir, 0755)
+
+	if params.Format == "base_layer" || params.Format == "basemap" {
+		return s.exportBaseLayerFile(sessionID, primaryDs, exportDir)
+	}
+	if params.Format == "mbtiles" {
+		return s.exportMBTilesFile(sessionID, primaryDs, exportDir)
 	}
 
 	opts := params.Options
@@ -196,7 +217,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		}
 	}
 	stem := safeStem(projectName)
-	exportDir := filepath.Join(s.storage.GetDatasetDir(sessionID, primaryDatasetID), "exports")
+	exportDir = filepath.Join(s.storage.GetDatasetDir(sessionID, primaryDatasetID), "exports")
 	_ = os.MkdirAll(exportDir, 0755)
 	zipPath := filepath.Join(exportDir, stem+".zip")
 
@@ -272,50 +293,11 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	}
 
 	// Copy icons and icon assets
-	iconAssetsCopied := make(map[string]string) // icon_id -> archive path
+	iconAssetsCopied := make(map[string]string)
 	if opts.IncludeIcons && len(allIconPoints) > 0 {
-		for _, pt := range allIconPoints {
-			if pt.IconID != "" && iconAssetsCopied[pt.IconID] == "" {
-				// Search for icon asset on disk
-				cleanIconID := filepath.Base(pt.IconID)
-				ext := filepath.Ext(cleanIconID)
-				var candidates []string
-				if ext != "" {
-					candidates = append(candidates, cleanIconID)
-				} else {
-					for _, e := range []string{".png", ".svg", ".webp", ".ico"} {
-						candidates = append(candidates, cleanIconID+e)
-					}
-				}
-				searchDirs := []string{
-					filepath.Join("frontend", "public", "icons"),
-					filepath.Join("..", "frontend", "public", "icons"),
-					filepath.Join("..", "..", "frontend", "public", "icons"),
-				}
-				var foundPath string
-				var foundName string
-				for _, dir := range searchDirs {
-					for _, cand := range candidates {
-						p := filepath.Join(dir, cand)
-						if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-							foundPath = p
-							foundName = cand
-							break
-						}
-					}
-					if foundPath != "" {
-						break
-					}
-				}
-				if foundPath != "" {
-					if f, err := os.Open(foundPath); err == nil {
-						archiveRel := "icons/assets/" + foundName
-						_ = addFileToZip(archiveRel, f)
-						_ = f.Close()
-						iconAssetsCopied[pt.IconID] = archiveRel
-					}
-				}
-			}
+		iconAssetsCopied = bundleReferencedIcons(archive, allIconPoints, sessionID)
+		for _, p := range iconAssetsCopied {
+			archiveResources = append(archiveResources, p)
 		}
 		_ = addJSONToZip("icons/icon_points.json", allIconPoints)
 	}
@@ -334,10 +316,15 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		if opts.IncludeOriginalRasters && ds.StoragePath != "" && fileExists(ds.StoragePath) {
 			origName := filepath.Base(ds.StoragePath)
 			origRel := layerDir + "/original_" + origName
+			rasterRel := "rasters/" + lID + "_" + origName
 			if f, err := os.Open(ds.StoragePath); err == nil {
 				_ = addFileToZip(origRel, f)
 				_ = f.Close()
 				refs.Original = origRel
+			}
+			if rf, err := os.Open(ds.StoragePath); err == nil {
+				_ = addFileToZip(rasterRel, rf)
+				_ = rf.Close()
 			}
 		}
 
@@ -345,10 +332,15 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		transparentPNG := filepath.Join(filepath.Dir(ds.StoragePath), "processed", "processed_transparent.png")
 		if opts.IncludeProcessedRasters && fileExists(transparentPNG) {
 			procRel := layerDir + "/processed_transparent.png"
+			procRasterRel := "rasters/" + lID + "_processed_transparent.png"
 			if f, err := os.Open(transparentPNG); err == nil {
 				_ = addFileToZip(procRel, f)
 				_ = f.Close()
 				refs.Processed = procRel
+			}
+			if rf, err := os.Open(transparentPNG); err == nil {
+				_ = addFileToZip(procRasterRel, rf)
+				_ = rf.Close()
 			}
 		}
 
@@ -356,10 +348,15 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		if opts.IncludeProcessedRasters && refs.Processed == "" && ds.ProcessedPath != "" && fileExists(ds.ProcessedPath) {
 			pBase := filepath.Base(ds.ProcessedPath)
 			procRel := layerDir + "/processed_" + pBase
+			procRasterRel := "rasters/" + lID + "_processed_" + pBase
 			if f, err := os.Open(ds.ProcessedPath); err == nil {
 				_ = addFileToZip(procRel, f)
 				_ = f.Close()
 				refs.Processed = procRel
+			}
+			if rf, err := os.Open(ds.ProcessedPath); err == nil {
+				_ = addFileToZip(procRasterRel, rf)
+				_ = rf.Close()
 			}
 		}
 
@@ -501,10 +498,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		projConfig["members"] = filteredMembers
 	}
 
-	var primaryBounds []float64
-	if b, ok := primaryDs.ExtractedMetadata["bounds"].(map[string]float64); ok {
-		primaryBounds, _ = gis.NormalizeBounds(b)
-	}
+	primaryBounds := extractDatasetBounds(primaryDs)
 
 	// Backward-compatible mapstudio.json document
 	var pts []*models.ControlPoint
@@ -533,6 +527,7 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 			"map_layer":           primaryDs.MapLayer,
 		},
 		"control_points": pts,
+		"icon_points":    allIconPoints,
 		"selected_scope": map[string]interface{}{
 			"building_ids": sortedKeys(selectedBuildingSet),
 			"floor_ids":    sortedKeys(selectedFloorSet),
@@ -586,17 +581,15 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		}
 	}
 
-	// Calculate center and initial zoom
+	// Calculate center and camera zoom settings
 	var centerCoords []float64
-	initZoom := minZoom
 	if len(primaryBounds) == 4 {
 		centerCoords = []float64{(primaryBounds[0] + primaryBounds[2]) / 2.0, (primaryBounds[1] + primaryBounds[3]) / 2.0}
 	} else {
 		centerCoords = []float64{0.0, 0.0}
 	}
-	if initZoom < 1 {
-		initZoom = 15
-	}
+
+	initZoom, camMinZoom, camMaxZoom, zoomPreset := resolveCameraZoomSettings(opts.ZoomConfig, minZoom, maxZoom, primaryBounds)
 
 	metaDoc := map[string]interface{}{
 		"name":              projectName,
@@ -609,11 +602,16 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 		"center":            centerCoords,
 		"initial_zoom":      initZoom,
 		"profile":           "mercator",
-		"minzoom":           minZoom,
-		"maxzoom":           maxZoom,
+		"minzoom":           camMinZoom,
+		"maxzoom":           camMaxZoom,
+		"raster_minzoom":    minZoom,
+		"raster_maxzoom":    maxZoom,
+		"zoom_preset":       zoomPreset,
 		"tile_url_template": "./{z}/{x}/{y}.png",
 		"available_zooms":   generatedZooms,
 		"crs":               "EPSG:3857",
+		"control_points":    pts,
+		"icon_points":       allIconPoints,
 		"basemap": map[string]interface{}{
 			"type":              "raster-xyz",
 			"name":              "OpenStreetMap",
@@ -632,19 +630,171 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	}
 	_ = addJSONToZip("metadata.json", metaDoc)
 
-	// project.json
+	// Build GeoJSON landmarks FeatureCollection
+	landmarkFeatures := make([]map[string]interface{}, 0)
+	if opts.IncludeIcons {
+		for _, ip := range allIconPoints {
+			cleanKey := filepath.Base(ip.IconID)
+			if cleanKey == "" {
+				cleanKey = filepath.Base(ip.IconPath)
+			}
+			cleanKeyNorm := strings.TrimSuffix(cleanKey, filepath.Ext(cleanKey))
+			name := ip.Name
+			if name == "" {
+				name = ip.Description
+			}
+			if name == "" {
+				name = "Landmark"
+			}
+			props := map[string]interface{}{
+				"id":          ip.ID,
+				"name":        name,
+				"icon_key":    cleanKeyNorm,
+				"icon_id":     ip.IconID,
+				"description": ip.Description,
+				"scope":       ip.Scope,
+				"floor_level": ip.FloorLevel,
+				"floor_label": ip.FloorLabel,
+				"longitude":   ip.Longitude,
+				"latitude":    ip.Latitude,
+			}
+			if len(ip.Properties) > 0 {
+				for k, v := range ip.Properties {
+					if _, exists := props[k]; !exists {
+						props[k] = v
+					}
+				}
+			}
+			landmarkFeatures = append(landmarkFeatures, map[string]interface{}{
+				"type": "Feature",
+				"geometry": map[string]interface{}{
+					"type":        "Point",
+					"coordinates": []float64{ip.Longitude, ip.Latitude},
+				},
+				"properties": props,
+			})
+		}
+	}
+	landmarksDoc := map[string]interface{}{
+		"type":     "FeatureCollection",
+		"features": landmarkFeatures,
+	}
+	_ = addJSONToZip("layers/landmarks.geojson", landmarksDoc)
+
+	// Build GeoJSON control points FeatureCollection
+	cpFeatures := make([]map[string]interface{}, 0)
+	if opts.IncludeControlPoints {
+		for _, cp := range pts {
+			cpFeatures = append(cpFeatures, map[string]interface{}{
+				"type": "Feature",
+				"geometry": map[string]interface{}{
+					"type":        "Point",
+					"coordinates": []float64{cp.Longitude, cp.Latitude},
+				},
+				"properties": map[string]interface{}{
+					"id":         cp.ID,
+					"name":       cp.ID,
+					"dataset_id": cp.DatasetID,
+					"image_x":    cp.ImageX,
+					"image_y":    cp.ImageY,
+					"longitude":  cp.Longitude,
+					"latitude":   cp.Latitude,
+				},
+			})
+		}
+	}
+	controlPointsDoc := map[string]interface{}{
+		"type":     "FeatureCollection",
+		"features": cpFeatures,
+	}
+	_ = addJSONToZip("layers/control_points.geojson", controlPointsDoc)
+
+	// metadata/layer_config.json
+	layerConfigDoc := map[string]interface{}{
+		"project_id":         primaryDatasetID,
+		"primary_dataset_id": primaryDatasetID,
+		"buildings":          exportedBuildings,
+		"layers":             resolvedLayerIDs,
+		"layer_asset_refs":   layerAssetRefs,
+		"configuration":      projConfig,
+	}
+	_ = addJSONToZip("metadata/layer_config.json", layerConfigDoc)
+
+	// metadata/georeferencing.json
+	georeferencingDoc := map[string]interface{}{
+		"crs":                 "EPSG:3857",
+		"geographic_crs":      "EPSG:4326",
+		"bounds":              primaryBounds,
+		"center":              centerCoords,
+		"control_point_count": len(pts),
+		"control_points":      pts,
+		"extracted_metadata":  primaryDs.ExtractedMetadata,
+		"georeference_status": primaryDs.GeoreferenceStatus,
+	}
+	_ = addJSONToZip("metadata/georeferencing.json", georeferencingDoc)
+
+	// project.json: Conforms to veracity-project v1 manifest while retaining backward-compatible keys
 	projectDoc := map[string]interface{}{
-		"name":               projectName,
-		"version":            "2.0.0",
+		"format":         "veracity-project",
+		"schema_version": 1,
+		"name":           projectName,
+		"version":        "2.0.0",
+		"project": map[string]interface{}{
+			"id":   primaryDatasetID,
+			"name": projectName,
+		},
+		"map": map[string]interface{}{
+			"center":         centerCoords,
+			"zoom":           initZoom,
+			"min_zoom":       camMinZoom,
+			"max_zoom":       camMaxZoom,
+			"raster_minzoom": minZoom,
+			"raster_maxzoom": maxZoom,
+			"preset":         zoomPreset,
+			"bounds":         primaryBounds,
+			"crs":            "EPSG:3857",
+		},
+		"resources": map[string]interface{}{
+			"style":          "style.json",
+			"base_map":       "./basemap/{z}/{x}/{y}.png",
+			"landmarks":      "layers/landmarks.geojson",
+			"control_points": "layers/control_points.geojson",
+			"layer_config":   "metadata/layer_config.json",
+			"georeferencing": "metadata/georeferencing.json",
+		},
 		"primary_dataset_id": primaryDatasetID,
 		"configuration":      projConfig,
 		"buildings":          exportedBuildings,
 		"layers":             resolvedLayerIDs,
+		"initial_zoom":       initZoom,
+		"minzoom":            camMinZoom,
+		"maxzoom":            camMaxZoom,
+		"zoom_preset":        zoomPreset,
+		"export_timestamp":   time.Now().UTC().Format(time.RFC3339),
 	}
 	_ = addJSONToZip("project.json", projectDoc)
 
-	// HTML Viewers
-	viewers := generateViewers(projectName, primaryBounds, minZoom, maxZoom)
+	// MapLibre Style Specification (v8)
+	styleBytes, _ := generateMapLibreStyleJSON(projectName, primaryBounds, minZoom, maxZoom, 1.0)
+	sw, _ := archive.Create("style.json")
+	_, _ = sw.Write(styleBytes)
+	archiveResources = append(archiveResources, "style.json")
+
+	// HTML Viewers (MapLibre viewer.html & index.html)
+	viewers := generateViewers(ViewscapeViewerParams{
+		Title:            projectName,
+		Bounds:           primaryBounds,
+		RasterMinZoom:    minZoom,
+		RasterMaxZoom:    maxZoom,
+		InitialZoom:      initZoom,
+		MinZoom:          camMinZoom,
+		MaxZoom:          camMaxZoom,
+		Preset:           zoomPreset,
+		Opacity:          1.0,
+		ControlPoints:    pts,
+		IconPoints:       allIconPoints,
+		BundledIconPaths: iconAssetsCopied,
+	})
 	for name, htmlContent := range viewers {
 		vw, _ := archive.Create(name)
 		_, _ = vw.Write([]byte(htmlContent))
@@ -652,15 +802,37 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	}
 
 	// README.txt
-	readmeContent := fmt.Sprintf(`Veracity Maps Export Archive
-Project: %s
-Timestamp: %s
-Layers Included: %d
-Buildings Included: %d
+	readmeContent := fmt.Sprintf(`================================================================================
+Veracity Maps — Complete Project Archive (.zip)
+================================================================================
+Project:        %s
+Export Format:  veracity-project (Schema Version 1)
+Timestamp:      %s
+Layers:         %d
+Buildings:      %d
 
-This package contains raster layers, spatial transformations, control points, 
-building-floor configurations, and icons exported from Veracity Maps.
-To reopen this project in Veracity Maps, use the "Reopen Map (.zip)" button.
+Package Directory Structure:
+----------------------------
+• project.json                  Root manifest (veracity-project v1) with center, zoom, bounds, CRS, and resource map.
+• style.json                    MapLibre Style Specification v8 for offline layer and tile styling.
+• viewer.html / index.html      Self-contained MapLibre offline Viewscape viewers.
+• layers/                       Exported vector overlays and per-layer configurations:
+    - landmarks.geojson         FeatureCollection of landmark icon points with coordinates, icon keys, and properties.
+    - control_points.geojson    FeatureCollection of ground control points with geographic and image pixel coordinates.
+    - {layer_id}/layer.json     Detailed layer styles, transformations, and sidecar definitions.
+• rasters/                      Source and processed raster floorplans for offline viewing and editing.
+• tiles/ or ./{z}/{x}/{y}.png   Offline raster overlay tile pyramid.
+• basemap/                      Offline base world map tiles (when available).
+• assets/icons/                 Bundled custom icon assets (PNG/SVG) referenced by landmarks.
+• metadata/                     Supplementary reconstruction metadata:
+    - layer_config.json         Hierarchical building, floor, opacity, and layer ordering configurations.
+    - georeferencing.json       CRS, transformation parameters, bounds, and control point associations.
+
+How to Reopen / Reconstruct:
+----------------------------
+1. In Veracity Maps: Click "Reopen Map (.zip)" on the Workspace top bar and select this ZIP archive.
+   All layers, buildings, floors, control points, icons, and georeferencing are restored automatically.
+2. In Offline Viewscape: Open "viewer.html" or "index.html" in any modern browser without internet access.
 `, projectName, time.Now().UTC().Format(time.RFC3339), len(resolvedLayerIDs), len(exportedBuildings))
 	rw, _ := archive.Create("README.txt")
 	_, _ = rw.Write([]byte(readmeContent))

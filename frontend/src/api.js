@@ -441,10 +441,10 @@ function safeDownloadFilename(value, fallback) {
 export async function downloadProjectExport(datasetId, projectName, exportPayload = null) {
   let response
   try {
-    if (exportPayload && (exportPayload.layer_ids || exportPayload.options || exportPayload.building_ids)) {
+    if (exportPayload && (exportPayload.layer_ids || exportPayload.options || exportPayload.building_ids || exportPayload.format)) {
       response = await client.post(
         `/datasets/${encodeURIComponent(datasetId)}/export`,
-        { ...exportPayload, format: "mtmap", project_name: projectName },
+        { ...exportPayload, format: exportPayload.format || "mtmap", project_name: projectName },
         { responseType: "blob", timeout: 10 * 60_000, headers: { Accept: "application/zip" } },
       )
     } else {
@@ -468,7 +468,12 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
     throw new Error("The exported file is empty or invalid.")
   }
 
-  const fallback = `${safeDownloadStem(projectName)}.zip`
+  let fallback = `${safeDownloadStem(projectName)}.zip`
+  if (exportPayload?.format === "mbtiles") {
+    fallback = `${safeDownloadStem(projectName)}.mbtiles.zip`
+  } else if (exportPayload?.format === "base_layer" || exportPayload?.format === "basemap") {
+    fallback = "veracity-base-map.zip"
+  }
   const filename = safeDownloadFilename(
     responseFilename(response.headers.get?.("content-disposition") || response.headers["content-disposition"]),
     fallback,

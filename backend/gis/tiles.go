@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	_ "image/jpeg"
 	"image/png"
@@ -60,7 +61,7 @@ func TileToLatLngBounds(x, y, zoom int) [4]float64 {
 // DetermineTileZooms calculates reasonable min and max zoom levels for bounds and image size
 func DetermineTileZooms(bounds []float64, width, height int) (minZoom, maxZoom int) {
 	if len(bounds) < 4 {
-		return 15, 17
+		return 7, 18
 	}
 	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
 	degWidth := math.Abs(east - west)
@@ -68,7 +69,7 @@ func DetermineTileZooms(bounds []float64, width, height int) (minZoom, maxZoom i
 	maxSpan := math.Max(degWidth, degHeight)
 
 	if maxSpan <= 0 {
-		return 16, 18
+		return 7, 18
 	}
 
 	// Calculate base zoom where the span fits into 1-2 tiles (256-512px)
@@ -81,16 +82,21 @@ func DetermineTileZooms(bounds []float64, width, height int) (minZoom, maxZoom i
 		targetZoom = 22
 	}
 
+	// Always provide regional overview zoom levels down to zoom 7 so viewers
+	// (such as Viewscape's "Set Map Default Position") have overview tiles to display
 	minZoom = targetZoom
-	if minZoom < 0 {
-		minZoom = 0
+	if minZoom > 7 {
+		minZoom = 7
 	}
-	maxZoom = minZoom + 2
-	if maxZoom > 21 {
-		maxZoom = 21
+	maxZoom = targetZoom + 2
+	if maxZoom < 8 {
+		maxZoom = 8
+	}
+	if maxZoom > 20 {
+		maxZoom = 20
 	}
 	if minZoom > maxZoom {
-		minZoom = maxZoom - 1
+		minZoom = maxZoom
 	}
 	return minZoom, maxZoom
 }
@@ -132,7 +138,7 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 
 	var generatedZooms []int
 	tileCount := 0
-	const maxTotalTiles = 250 // Safeguard against memory or file explosions
+	const maxTotalTiles = 500 // Safeguard against memory or file explosions
 
 	for z := minZoom; z <= maxZoom; z++ {
 		minX, maxY := LatLngToTile(south, west, z)
@@ -193,6 +199,20 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 				if tilePixelY1 > 256 {
 					tilePixelY1 = 256
 				}
+				if tilePixelX1 <= tilePixelX0 {
+					tilePixelX1 = tilePixelX0 + 1
+					if tilePixelX1 > 256 {
+						tilePixelX0 = 255
+						tilePixelX1 = 256
+					}
+				}
+				if tilePixelY1 <= tilePixelY0 {
+					tilePixelY1 = tilePixelY0 + 1
+					if tilePixelY1 > 256 {
+						tilePixelY0 = 255
+						tilePixelY1 = 256
+					}
+				}
 
 				// Map dataset intersection to source image pixels
 				srcPixelX0 := int(math.Floor((interWest - west) / (east - west) * float64(imgW)))
@@ -212,6 +232,14 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 				if srcPixelY1 > imgH {
 					srcPixelY1 = imgH
 				}
+				if srcPixelX1 <= srcPixelX0 {
+					srcPixelX0 = 0
+					srcPixelX1 = imgW
+				}
+				if srcPixelY1 <= srcPixelY0 {
+					srcPixelY0 = 0
+					srcPixelY1 = imgH
+				}
 
 				if srcPixelX1 <= srcPixelX0 || srcPixelY1 <= srcPixelY0 || tilePixelX1 <= tilePixelX0 || tilePixelY1 <= tilePixelY0 {
 					continue
@@ -222,8 +250,35 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 				rescaleSubImage(tileImg, tilePixelX0, tilePixelY0, tilePixelX1, tilePixelY1,
 					srcImg, srcPixelX0, srcPixelY0, srcPixelX1, srcPixelY1)
 
-				// Create ZIP entry: "{z}/{x}/{y}" (matching MapTiler hybrid tile package)
-				tileEntryName := fmt.Sprintf("%d/%d/%d", z, x, y)
+				// For low overview zooms (z <= 11) where the raster covers only a small sub-pixel area (< 8px),
+				// render a high-visibility marker badge so the dataset and points are clearly visible in overview
+				dstSpanX := tilePixelX1 - tilePixelX0
+				dstSpanY := tilePixelY1 - tilePixelY0
+				if z <= 11 && (dstSpanX < 8 || dstSpanY < 8) {
+					midPX := (tilePixelX0 + tilePixelX1) / 2
+					midPY := (tilePixelY0 + tilePixelY1) / 2
+					for dy := -4; dy <= 4; dy++ {
+						for dx := -4; dx <= 4; dx++ {
+							d2 := dx*dx + dy*dy
+							tx := midPX + dx
+							ty := midPY + dy
+							if tx >= 0 && tx < 256 && ty >= 0 && ty < 256 {
+								if d2 <= 16 {
+									if d2 >= 9 {
+										tileImg.Set(tx, ty, color.RGBA{255, 255, 255, 255})
+									} else if d2 <= 2 {
+										tileImg.Set(tx, ty, color.RGBA{255, 255, 255, 255})
+									} else {
+										tileImg.Set(tx, ty, color.RGBA{220, 38, 38, 255})
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Create ZIP entry: "{z}/{x}/{y}.png" (standard MapTiler & MapLibre raster tile package)
+				tileEntryName := fmt.Sprintf("%d/%d/%d.png", z, x, y)
 				entryWriter, err := archive.Create(tileEntryName)
 				if err != nil {
 					continue
@@ -242,6 +297,30 @@ func GenerateRasterTiles(archive *zip.Writer, imagePath string, bounds []float64
 	}
 
 	return generatedZooms, nil
+}
+
+// TMSToXYZ converts a TMS tile row to an XYZ (Google/OSM/MapLibre) tile row.
+func TMSToXYZ(tmsRow, zoom int) (int, error) {
+	if zoom < 0 || zoom > 30 {
+		return 0, fmt.Errorf("invalid zoom level: %d (must be between 0 and 30)", zoom)
+	}
+	limit := 1 << zoom
+	if tmsRow < 0 || tmsRow >= limit {
+		return 0, fmt.Errorf("TMS row %d outside zoom grid [0, %d)", tmsRow, limit)
+	}
+	return limit - 1 - tmsRow, nil
+}
+
+// XYZToTMS converts an XYZ tile row to a TMS tile row.
+func XYZToTMS(xyzRow, zoom int) (int, error) {
+	if zoom < 0 || zoom > 30 {
+		return 0, fmt.Errorf("invalid zoom level: %d (must be between 0 and 30)", zoom)
+	}
+	limit := 1 << zoom
+	if xyzRow < 0 || xyzRow >= limit {
+		return 0, fmt.Errorf("XYZ row %d outside zoom grid [0, %d)", xyzRow, limit)
+	}
+	return limit - 1 - xyzRow, nil
 }
 
 // rescaleSubImage maps a source sub-rectangle into a tile destination sub-rectangle using nearest-neighbor scaling

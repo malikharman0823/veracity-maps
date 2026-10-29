@@ -550,7 +550,31 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 		UpdatedAt:          time.Now(),
 	}
 
-	// Restore exported package metadata, control points, and project configuration if present
+	// Restore exported package metadata, control points, icon points, and project configuration if present
+	parseZoomInt := func(val interface{}) int {
+		if val == nil {
+			return -1
+		}
+		switch v := val.(type) {
+		case int:
+			return v
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		case string:
+			if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				return i
+			}
+		}
+		return -1
+	}
+
+	importedInitZoom := -1
+	importedMinZoom := -1
+	importedMaxZoom := -1
+	importedZoomPreset := ""
+
 	mapstudioPath := filepath.Join(extractDir, "mapstudio.json")
 	if fileExists(mapstudioPath) {
 		if data, err := os.ReadFile(mapstudioPath); err == nil {
@@ -566,6 +590,11 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 					MapLayer           map[string]interface{} `json:"map_layer"`
 				} `json:"dataset"`
 				ControlPoints []*models.ControlPoint `json:"control_points"`
+				IconPoints    []*models.IconPoint    `json:"icon_points"`
+				InitialZoom   interface{}            `json:"initial_zoom"`
+				MinZoom       interface{}            `json:"minzoom"`
+				MaxZoom       interface{}            `json:"maxzoom"`
+				ZoomPreset    string                 `json:"zoom_preset"`
 			}
 			if err := json.Unmarshal(data, &doc); err == nil {
 				if doc.Dataset.ExtractedMetadata != nil {
@@ -578,6 +607,19 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 				}
 				if doc.Dataset.GeoreferenceStatus != "" {
 					dataset.GeoreferenceStatus = doc.Dataset.GeoreferenceStatus
+				}
+
+				if z := parseZoomInt(doc.InitialZoom); z >= 0 {
+					importedInitZoom = z
+				}
+				if z := parseZoomInt(doc.MinZoom); z >= 0 {
+					importedMinZoom = z
+				}
+				if z := parseZoomInt(doc.MaxZoom); z >= 0 {
+					importedMaxZoom = z
+				}
+				if doc.ZoomPreset != "" {
+					importedZoomPreset = doc.ZoomPreset
 				}
 
 				if len(doc.ControlPoints) > 0 {
@@ -634,11 +676,28 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 						}
 					}
 				}
+
+				if len(doc.IconPoints) > 0 {
+					for _, ip := range doc.IconPoints {
+						if ip.DatasetID == "" {
+							ip.DatasetID = datasetID
+						}
+						ip.SessionID = sessionID
+						if ip.Name == "" {
+							if ip.Description != "" {
+								ip.Name = ip.Description
+							} else if ip.IconID != "" {
+								ip.Name = ip.IconID
+							}
+						}
+						_, _ = s.repo.CreateIconPoint(sessionID, ip)
+					}
+				}
 			}
 		}
 	}
 
-	// Check metadata.json for bounds and control points fallback
+	// Check metadata.json for bounds, zoom config, control points, and icon points fallback
 	metaJSONPath := filepath.Join(extractDir, "metadata.json")
 	if fileExists(metaJSONPath) {
 		if data, err := os.ReadFile(metaJSONPath); err == nil {
@@ -646,8 +705,26 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 				Name          string                 `json:"name"`
 				Bounds        []float64              `json:"bounds"`
 				ControlPoints []*models.ControlPoint `json:"control_points"`
+				IconPoints    []*models.IconPoint    `json:"icon_points"`
+				InitialZoom   interface{}            `json:"initial_zoom"`
+				MinZoom       interface{}            `json:"minzoom"`
+				MaxZoom       interface{}            `json:"maxzoom"`
+				ZoomPreset    string                 `json:"zoom_preset"`
 			}
 			if err := json.Unmarshal(data, &mDoc); err == nil {
+				if z := parseZoomInt(mDoc.InitialZoom); z >= 0 {
+					importedInitZoom = z
+				}
+				if z := parseZoomInt(mDoc.MinZoom); z >= 0 {
+					importedMinZoom = z
+				}
+				if z := parseZoomInt(mDoc.MaxZoom); z >= 0 {
+					importedMaxZoom = z
+				}
+				if mDoc.ZoomPreset != "" {
+					importedZoomPreset = mDoc.ZoomPreset
+				}
+
 				if len(mDoc.Bounds) == 4 {
 					west, south, east, north := mDoc.Bounds[0], mDoc.Bounds[1], mDoc.Bounds[2], mDoc.Bounds[3]
 					if east > west && north > south {
@@ -690,8 +767,236 @@ func (s *DatasetService) handleZipDataset(sessionID, datasetID, datasetDir, zipP
 						}
 					}
 				}
+				if len(mDoc.IconPoints) > 0 {
+					existingIPs, _ := s.repo.ListIconPoints(sessionID, datasetID, "")
+					if len(existingIPs) == 0 {
+						for _, ip := range mDoc.IconPoints {
+							if ip.DatasetID == "" {
+								ip.DatasetID = datasetID
+							}
+							ip.SessionID = sessionID
+							if ip.Name == "" {
+								if ip.Description != "" {
+									ip.Name = ip.Description
+								} else if ip.IconID != "" {
+									ip.Name = ip.IconID
+								}
+							}
+							_, _ = s.repo.CreateIconPoint(sessionID, ip)
+						}
+					}
+				}
 			}
 		}
+	}
+
+	// Check icons/icon_points.json fallback
+	iconsJSONPath := filepath.Join(extractDir, "icons", "icon_points.json")
+	if fileExists(iconsJSONPath) {
+		if data, err := os.ReadFile(iconsJSONPath); err == nil {
+			var iconPts []*models.IconPoint
+			if err := json.Unmarshal(data, &iconPts); err == nil && len(iconPts) > 0 {
+				existingIPs, _ := s.repo.ListIconPoints(sessionID, datasetID, "")
+				if len(existingIPs) == 0 {
+					for _, ip := range iconPts {
+						if ip.DatasetID == "" {
+							ip.DatasetID = datasetID
+						}
+						ip.SessionID = sessionID
+						if ip.Name == "" {
+							if ip.Description != "" {
+								ip.Name = ip.Description
+							} else if ip.IconID != "" {
+								ip.Name = ip.IconID
+							}
+						}
+						_, _ = s.repo.CreateIconPoint(sessionID, ip)
+					}
+				}
+			}
+		}
+	}
+
+	// Check project.json (veracity-project v1 or version 2)
+	projectJSONPath := filepath.Join(extractDir, "project.json")
+	if fileExists(projectJSONPath) {
+		if data, err := os.ReadFile(projectJSONPath); err == nil {
+			var pDoc struct {
+				Format        string      `json:"format"`
+				SchemaVersion int         `json:"schema_version"`
+				Name          string      `json:"name"`
+				InitialZoom   interface{} `json:"initial_zoom"`
+				MinZoom       interface{} `json:"minzoom"`
+				MaxZoom       interface{} `json:"maxzoom"`
+				ZoomPreset    string      `json:"zoom_preset"`
+				Map           struct {
+					Center []float64   `json:"center"`
+					Zoom   interface{} `json:"zoom"`
+					MinZ   interface{} `json:"min_zoom"`
+					MaxZ   interface{} `json:"max_zoom"`
+					Preset string      `json:"preset"`
+				} `json:"map"`
+			}
+			if err := json.Unmarshal(data, &pDoc); err == nil {
+				if z := parseZoomInt(pDoc.InitialZoom); z >= 0 {
+					importedInitZoom = z
+				} else if z := parseZoomInt(pDoc.Map.Zoom); z >= 0 {
+					importedInitZoom = z
+				}
+				if z := parseZoomInt(pDoc.MinZoom); z >= 0 {
+					importedMinZoom = z
+				} else if z := parseZoomInt(pDoc.Map.MinZ); z >= 0 {
+					importedMinZoom = z
+				}
+				if z := parseZoomInt(pDoc.MaxZoom); z >= 0 {
+					importedMaxZoom = z
+				} else if z := parseZoomInt(pDoc.Map.MaxZ); z >= 0 {
+					importedMaxZoom = z
+				}
+				if pDoc.ZoomPreset != "" {
+					importedZoomPreset = pDoc.ZoomPreset
+				} else if pDoc.Map.Preset != "" {
+					importedZoomPreset = pDoc.Map.Preset
+				}
+			}
+		}
+	}
+
+	// Check layers/control_points.geojson
+	cpGeoJSONPath := filepath.Join(extractDir, "layers", "control_points.geojson")
+	if fileExists(cpGeoJSONPath) {
+		if data, err := os.ReadFile(cpGeoJSONPath); err == nil {
+			var fc struct {
+				Features []struct {
+					Geometry struct {
+						Coordinates []float64 `json:"coordinates"`
+					} `json:"geometry"`
+					Properties struct {
+						ID        string  `json:"id"`
+						ImageX    float64 `json:"image_x"`
+						ImageY    float64 `json:"image_y"`
+						Longitude float64 `json:"longitude"`
+						Latitude  float64 `json:"latitude"`
+					} `json:"properties"`
+				} `json:"features"`
+			}
+			if err := json.Unmarshal(data, &fc); err == nil && len(fc.Features) > 0 {
+				var parsedCPs []*models.ControlPoint
+				for _, feat := range fc.Features {
+					lng := feat.Properties.Longitude
+					lat := feat.Properties.Latitude
+					if len(feat.Geometry.Coordinates) >= 2 {
+						lng = feat.Geometry.Coordinates[0]
+						lat = feat.Geometry.Coordinates[1]
+					}
+					id := feat.Properties.ID
+					if id == "" {
+						id = repository.GeneratePointID()
+					}
+					parsedCPs = append(parsedCPs, &models.ControlPoint{
+						ID:        id,
+						DatasetID: datasetID,
+						ImageX:    feat.Properties.ImageX,
+						ImageY:    feat.Properties.ImageY,
+						Longitude: lng,
+						Latitude:  lat,
+					})
+				}
+				if len(parsedCPs) > 0 {
+					existingPts, _ := s.repo.ListControlPoints(sessionID, datasetID)
+					if len(existingPts) == 0 {
+						_ = s.repo.SetControlPoints(sessionID, datasetID, parsedCPs)
+						dataset.GeoreferenceStatus = "completed"
+						if dataset.GeoreferencedPath == "" {
+							dataset.GeoreferencedPath = primaryRaster
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check layers/landmarks.geojson
+	landmarksGeoJSONPath := filepath.Join(extractDir, "layers", "landmarks.geojson")
+	if fileExists(landmarksGeoJSONPath) {
+		if data, err := os.ReadFile(landmarksGeoJSONPath); err == nil {
+			var fc struct {
+				Features []struct {
+					Geometry struct {
+						Coordinates []float64 `json:"coordinates"`
+					} `json:"geometry"`
+					Properties map[string]interface{} `json:"properties"`
+				} `json:"features"`
+			}
+			if err := json.Unmarshal(data, &fc); err == nil && len(fc.Features) > 0 {
+				existingIPs, _ := s.repo.ListIconPoints(sessionID, datasetID, "")
+				if len(existingIPs) == 0 {
+					for _, feat := range fc.Features {
+						props := feat.Properties
+						lng := 0.0
+						lat := 0.0
+						if len(feat.Geometry.Coordinates) >= 2 {
+							lng = feat.Geometry.Coordinates[0]
+							lat = feat.Geometry.Coordinates[1]
+						}
+						id, _ := props["id"].(string)
+						if id == "" {
+							id = repository.GenerateIconPointID()
+						}
+						name, _ := props["name"].(string)
+						iconID, _ := props["icon_id"].(string)
+						if iconID == "" {
+							iconID, _ = props["icon_key"].(string)
+						}
+						desc, _ := props["description"].(string)
+						scope, _ := props["scope"].(string)
+						if scope == "" {
+							scope = "global"
+						}
+						flLvl := 0
+						if lvlVal, ok := props["floor_level"].(float64); ok {
+							flLvl = int(lvlVal)
+						}
+						flLbl, _ := props["floor_label"].(string)
+						ip := &models.IconPoint{
+							ID:          id,
+							DatasetID:   datasetID,
+							SessionID:   sessionID,
+							Name:        name,
+							IconID:      iconID,
+							Description: desc,
+							Scope:       scope,
+							FloorLevel:  flLvl,
+							FloorLabel:  flLbl,
+							Longitude:   lng,
+							Latitude:    lat,
+							Properties:  props,
+						}
+						if ip.Name == "" {
+							ip.Name = ip.Description
+						}
+						if ip.Name == "" {
+							ip.Name = ip.IconID
+						}
+						_, _ = s.repo.CreateIconPoint(sessionID, ip)
+					}
+				}
+			}
+		}
+	}
+
+	// Persist extracted zoom configuration into dataset metadata
+	if importedInitZoom >= 0 {
+		dataset.ExtractedMetadata["initial_zoom"] = importedInitZoom
+	}
+	if importedMinZoom >= 0 {
+		dataset.ExtractedMetadata["minzoom"] = importedMinZoom
+	}
+	if importedMaxZoom >= 0 {
+		dataset.ExtractedMetadata["maxzoom"] = importedMaxZoom
+	}
+	if importedZoomPreset != "" {
+		dataset.ExtractedMetadata["zoom_preset"] = importedZoomPreset
 	}
 
 	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {

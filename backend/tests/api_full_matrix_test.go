@@ -374,12 +374,12 @@ func TestAPI_FullMatrixCoverage(t *testing.T) {
 		if f.Name == "metadata.json" {
 			hasMeta = true
 		}
-		if f.Name == "leaflet.html" {
+		if f.Name == "viewer.html" {
 			hasViewer = true
 		}
 	}
 	if !hasMeta || !hasViewer {
-		t.Fatalf("export zip missing metadata.json or leaflet.html")
+		t.Fatalf("export zip missing metadata.json or viewer.html")
 	}
 
 	// 10. Deletion Lifecycle

@@ -121,13 +121,14 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 4. Verify all root-level viewer and metadata files (EXACTLY 5 root files)
+	// 4. Verify all root-level viewer and metadata files
 	expectedRootFiles := []string{
 		"index.html",
-		"leaflet.html",
-		"openlayers.html",
-		"googlemaps.html",
+		"viewer.html",
+		"style.json",
+		"mapstudio.json",
 		"metadata.json",
+		"README.txt",
 	}
 
 	expectedRootMap := make(map[string]bool)
@@ -151,10 +152,20 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 				t.Errorf("unwanted root file found in export archive: %s", name)
 			}
 		} else {
-			// Top-level directory MUST be strictly a numeric zoom level
-			if _, err := strconv.Atoi(parts[0]); err != nil {
-				t.Errorf("unwanted non-numeric folder '%s' in archive entry: %s (Viewscape requires only numeric zoom folders)", parts[0], name)
+			// Top-level directory must be either a numeric zoom level or 'assets'
+			if parts[0] != "assets" {
+				if _, err := strconv.Atoi(parts[0]); err != nil {
+					t.Errorf("unwanted non-numeric folder '%s' in archive entry: %s", parts[0], name)
+				}
 			}
+		}
+	}
+
+	// Verify legacy viewers are completely removed
+	legacyViewers := []string{"leaflet.html", "openlayers.html", "googlemaps.html"}
+	for _, lv := range legacyViewers {
+		if _, exists := files[lv]; exists {
+			t.Errorf("obsolete viewer '%s' MUST NOT be included in export archive", lv)
 		}
 	}
 
@@ -174,8 +185,8 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		if metaDoc["name"] == nil || metaDoc["bounds"] == nil {
 			t.Errorf("metadata.json missing required fields: %v", metaDoc)
 		}
-		if metaDoc["format"] != "hybrid" {
-			t.Errorf("expected format 'hybrid', got: %v", metaDoc["format"])
+		if metaDoc["format"] != "png" {
+			t.Errorf("expected format 'png', got: %v", metaDoc["format"])
 		}
 		if metaDoc["scale"] != "1.000000" {
 			t.Errorf("expected scale '1.000000', got: %v", metaDoc["scale"])
@@ -185,23 +196,63 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 7. Verify numbered zoom directories exist and tiles are extensionless {z}/{x}/{y}
+	// 7. Verify mapstudio.json and style.json
+	if msFile, ok := files["mapstudio.json"]; ok {
+		rc, err := msFile.Open()
+		if err == nil {
+			defer rc.Close()
+			var msDoc map[string]interface{}
+			if err := json.NewDecoder(rc).Decode(&msDoc); err != nil {
+				t.Errorf("mapstudio.json is not valid JSON: %v", err)
+			} else {
+				if msDoc["format"] != "mapstudio-folder" {
+					t.Errorf("expected mapstudio.json format 'mapstudio-folder', got: %v", msDoc["format"])
+				}
+			}
+		}
+	} else {
+		t.Errorf("expected mapstudio.json in export archive")
+	}
+
+	if styleFile, ok := files["style.json"]; ok {
+		rc, err := styleFile.Open()
+		if err == nil {
+			defer rc.Close()
+			var styleDoc map[string]interface{}
+			if err := json.NewDecoder(rc).Decode(&styleDoc); err != nil {
+				t.Errorf("style.json is not valid JSON: %v", err)
+			} else {
+				if v, ok := styleDoc["version"].(float64); !ok || int(v) != 8 {
+					t.Errorf("expected style.json version 8, got: %v", styleDoc["version"])
+				}
+				sources, _ := styleDoc["sources"].(map[string]interface{})
+				if sources == nil || sources["overlay"] == nil || sources["osm"] == nil {
+					t.Errorf("expected style.json to define 'osm' and 'overlay' sources: %v", sources)
+				}
+			}
+		}
+	} else {
+		t.Errorf("expected style.json in export archive")
+	}
+
+	// 8. Verify numbered zoom directories exist and tiles are {z}/{x}/{y}.png
 	if len(numberedDirZooms) == 0 {
 		t.Errorf("expected at least one numbered zoom folder (e.g. 15, 16, etc.) in georeferenced export, got 0")
 	}
 	for name := range files {
 		parts := strings.Split(name, "/")
-		if len(parts) == 3 {
-			if strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".jpg") {
-				t.Errorf("tile entry should be extensionless, but got: %s", name)
+		if len(parts) == 3 && parts[0] != "assets" {
+			if !strings.HasSuffix(name, ".png") {
+				t.Errorf("tile entry should end with .png, but got: %s", name)
 			}
 		}
 	}
 
-	// 8. Verify HTML files match the exact MapTiler templates and do not contain hardcoded secrets
-	checkHTML := func(name string, requiredKeywords []string) {
+	// 9. Verify HTML files use MapLibre GL JS and have no Leaflet references
+	checkHTML := func(name string, requiredKeywords []string, forbiddenKeywords []string) {
 		zf, ok := files[name]
 		if !ok {
+			t.Errorf("missing expected viewer file: %s", name)
 			return
 		}
 		rc, err := zf.Open()
@@ -219,16 +270,19 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 			}
 		}
 
-		// Ensure no hardcoded secret keys
-		if strings.Contains(content, "AIzaSy") {
-			t.Errorf("%s contains embedded secret key!", name)
+		for _, fkw := range forbiddenKeywords {
+			if strings.HasPrefix(fkw, "L.") {
+				if strings.Contains(content, fkw) {
+					t.Errorf("%s contains forbidden keyword '%s'", name, fkw)
+				}
+			} else if strings.Contains(strings.ToLower(content), strings.ToLower(fkw)) {
+				t.Errorf("%s contains forbidden keyword '%s'", name, fkw)
+			}
 		}
 	}
 
-	checkHTML("index.html", []string{"tileviewer", "tileserver(data)", "hybrid"})
-	checkHTML("leaflet.html", []string{"leaflet.js", "L.tileLayer", "mapExtent", "{z}/{x}/{y}"})
-	checkHTML("openlayers.html", []string{"ol.js", "ol.layer.Tile", "{z}/{x}/{y}"})
-	checkHTML("googlemaps.html", []string{"google.maps.ImageMapType", "init"})
+	checkHTML("viewer.html", []string{"maplibregl", "MapLibre", "overlay-tiles", "opacity-slider"}, []string{"leaflet", "L.map", "L.tileLayer", "google.maps", "openlayers"})
+	checkHTML("index.html", []string{"maplibregl", "MapLibre", "overlay-tiles"}, []string{"leaflet", "L.map", "L.tileLayer", "google.maps", "openlayers"})
 
 	// 9. Verify Roundtrip Re-opening: Uploading this exported ZIP to a fresh session succeeds
 	newSess := repo.CreateSession()

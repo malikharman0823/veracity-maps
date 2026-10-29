@@ -36,3 +36,5 @@ Desktop.ini
 # Vite Cache
 .vite/
 frontend/.vite/
+
+.vercel
