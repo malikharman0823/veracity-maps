@@ -72,9 +72,9 @@ func (s *ExportService) GenerateExport(sessionID, datasetID, format string) (str
 	case "geotiff", "tif", "tiff":
 		return s.exportGeoTIFF(dataset)
 	case "mbtiles":
-		return s.exportMBTilesFile(sessionID, dataset, exportDir)
+		return s.exportMBTilesFile(dataset, exportDir)
 	case "base_layer", "basemap":
-		return s.exportBaseLayerFile(sessionID, dataset, exportDir)
+		return s.exportBaseLayerFile(dataset, exportDir)
 	default:
 		return "", "", fmt.Errorf("UNSUPPORTED_FORMAT: Export format '%s' is not supported. Supported: project_zip, mbtiles, base_layer, mtmap, png, jpeg, geotiff", format)
 	}
@@ -340,16 +340,7 @@ func (s *ExportService) exportGeoTIFF(dataset *models.Dataset) (string, string, 
 	return "", "", fmt.Errorf("GEOREFERENCING_REQUIRED: Dataset must be georeferenced before exporting to GeoTIFF")
 }
 
-func (s *ExportService) exportMBTiles(dataset *models.Dataset) (string, string, error) {
-	if dataset.TilePath != "" && strings.HasSuffix(strings.ToLower(dataset.TilePath), ".mbtiles") {
-		if fileExists(dataset.TilePath) {
-			return dataset.TilePath, filepath.Base(dataset.TilePath), nil
-		}
-	}
-	return "", "", fmt.Errorf("GIS_DEPENDENCY_MISSING: MBTiles export requires pre-rendered tiles or MapTiler raster tiling tool")
-}
-
-func (s *ExportService) exportMBTilesFile(sessionID string, dataset *models.Dataset, exportDir string) (string, string, error) {
+func (s *ExportService) exportMBTilesFile(dataset *models.Dataset, exportDir string) (string, string, error) {
 	// 1. If an actual .mbtiles file already exists for this dataset, export it directly
 	if dataset.TilePath != "" && strings.HasSuffix(strings.ToLower(dataset.TilePath), ".mbtiles") && fileExists(dataset.TilePath) {
 		return dataset.TilePath, filepath.Base(dataset.TilePath), nil
@@ -425,7 +416,7 @@ Compatibility:
 	return zipPath, stem + ".mbtiles.zip", nil
 }
 
-func (s *ExportService) exportBaseLayerFile(sessionID string, dataset *models.Dataset, exportDir string) (string, string, error) {
+func (s *ExportService) exportBaseLayerFile(dataset *models.Dataset, exportDir string) (string, string, error) {
 	boundsList := extractDatasetBounds(dataset)
 	if len(boundsList) < 4 {
 		// Fallback to world bounds if dataset has no spatial extent

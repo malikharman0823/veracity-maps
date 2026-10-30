@@ -87,10 +87,10 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	_ = os.MkdirAll(exportDir, 0755)
 
 	if params.Format == "base_layer" || params.Format == "basemap" {
-		return s.exportBaseLayerFile(sessionID, primaryDs, exportDir)
+		return s.exportBaseLayerFile(primaryDs, exportDir)
 	}
 	if params.Format == "mbtiles" {
-		return s.exportMBTilesFile(sessionID, primaryDs, exportDir)
+		return s.exportMBTilesFile(primaryDs, exportDir)
 	}
 
 	opts := params.Options

@@ -16,7 +16,8 @@ This directory contains the primary React UI components for layout navigation, r
 | **`WorkspaceLayerPanel.jsx`** | Draggable side drawer displaying active raster layers, opacity sliders (`0%–100%`), visibility toggles, and multi-floor sorting. |
 | **`WorkspaceTable.jsx`** | TanStack React Table implementation displaying active datasets with sorting, status badges, thumbnail previews, and action buttons. |
 | **`SourceImagePane.jsx`** | High-resolution image canvas used on the georeferencing page for interactive ground control point pixel placement. |
-| **`ControlPointList.jsx`** | Tabular editor for inspect, edit, or delete operations on placed GCP coordinate pairs (`image_x`, `image_y`, `longitude`, `latitude`). |
+| **`ReferenceMap.jsx`** | Interactive MapLibre GL reference map for georeferencing. Supports Google Maps `Lat, Lng` / DMS / URL / Plus Code search with target pin marker, 1-click draft pairing, ambiguous Lat/Lng swap, preview raster overlay, and `focusTarget` camera synchronization. |
+| **`ControlPointList.jsx`** | Tabular editor for inspect, inline edit (`image_x`, `image_y`, Google Maps `lat`, `lng`, or pasted `Lat, Lng` pairs), inline draft coordinate pairing, or delete operations on placed GCP coordinate pairs. |
 | **`DatasetCard.jsx`** | Visual grid card summarizing dataset metadata, dimensions, georeferencing status, and export quick-links. |
 | **`DatasetInspectionPanel.jsx`** | Slide-out drawer displaying detailed GeoTIFF/PNG metadata, world file matrices, detected CRS, and bounds. |
 | **`EndSessionDialog.jsx`** | Confirmation modal for ending the active anonymous session and purging temporary server files. |

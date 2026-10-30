@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -31,6 +32,49 @@ func TestGISTransform_Similarity(t *testing.T) {
 	}
 	if result.MapLibreBounds[0] >= result.MapLibreBounds[2] || result.MapLibreBounds[1] >= result.MapLibreBounds[3] {
 		t.Fatalf("inverted MapLibre bounds: %v", result.MapLibreBounds)
+	}
+}
+
+func TestGISTransform_SimilarityConformalAtMidLatitude(t *testing.T) {
+	// True north-up 1000x1000 square map from Google Maps / Web Mercator at ~51.51° N:
+	// An equal ground/Mercator span has dLat = dLon * cos(meanLat).
+	lonTL, latTL := -0.132000, 51.510000
+	dLon := 0.008000
+	cosLat := math.Cos(51.50751 * math.Pi / 180.0)
+	dLat := dLon * cosLat
+	lonBR := lonTL + dLon
+	latBR := latTL - dLat
+
+	points := []*models.ControlPoint{
+		{ImageX: 0, ImageY: 0, Longitude: lonTL, Latitude: latTL},
+		{ImageX: 999, ImageY: 999, Longitude: lonBR, Latitude: latBR},
+	}
+
+	result, err := gis.CalculateGeoreference(points, 1000, 1000, "similarity")
+	if err != nil {
+		t.Fatalf("unexpected similarity transform error: %v", err)
+	}
+
+	rotDeg := result.Parameters["rotation_degrees"]
+	if math.Abs(rotDeg) > 0.05 {
+		t.Fatalf("expected ~0 deg rotation for north-up Google Maps square, got %.4f deg", rotDeg)
+	}
+
+	// Verify top-right corner (999, 0) maps to (lonBR, latTL) without false rotation skew
+	a, b, c := result.Transform[0], -result.Transform[1], result.Transform[2]
+	d, e, f := result.Transform[3], -result.Transform[4], result.Transform[5]
+	projTRLon := a*999 + b*0 + c
+	projTRLat := d*999 + e*0 + f
+
+	if math.Abs(projTRLon-lonBR) > 1e-6 || math.Abs(projTRLat-latTL) > 1e-6 {
+		t.Fatalf("expected top-right corner (%.6f, %.6f), got (%.6f, %.6f)", lonBR, latTL, projTRLon, projTRLat)
+	}
+
+	// Verify both control points map back identically
+	projBRlon := a*999 + b*(-999) + c
+	projBRlat := d*999 + e*(-999) + f
+	if math.Abs(projBRlon-lonBR) > 1e-9 || math.Abs(projBRlat-latBR) > 1e-9 {
+		t.Fatalf("control point 2 mismatch: expected (%.8f, %.8f), got (%.8f, %.8f)", lonBR, latBR, projBRlon, projBRlat)
 	}
 }
 

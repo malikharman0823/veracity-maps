@@ -160,9 +160,17 @@ func solveSimilarity(points []*models.ControlPoint) (map[string]float64, error) 
 	first := points[0]
 	second := points[1]
 
+	// Apply conformal local/Web-Mercator cos(meanLat) scaling so 1° of longitude
+	// is weighted by its true ground/Google Maps horizontal scale relative to 1° of latitude.
+	meanLatRad := ((first.Latitude + second.Latitude) / 2.0) * math.Pi / 180.0
+	cosLat := math.Cos(meanLatRad)
+	if cosLat < 1e-6 {
+		cosLat = 1e-6
+	}
+
 	srcX := second.ImageX - first.ImageX
 	srcY := -second.ImageY - (-first.ImageY)
-	tgtX := second.Longitude - first.Longitude
+	tgtX := (second.Longitude - first.Longitude) * cosLat
 	tgtY := second.Latitude - first.Latitude
 
 	srcLen := math.Hypot(srcX, srcY)
@@ -176,8 +184,8 @@ func solveSimilarity(points []*models.ControlPoint) (map[string]float64, error) 
 	cosTheta := (srcX*tgtX + srcY*tgtY) / (srcLen * tgtLen)
 	sinTheta := (srcX*tgtY - srcY*tgtX) / (srcLen * tgtLen)
 
-	a := scale * cosTheta
-	b := -scale * sinTheta
+	a := (scale * cosTheta) / cosLat
+	b := (-scale * sinTheta) / cosLat
 	d := scale * sinTheta
 	e := scale * cosTheta
 

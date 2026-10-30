@@ -30,7 +30,7 @@ The `gis` package implements spatial algorithms natively in pure Go, including r
     - Validates point counts: 2 points -> similarity; 3–10 points -> affine.
     - Validates coordinates: finite numbers, within raster bounds, valid lat/lon.
     - `validateDistribution(points, width, height)`: Enforces point spread (diagonal extent >= 10% of image diagonal) and collinearity checks (triangle cross-product area >= 1% of bounding box).
-  - `solveSimilarity(points)`: Solves normal equations for 4 unknowns: scale, rotation, and translation offsets.
+  - `solveSimilarity(points)`: Solves conformal 4-parameter similarity equations (scale, rotation, translation) using local `cos(meanLat)` longitude scaling so north-up shapes preserve true ground aspect ratio and bearing when mapped back to WGS84 (`EPSG:4326`).
   - `solveAffine(points)`: Solves 6-parameter affine transformation using 3x3 matrix inversion via Cramer's rule / adjoint matrix.
 
 ### 3. `transparency.go`

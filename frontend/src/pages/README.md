@@ -14,4 +14,4 @@ This directory contains the top-level route views in the Veracity Maps applicati
 | **`UploadPage.jsx`** | `/upload` | Dedicated file upload interface supporting PNG, JPEG, and multi-file ZIP bundles with a dynamic selected-file preview, real-time validation, and progress feedback. |
 | **`DatasetPage.jsx`** | `/datasets/:id` | Visual Georeferencer Studio. Hosts the dual-pane canvas (source raster on left, reference map on right) for placing, editing, and calculating control points. |
 | **`WorkspacePage.jsx`** | `/workspace` | Full-screen interactive map and dataset database view. Features layer ordering, building floor selectors, and opacity adjustment. |
-| **`GeoreferencePage.jsx`**| Sub-route | Specialized control point management view for batch GCP coordinate inputs. |
+| **`GeoreferencePage.jsx`**| `/datasets/:id/georeference` | Dual-pane Visual Georeferencer view supporting interactive GCP pairing, direct Google Maps `Lat, Lng` placement (Center + Ground Width/Rotation or NW/SE Corners), inline coordinate pairing/editing, live raster preview overlay, and publishing to workspace. |
