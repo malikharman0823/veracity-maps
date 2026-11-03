@@ -208,7 +208,14 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 			"edge_softness": req.EdgeSoftness,
 			"updated_at":    nowStr,
 		}
-		dataset.ProcessedPath = ""
+
+		// When background removal is reset, if an enhanced raster is active and exists, keep ProcessedPath pointing to enhanced.png;
+		// otherwise clear ProcessedPath so the original storage file is used.
+		if useEnhancedAsSource && fileExists(enhancedPNG) {
+			dataset.ProcessedPath = enhancedPNG
+		} else {
+			dataset.ProcessedPath = ""
+		}
 		_ = h.repo.UpdateDataset(sessionID, dataset)
 
 		// If dataset has pre-existing MBTiles tiles, refresh them with the restored original raster

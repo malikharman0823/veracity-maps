@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/gis"
@@ -224,6 +225,68 @@ func TestTransparency_APIEndpoints(t *testing.T) {
 	dsReset, _ := repo.GetDataset(sessionID, datasetID)
 	if dsReset.ProcessedPath != "" {
 		t.Errorf("expected ProcessedPath to be cleared after reset")
+	}
+
+	// 8. Test Background Removal with Enhanced Raster & Reset Restoration:
+	// When AI enhancement / upscaling is active, applying background removal must remove background on the enhanced raster,
+	// and resetting background removal must restore the opaque enhanced raster (with white background preserved).
+	procDir := filepath.Join(filepath.Dir(dsReset.StoragePath), "processed")
+	_ = os.MkdirAll(procDir, 0755)
+	enhancedTestPNG := filepath.Join(procDir, "enhanced.png")
+	_ = os.WriteFile(enhancedTestPNG, pngBytes, 0644) // White image
+
+	dsReset.ExtractedMetadata["enhancement"] = map[string]interface{}{
+		"enabled":        true,
+		"active_variant": "enhanced",
+	}
+	_ = repo.UpdateDataset(sessionID, dsReset)
+
+	// Apply background removal while enhanced variant is active
+	req, _ = http.NewRequest("POST", server.URL+"/datasets/"+datasetID+"/background-removal", bytes.NewReader(applyBody))
+	req.Header.Set("X-Session-ID", sessionID)
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST apply with enhanced variant failed: %v", err)
+	}
+
+	// Verify transparent source image is served
+	req, _ = http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/source-image", nil)
+	req.Header.Set("X-Session-ID", sessionID)
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET source-image after apply failed: %v", err)
+	}
+	servedImg, err = png.Decode(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to decode served image: %v", err)
+	}
+	_, _, _, a = servedImg.At(0, 0).RGBA()
+	if a != 0 {
+		t.Errorf("expected served source-image to be transparent with background removal active, got alpha=%d", a)
+	}
+
+	// Reset background removal on the enhanced dataset
+	req, _ = http.NewRequest("POST", server.URL+"/datasets/"+datasetID+"/background-removal", bytes.NewReader(resetBody))
+	req.Header.Set("X-Session-ID", sessionID)
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reset on enhanced dataset failed: %v", err)
+	}
+
+	// Verify that GET source-image now serves the opaque enhanced raster with white background visible (alpha == 65535 or 255)
+	req, _ = http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/source-image", nil)
+	req.Header.Set("X-Session-ID", sessionID)
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET source-image after reset on enhanced dataset failed: %v", err)
+	}
+	servedImg, err = png.Decode(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to decode served image: %v", err)
+	}
+	_, _, _, a = servedImg.At(0, 0).RGBA()
+	if a == 0 {
+		t.Errorf("expected served source-image to be opaque white after reset on enhanced dataset, got transparent alpha=%d", a)
 	}
 }
 

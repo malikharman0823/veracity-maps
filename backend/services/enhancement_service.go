@@ -630,18 +630,10 @@ func (s *DatasetService) EnhanceDataset(sessionID, datasetID string, opts models
 		return &currentState, nil
 	}
 
+	// Always use the clean source image (dataset.StoragePath) as the input for OpenCV enhancement & AI upscaling,
+	// never the transparent PNG. This guarantees enhanced.png retains its full opaque background (e.g. white paper/CAD canvas).
+	// If background removal was previously enabled, it will be re-applied non-destructively on top of enhanced.png below.
 	inputPath := dataset.StoragePath
-	transparentPath := filepath.Join(processedDir, "processed_transparent.png")
-	if dataset.ExtractedMetadata != nil {
-		if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
-			if enabled, _ := bg["enabled"].(bool); enabled && fileExists(transparentPath) {
-				inputPath = transparentPath
-			}
-		}
-	}
-	if !fileExists(inputPath) {
-		inputPath = dataset.StoragePath
-	}
 	if !fileExists(inputPath) {
 		return nil, fmt.Errorf("SOURCE_MISSING: Original dataset file not found on disk")
 	}
