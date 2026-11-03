@@ -517,6 +517,23 @@ func toFloat64(v interface{}) (float64, bool) {
 	}
 }
 
+func normalizeRawMembers(cfg map[string]interface{}) []interface{} {
+	if cfg == nil {
+		return nil
+	}
+	if rawMembers, ok := cfg["members"].([]interface{}); ok && len(rawMembers) > 0 {
+		return rawMembers
+	}
+	if rawMapMembers, ok := cfg["members"].([]map[string]interface{}); ok && len(rawMapMembers) > 0 {
+		out := make([]interface{}, 0, len(rawMapMembers))
+		for _, m := range rawMapMembers {
+			out = append(out, m)
+		}
+		return out
+	}
+	return nil
+}
+
 func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapProject, primaryDataset *models.Dataset) map[string]interface{} {
 	ensureDatasetMapLayer(primaryDataset)
 	cfg := project.Configuration
@@ -524,14 +541,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		cfg = make(map[string]interface{})
 	}
 
-	rawMembers, _ := cfg["members"].([]interface{})
-	if len(rawMembers) == 0 {
-		if rawMapMembers, ok := cfg["members"].([]map[string]interface{}); ok && len(rawMapMembers) > 0 {
-			for _, m := range rawMapMembers {
-				rawMembers = append(rawMembers, m)
-			}
-		}
-	}
+	rawMembers := normalizeRawMembers(cfg)
 
 	existingMemberIDs := make(map[string]bool)
 	for _, rm := range rawMembers {
@@ -697,7 +707,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 
 		fileMissing := false
-		if !fileExists(ds.StoragePath) {
+		if !fileExists(ds.StoragePath) && !(ds.TilePath != "" && fileExists(ds.TilePath)) {
 			if rec := h.datasetService.LocateOrRestoreDatasetImage(ds); rec != "" {
 				ds.StoragePath = rec
 				_ = h.repo.UpdateDataset(sessionID, ds)
@@ -721,20 +731,21 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 
 		cps := h.ensureDatasetControlPoints(sessionID, ds)
-		if len(cps) > 0 {
-			if memberCopy["control_points_visible"] == nil || memberCopy["control_points_visible"] == false {
-				memberCopy["control_points_visible"] = true
-				if m != nil {
-					m["control_points_visible"] = true
-					_ = h.repo.SaveMapProject(sessionID, project)
-				}
-			}
-		} else if memberCopy["control_points_visible"] == nil {
+		if memberCopy["control_points_visible"] == nil {
 			memberCopy["control_points_visible"] = true
+			if m != nil {
+				m["control_points_visible"] = true
+			}
 		}
 
 		if memberCopy["icon_points_visible"] == nil {
 			memberCopy["icon_points_visible"] = true
+		}
+		if memberCopy["annotations_visible"] == nil {
+			memberCopy["annotations_visible"] = true
+		}
+		if memberCopy["vectors_visible"] == nil {
+			memberCopy["vectors_visible"] = true
 		}
 		if memberCopy["floor_level"] == nil {
 			memberCopy["floor_level"] = 0
@@ -743,8 +754,60 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 			memberCopy["floor_label"] = memberCopy["name"]
 		}
 
+		isMBTiles := ds.TileStatus == "completed" ||
+			strings.EqualFold(filepath.Ext(ds.StoragePath), ".mbtiles") ||
+			(ds.MapLayer != nil && ds.MapLayer["type"] == "mbtiles")
+		memberCopy["tile_status"] = ds.TileStatus
+		if isMBTiles {
+			memberCopy["tile_url_template"] = fmt.Sprintf("/datasets/%s/tiles/{z}/{x}/{y}", ds.ID)
+			if ds.ExtractedMetadata != nil {
+				if tf, ok := ds.ExtractedMetadata["tile_format"].(string); ok && tf != "" {
+					memberCopy["tile_format"] = tf
+				} else {
+					memberCopy["tile_format"] = "png"
+				}
+				if ds.ExtractedMetadata["tile_min_zoom"] != nil {
+					memberCopy["tile_min_zoom"] = ds.ExtractedMetadata["tile_min_zoom"]
+				}
+				if ds.ExtractedMetadata["tile_max_zoom"] != nil {
+					memberCopy["tile_max_zoom"] = ds.ExtractedMetadata["tile_max_zoom"]
+				}
+				if ds.ExtractedMetadata["vector_layers"] != nil {
+					memberCopy["vector_layers"] = ds.ExtractedMetadata["vector_layers"]
+				}
+			}
+		}
+
+		vectorCount := 0
+		annCount := 0
+		if ds.ExtractedMetadata != nil {
+			if vf, ok := toFloat64(ds.ExtractedMetadata["vector_feature_count"]); ok && vf > 0 {
+				vectorCount = int(vf)
+				memberCopy["has_vectors"] = true
+				memberCopy["vector_feature_count"] = vectorCount
+			} else if hv, _ := ds.ExtractedMetadata["has_vectors"].(bool); hv {
+				memberCopy["has_vectors"] = true
+			}
+			if af, ok := toFloat64(ds.ExtractedMetadata["annotation_count"]); ok && af > 0 {
+				annCount = int(af)
+				memberCopy["has_annotations"] = true
+				memberCopy["annotation_count"] = annCount
+			} else if ha, _ := ds.ExtractedMetadata["has_annotations"].(bool); ha {
+				memberCopy["has_annotations"] = true
+			}
+			if ds.ExtractedMetadata["enhancement"] != nil {
+				memberCopy["enhancement"] = ds.ExtractedMetadata["enhancement"]
+			}
+			if ds.ExtractedMetadata["background_removal"] != nil {
+				memberCopy["background_removal"] = ds.ExtractedMetadata["background_removal"]
+			}
+			if ds.ExtractedMetadata["raster_transform"] != nil {
+				memberCopy["raster_transform"] = ds.ExtractedMetadata["raster_transform"]
+			}
+		}
+
 		iconPoints, _ := h.repo.ListIconPoints(sessionID, ds.ID, "")
-		memberCopy["sublayers"] = []map[string]interface{}{
+		sublayers := []map[string]interface{}{
 			{
 				"kind":  "raster",
 				"label": "Raster Overlay",
@@ -761,6 +824,21 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 				"count": len(iconPoints),
 			},
 		}
+		if vectorCount > 0 {
+			sublayers = append(sublayers, map[string]interface{}{
+				"kind":  "vector",
+				"label": "Vector Geometry",
+				"count": vectorCount,
+			})
+		}
+		if annCount > 0 {
+			sublayers = append(sublayers, map[string]interface{}{
+				"kind":  "annotation",
+				"label": "Vector & OCR Labels",
+				"count": annCount,
+			})
+		}
+		memberCopy["sublayers"] = sublayers
 
 		enrichedMembers = append(enrichedMembers, memberCopy)
 	}
@@ -806,7 +884,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 
 		primaryRasterVisible := true
 		primaryFileMissing := false
-		if !fileExists(primaryDataset.StoragePath) {
+		if !fileExists(primaryDataset.StoragePath) && !(primaryDataset.TilePath != "" && fileExists(primaryDataset.TilePath)) {
 			if rec := h.datasetService.LocateOrRestoreDatasetImage(primaryDataset); rec != "" {
 				primaryDataset.StoragePath = rec
 				_ = h.repo.UpdateDataset(sessionID, primaryDataset)
@@ -830,6 +908,8 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 			"raster_opacity":         1.0,
 			"control_points_visible": true,
 			"icon_points_visible":    true,
+			"annotations_visible":    true,
+			"vectors_visible":        true,
 			"sort_order":             0,
 			"bounds":                 primaryBounds,
 			"map_layer":              primaryDataset.MapLayer,
@@ -876,7 +956,9 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 	}
 	if camMap["center"] == nil {
-		camMap["center"] = []float64{camMap["longitude"].(float64), camMap["latitude"].(float64)}
+		lngF, _ := toFloat64(camMap["longitude"])
+		latF, _ := toFloat64(camMap["latitude"])
+		camMap["center"] = []float64{lngF, latF}
 	}
 	if camMap["zoom"] == nil {
 		camMap["zoom"] = 1.5
@@ -889,7 +971,7 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 	}
 
 	allBuildings, _ := h.repo.ListBuildings(sessionID)
-	return map[string]interface{}{
+	outManifest := map[string]interface{}{
 		"id":          project.ID,
 		"dataset_id":  primaryDataset.ID,
 		"name":        project.Name,
@@ -898,6 +980,12 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		"members":     enrichedMembers,
 		"buildings":   allBuildings,
 	}
+	for _, optKey := range []string{"active_dataset_id", "min_zoom", "max_zoom", "initial_zoom", "zoom_preset", "base_layer"} {
+		if cfg[optKey] != nil {
+			outManifest[optKey] = cfg[optKey]
+		}
+	}
+	return outManifest
 }
 
 func (h *Handler) GetWorkspace(w http.ResponseWriter, r *http.Request, datasetID string) {
@@ -958,7 +1046,7 @@ func (h *Handler) AttachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	rawMembers, _ := project.Configuration["members"].([]interface{})
+	rawMembers := normalizeRawMembers(project.Configuration)
 	for _, rm := range rawMembers {
 		if m, ok := rm.(map[string]interface{}); ok {
 			if m["dataset_id"] == req.DatasetID {
@@ -980,6 +1068,8 @@ func (h *Handler) AttachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 		"raster_opacity":         1.0,
 		"control_points_visible": true,
 		"icon_points_visible":    true,
+		"annotations_visible":    true,
+		"vectors_visible":        true,
 		"sort_order":             len(rawMembers),
 	}
 
@@ -1014,7 +1104,7 @@ func (h *Handler) PatchWorkspaceMember(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	rawMembers, _ := project.Configuration["members"].([]interface{})
+	rawMembers := normalizeRawMembers(project.Configuration)
 	updated := false
 	for _, rm := range rawMembers {
 		if m, ok := rm.(map[string]interface{}); ok {
@@ -1055,7 +1145,7 @@ func (h *Handler) DetachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	rawMembers, _ := project.Configuration["members"].([]interface{})
+	rawMembers := normalizeRawMembers(project.Configuration)
 	remaining := make([]interface{}, 0, len(rawMembers))
 	for _, rm := range rawMembers {
 		if m, ok := rm.(map[string]interface{}); ok {

@@ -28,6 +28,8 @@ import {
   createIconPoint,
   updateIconPoint,
   deleteIconPoint,
+  getDatasetVectors,
+  listDatasetAnnotations,
 } from "../api"
 import MapCoordinates from "./MapCoordinates"
 import RasterTransformOverlay from "./RasterTransformOverlay"
@@ -48,6 +50,11 @@ function resourceIds(datasetId) {
   return {
     rasterSource: `${prefix}-raster-source`,
     rasterLayer: `${prefix}-raster-layer`,
+    vectorSource: `${prefix}-vector-source`,
+    vectorFill: `${prefix}-vector-fill`,
+    vectorLine: `${prefix}-vector-line`,
+    annotationSource: `${prefix}-annotation-source`,
+    annotationLabel: `${prefix}-annotation-label`,
     controlSource: `${prefix}-control-source`,
     controlCircle: `${prefix}-control-circle`,
     controlLabel: `${prefix}-control-label`,
@@ -289,6 +296,8 @@ export default function WorkspaceMap({
   buildings = [],
   isolateActiveFloor = true,
   onToggleIsolateActiveFloor,
+  manifest = null,
+  overlayRefreshKey = 0,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
@@ -314,6 +323,12 @@ export default function WorkspaceMap({
   const [iconPointsVisible, setIconPointsVisible] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState(null)
   const [bgRemovalMember, setBgRemovalMember] = useState(null)
+  const [overlayDataByDataset, setOverlayDataByDataset] = useState({})
+
+  const sortedMembers = useMemo(
+    () => [...members].sort((a, b) => a.sort_order - b.sort_order),
+    [members],
+  )
 
   // Internal floor level and building synchronized with props
   const [internalFloorLevel, setInternalFloorLevel] = useState(activeFloorLevel ?? 0)
@@ -424,6 +439,7 @@ export default function WorkspaceMap({
       container: containerRef.current,
       style: {
         version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           basemap: {
             type: "raster",
@@ -627,6 +643,60 @@ export default function WorkspaceMap({
     }
   }, [])
 
+  // Synchronize manifest map boundaries and zoom limits
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+    if (manifest) {
+      if (Number.isFinite(manifest.min_zoom)) {
+        try { map.setMinZoom(manifest.min_zoom) } catch {}
+      }
+      if (Number.isFinite(manifest.max_zoom)) {
+        try { map.setMaxZoom(manifest.max_zoom) } catch {}
+      }
+      if (manifest.base_layer && typeof manifest.base_layer.visible === "boolean") {
+        setVisibility(map, [BASEMAP_LAYER], manifest.base_layer.visible)
+      }
+    }
+  }, [ready, manifest])
+
+  // Fetch vector layers and OCR annotation labels for active georeferenced datasets
+  useEffect(() => {
+    let isCancelled = false
+    const georeferencedIds = sortedMembers
+      .filter((m) => !m.file_missing && (m.dataset?.georeference_status === "completed" || m.dataset?.map_layer || m.bounds || m.dataset?.extracted_metadata?.bounds))
+      .map((m) => m.dataset_id)
+
+    if (georeferencedIds.length === 0) return
+
+    Promise.all(
+      georeferencedIds.map(async (datasetId) => {
+        try {
+          const [vectorsRes, annotationsRes] = await Promise.all([
+            getDatasetVectors(datasetId).catch(() => null),
+            listDatasetAnnotations(datasetId).catch(() => []),
+          ])
+          return { datasetId, vectors: vectorsRes?.features ? vectorsRes : null, annotations: annotationsRes || [] }
+        } catch {
+          return { datasetId, vectors: null, annotations: [] }
+        }
+      })
+    ).then((results) => {
+      if (isCancelled) return
+      setOverlayDataByDataset((prev) => {
+        const next = { ...prev }
+        results.forEach(({ datasetId, vectors, annotations }) => {
+          next[datasetId] = { vectors, annotations }
+        })
+        return next
+      })
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [sortedMembers, overlayRefreshKey])
+
   // Handle map click for placement, moving, or selecting points
   useEffect(() => {
     const map = mapRef.current
@@ -696,12 +766,6 @@ export default function WorkspaceMap({
     }
   }, [isPlacingPoint, movingPointId])
 
-  const sortedMembers = useMemo(
-    () => [...members].sort((a, b) => a.sort_order - b.sort_order),
-    [members],
-  )
-
-
   // Synchronize Map Layers & Sources
   useEffect(() => {
     const map = mapRef.current
@@ -729,23 +793,70 @@ export default function WorkspaceMap({
       activeSourceIds.add(ids.rasterSource)
       activeLayerIds.add(ids.rasterLayer)
 
-      const bgRemovalUpdate = member.dataset?.metadata?.background_removal?.updated_at
+      const bgRemovalUpdate = member.background_removal?.updated_at
+        || member.dataset?.metadata?.background_removal?.updated_at
         || member.dataset?.extracted_metadata?.background_removal?.updated_at
         || ""
-      const transformUpdate = member.dataset?.metadata?.raster_transform?.updated_at
+      const transformUpdate = member.raster_transform?.updated_at
+        || member.dataset?.metadata?.raster_transform?.updated_at
         || member.dataset?.extracted_metadata?.raster_transform?.updated_at
         || ""
-      const updateVersion = [transformUpdate, bgRemovalUpdate].filter(Boolean).join("_")
+      const enhancementUpdate = member.enhancement?.updated_at
+        || member.dataset?.metadata?.enhancement?.updated_at
+        || member.dataset?.extracted_metadata?.enhancement?.updated_at
+        || ""
+      const activeVariant = member.enhancement?.active_variant
+        || member.dataset?.metadata?.enhancement?.active_variant
+        || member.dataset?.extracted_metadata?.enhancement?.active_variant
+        || ""
+      const isBgRemovalEnabled = Boolean(
+        member.background_removal?.enabled ||
+        member.dataset?.metadata?.background_removal?.enabled ||
+        member.dataset?.extracted_metadata?.background_removal?.enabled
+      )
+      const updateVersion = [transformUpdate, bgRemovalUpdate, enhancementUpdate, activeVariant, isBgRemovalEnabled ? "bg_true" : "bg_false"].filter(Boolean).join("_")
 
       const coordinates = getOverlayCoordinates(member, layer)
       const safeOpacity = typeof member.raster_opacity === "number" && Number.isFinite(member.raster_opacity)
         ? Math.max(0, Math.min(1, member.raster_opacity))
         : 1.0
 
-      if (coordinates) {
+      const isTransformingThis = transformMember?.dataset_id === member.dataset_id
+      const hasCompletedTiles = member.dataset?.tile_status === "completed" || layer.type === "mbtiles"
+      const preferMbtilesTiles = !isTransformingThis && Boolean(layer.tile_url_template) && hasCompletedTiles
+
+      if (preferMbtilesTiles) {
+        const baseTileUrl = datasetTileUrl(member.dataset_id, layer.tile_url_template)
+        const tileUrl = updateVersion
+          ? `${baseTileUrl}${baseTileUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(updateVersion)}`
+          : baseTileUrl
+
+        const bounds = boundsArray(layer.bounds)
+        const existing = map.getSource(ids.rasterSource)
+
+        if (existing && (existing.type !== "raster" || existing._currentTileUrl !== tileUrl)) {
+          if (map.getLayer(ids.rasterLayer)) map.removeLayer(ids.rasterLayer)
+          map.removeSource(ids.rasterSource)
+        }
+
+        if (!map.getSource(ids.rasterSource)) {
+          const options = {
+            type: "raster",
+            tiles: [tileUrl],
+            tileSize: layer.tile_size || 256,
+            minzoom: layer.tile_min_zoom ?? 0,
+            maxzoom: layer.tile_max_zoom ?? 22,
+          }
+          if (bounds) options.bounds = bounds
+          map.addSource(ids.rasterSource, options)
+          const added = map.getSource(ids.rasterSource)
+          if (added) added._currentTileUrl = tileUrl
+        }
+      } else if (coordinates) {
         const sid = member.dataset?.session_id || getActiveSessionId()
         const queryParams = []
         if (sid) queryParams.push(`session_id=${encodeURIComponent(sid)}`)
+        if (activeVariant) queryParams.push(`variant=${encodeURIComponent(activeVariant)}`)
         if (updateVersion) queryParams.push(`v=${encodeURIComponent(updateVersion)}`)
         const qStr = queryParams.length > 0 ? `?${queryParams.join("&")}` : ""
         const imageUrl = `${API_URL}/datasets/${encodeURIComponent(member.dataset_id)}/source-image${qStr}`
@@ -846,6 +957,8 @@ export default function WorkspaceMap({
         map.setPaintProperty(ids.rasterLayer, "raster-opacity", safeOpacity)
         setVisibility(map, [ids.rasterLayer], isLayerVisible)
       }
+
+      // 1.1 Vector and OCR overlays omitted to prioritize clean single raster pipeline (AI Upscaling + Background Removal + Manipulation)
     })
 
     // 2. Point Layers (Control Points & Geographic Icon Points)
@@ -1034,7 +1147,26 @@ export default function WorkspaceMap({
       }
     })
 
-    // 3. ALWAYS elevate all point layers (controls and icons) to the top of the stack above all rasters
+    // 3. Position Vector Fill and Line layers above rasters
+    sortedMembers.forEach((member) => {
+      const ids = resourceIds(member.dataset_id)
+      if (map.getLayer(ids.vectorFill)) {
+        try { map.moveLayer(ids.vectorFill) } catch {}
+      }
+      if (map.getLayer(ids.vectorLine)) {
+        try { map.moveLayer(ids.vectorLine) } catch {}
+      }
+    })
+
+    // 4. Position OCR Annotation Labels above vectors
+    sortedMembers.forEach((member) => {
+      const ids = resourceIds(member.dataset_id)
+      if (map.getLayer(ids.annotationLabel)) {
+        try { map.moveLayer(ids.annotationLabel) } catch {}
+      }
+    })
+
+    // 5. ALWAYS elevate all point layers (controls and icons) to the top of the stack above all rasters, vectors and annotations
     sortedMembers.forEach((member) => {
       const ids = resourceIds(member.dataset_id)
       const pointLayers = [ids.controlCircle, ids.controlLabel, ids.iconCircle, ids.iconSymbol, ids.iconLabel]
@@ -1078,7 +1210,7 @@ export default function WorkspaceMap({
         }
       }
     }
-  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible])
+  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible, overlayDataByDataset, transformMember])
 
   // Pan to selected record
   useEffect(() => {

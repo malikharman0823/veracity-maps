@@ -9,6 +9,7 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
+	"github.com/malikharman0823/veracity-maps/services"
 )
 
 type BackgroundRemovalRequest struct {
@@ -137,9 +138,29 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 	processedPNG := filepath.Join(processedDir, "processed_transparent.png")
 	originalBackup := filepath.Join(processedDir, "original_before_bg.png")
 
-	// Active source path for preview: original image before any background removal
+	// Resolve active source path for background removal:
+	// If enhanced image variant is active and exists, use enhanced.png as input so background removal works on upscaled/enhanced image.
+	// Otherwise, fallback to originalBackup or dataset.StoragePath.
 	sourcePath := dataset.StoragePath
-	if fileExists(originalBackup) {
+	enhancedPNG := filepath.Join(processedDir, "enhanced.png")
+	useEnhancedAsSource := false
+	if dataset.ExtractedMetadata != nil {
+		if enhMap, ok := dataset.ExtractedMetadata["enhancement"].(map[string]interface{}); ok {
+			enabled, _ := enhMap["enabled"].(bool)
+			activeVar, _ := enhMap["active_variant"].(string)
+			if enabled && activeVar != "original" && fileExists(enhancedPNG) {
+				useEnhancedAsSource = true
+			}
+		} else if enhState, ok := dataset.ExtractedMetadata["enhancement"].(*models.EnhancementState); ok && enhState != nil {
+			if enhState.Enabled && enhState.ActiveVariant != "original" && fileExists(enhancedPNG) {
+				useEnhancedAsSource = true
+			}
+		}
+	}
+
+	if useEnhancedAsSource {
+		sourcePath = enhancedPNG
+	} else if fileExists(originalBackup) {
 		sourcePath = originalBackup
 	}
 
@@ -190,6 +211,11 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 		dataset.ProcessedPath = ""
 		_ = h.repo.UpdateDataset(sessionID, dataset)
 
+		// If dataset has pre-existing MBTiles tiles, refresh them with the restored original raster
+		if dataset.GeoreferenceStatus == "completed" && dataset.TilePath != "" && dataset.TilePath != dataset.StoragePath {
+			_, _, _ = h.datasetService.GenerateDatasetMBTiles(sessionID, datasetID, "")
+		}
+
 		models.WriteJSON(w, http.StatusOK, BackgroundRemovalData{
 			DatasetID:       datasetID,
 			Status:          "reset",
@@ -211,11 +237,8 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 			_ = copyFile(dataset.StoragePath, originalBackup)
 		}
 
-		// Input file is either existing processed raster or original storage path
-		inputPath := dataset.StoragePath
-		if fileExists(originalBackup) {
-			inputPath = originalBackup
-		}
+		// Input file is either active enhanced raster, original backup, or storage path
+		inputPath := sourcePath
 
 		if err := gis.ProcessRasterBackgroundRemoval(inputPath, processedPNG, targetColor, req.Threshold, req.EdgeSoftness); err != nil {
 			models.WriteError(w, http.StatusInternalServerError, "PROCESSING_FAILED", err.Error(), nil, nil)
@@ -235,7 +258,17 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 		}
 		dataset.ProcessedPath = processedPNG
 		ensureDatasetMapLayer(dataset)
+
+		// Synchronize vector overlays and OCR annotations with updated transparent raster space
+		if h.datasetService != nil {
+			services.ProjectDatasetVectorsAndAnnotations(h.datasetService.StorageManager(), dataset)
+		}
 		_ = h.repo.UpdateDataset(sessionID, dataset)
+
+		// If dataset has pre-existing MBTiles tiles, refresh them with the new transparent raster
+		if dataset.GeoreferenceStatus == "completed" && dataset.TilePath != "" && dataset.TilePath != dataset.StoragePath {
+			_, _, _ = h.datasetService.GenerateDatasetMBTiles(sessionID, datasetID, "")
+		}
 
 		// If req.ApplyToAllFloors is true, also apply to all sibling floors in the same building
 		if req.ApplyToAllFloors {
@@ -295,7 +328,14 @@ func (h *Handler) HandleBackgroundRemoval(w http.ResponseWriter, r *http.Request
 							}
 							sib.ProcessedPath = sibProcessedPNG
 							ensureDatasetMapLayer(sib)
+							if h.datasetService != nil {
+								services.ProjectDatasetVectorsAndAnnotations(h.datasetService.StorageManager(), sib)
+							}
 							_ = h.repo.UpdateDataset(sessionID, sib)
+
+							if sib.GeoreferenceStatus == "completed" && sib.TilePath != "" && sib.TilePath != sib.StoragePath {
+								_, _, _ = h.datasetService.GenerateDatasetMBTiles(sessionID, sibID, "")
+							}
 						}
 					}
 				}

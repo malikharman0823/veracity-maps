@@ -202,9 +202,17 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Uploads
-	if path == "/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" || path == "/map-projects/import" || path == "/map-projects/import-folder" {
+	// 3. Uploads & Project Reopen
+	if path == "/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" {
 		rt.uploadH.UploadFile(w, r)
+		return
+	}
+	if path == "/map-projects/inspect" || path == "/api/map-projects/inspect" {
+		rt.uploadH.InspectProjectPackage(w, r)
+		return
+	}
+	if path == "/map-projects/import" || path == "/map-projects/reopen" || path == "/map-projects/import-folder" || path == "/api/map-projects/import" || path == "/api/map-projects/reopen" {
+		rt.uploadH.ReopenProject(w, r)
 		return
 	}
 	if path == "/datasets/inspect-archive" || path == "/api/datasets/inspect-archive" {
@@ -368,7 +376,35 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			case "export":
 				rt.exportH.Export(w, r, datasetID)
 				return
+			case "inspection":
+				rt.datasetsH.GetInspection(w, r, datasetID)
+				return
+			case "enhance":
+				rt.datasetsH.HandleEnhancement(w, r, datasetID)
+				return
+			case "ocr":
+				rt.datasetsH.HandleOCR(w, r, datasetID)
+				return
+			case "vectors":
+				rt.datasetsH.GetVectors(w, r, datasetID)
+				return
+			case "mbtiles":
+				rt.datasetsH.HandleGenerateTiles(w, r, datasetID)
+				return
+			case "annotations":
+				rt.datasetsH.HandleAnnotations(w, r, datasetID)
+				return
 			}
+		}
+
+		if len(parts) == 3 && parts[1] == "annotations" {
+			rt.datasetsH.HandleAnnotationItem(w, r, datasetID, parts[2])
+			return
+		}
+
+		if len(parts) == 5 && (parts[1] == "tiles" || parts[1] == "mbtiles") {
+			rt.datasetsH.ServeTile(w, r, datasetID, parts[2], parts[3], parts[4])
+			return
 		}
 
 		if len(parts) >= 3 && parts[1] == "workspace" {
@@ -402,6 +438,17 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		if len(parts) == 3 && parts[1] == "layers" {
 			layerID := parts[2]
 			rt.datasetsH.UpdateLayer(w, r, datasetID, layerID)
+			return
+		}
+	}
+
+	// 6a-2. Standalone Viewscape tile serving endpoints (/viewscape/{project_id}/tiles/{z}/{x}/{y})
+	if strings.HasPrefix(path, "/viewscape/") || strings.HasPrefix(path, "/api/viewscape/") {
+		vPath := strings.TrimPrefix(path, "/api")
+		vPath = strings.TrimPrefix(vPath, "/viewscape/")
+		vParts := strings.Split(vPath, "/")
+		if len(vParts) == 5 && (vParts[1] == "tiles" || vParts[1] == "mbtiles") {
+			rt.datasetsH.ServeTile(w, r, vParts[0], vParts[2], vParts[3], vParts[4])
 			return
 		}
 	}

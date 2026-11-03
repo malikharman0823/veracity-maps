@@ -93,6 +93,11 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			models.WriteError(w, http.StatusInternalServerError, "STORAGE_ERROR", "Failed to write PDF: "+err.Error(), nil, nil)
 			return
 		}
+		if size == 0 {
+			_ = os.Remove(destPath)
+			models.WriteError(w, http.StatusBadRequest, "EMPTY_FILE", "Uploaded PDF file is empty (0 bytes)", nil, nil)
+			return
+		}
 
 		inspectRes, err := h.datasetService.InspectPdfDocument(sessionID, docID, destPath, header.Filename, size)
 		if err != nil {
@@ -317,4 +322,134 @@ func (h *Handler) ImportArchiveSelected(w http.ResponseWriter, r *http.Request) 
 	}
 
 	models.WriteJSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) InspectProjectPackage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	} else if _, err := h.repo.GetSession(sessionID); err != nil {
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_MULTIPART_REQUEST", "Failed to parse multipart form data", err.Error(), nil)
+		return
+	}
+
+	var header *multipart.FileHeader
+	file, hFile, err := r.FormFile("file")
+	if err == nil {
+		header = hFile
+		_ = file.Close()
+	} else if r.MultipartForm != nil {
+		if files := r.MultipartForm.File["files"]; len(files) > 0 {
+			header = files[0]
+		}
+	}
+
+	if header == nil {
+		field := "file"
+		models.WriteError(w, http.StatusBadRequest, "MISSING_FILE", "Request must include a 'file' or 'files' field", nil, &field)
+		return
+	}
+
+	result, err := h.datasetService.InspectProjectPackage(sessionID, header)
+	if err != nil {
+		statusCode := http.StatusBadRequest
+		errCode := "PACKAGE_INSPECTION_FAILED"
+		msg := err.Error()
+		if strings.Contains(msg, ":") {
+			parts := strings.SplitN(msg, ":", 2)
+			errCode = strings.TrimSpace(parts[0])
+			msg = strings.TrimSpace(parts[1])
+		}
+		models.WriteError(w, statusCode, errCode, msg, nil, nil)
+		return
+	}
+
+	w.Header().Set("X-Session-ID", sessionID)
+	models.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) ReopenProject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
+		return
+	}
+
+	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	} else if _, err := h.repo.GetSession(sessionID); err != nil {
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_MULTIPART_REQUEST", "Failed to parse multipart form data", err.Error(), nil)
+		return
+	}
+
+	var header *multipart.FileHeader
+	file, hFile, err := r.FormFile("file")
+	if err == nil {
+		header = hFile
+		_ = file.Close()
+	} else if r.MultipartForm != nil {
+		if files := r.MultipartForm.File["files"]; len(files) > 0 {
+			header = files[0]
+		}
+	}
+
+	if header == nil {
+		field := "file"
+		models.WriteError(w, http.StatusBadRequest, "MISSING_FILE", "Reopen request must include a 'file' or 'files' field", nil, &field)
+		return
+	}
+
+	dataset, err := h.datasetService.ReopenProjectUpload(sessionID, header)
+	if err != nil {
+		log.Printf("[REOPEN ERROR] ReopenProjectUpload failed for %s: %v", header.Filename, err)
+		statusCode := http.StatusBadRequest
+		errCode := "PROJECT_REOPEN_FAILED"
+		msg := err.Error()
+		if strings.Contains(msg, ":") {
+			parts := strings.SplitN(msg, ":", 2)
+			errCode = strings.TrimSpace(parts[0])
+			msg = strings.TrimSpace(parts[1])
+		}
+		if errCode == "FILE_TOO_LARGE" {
+			statusCode = http.StatusRequestEntityTooLarge
+		}
+		models.WriteError(w, statusCode, errCode, msg, nil, nil)
+		return
+	}
+
+	w.Header().Set("X-Session-ID", sessionID)
+	models.WriteJSON(w, http.StatusCreated, UploadData{
+		ID:                 dataset.ID,
+		Filename:           dataset.Filename,
+		FileSize:           dataset.FileSize,
+		ContentType:        dataset.ContentType,
+		FileHash:           dataset.FileHash,
+		StoragePath:        dataset.StoragePath,
+		Metadata:           dataset.ExtractedMetadata,
+		Existing:           false,
+		IsGeoreferenced:    dataset.GeoreferenceStatus == "completed",
+		GeoreferenceStatus: dataset.GeoreferenceStatus,
+		ProjectReopened:    true,
+	})
 }

@@ -201,22 +201,32 @@ export function datasetTileUrl(datasetId, template) {
   const sid = getActiveSessionId()
   const sessionQuery = sid ? `?session_id=${encodeURIComponent(sid)}` : ""
   if (template) {
-    const base = `${API_URL}${template.startsWith("/") ? "" : "/"}${template}`
+    const base = /^https?:\/\//i.test(template)
+      ? template
+      : `${API_URL}${template.startsWith("/") ? "" : "/"}${template}`
     return sid ? `${base}${base.includes("?") ? "&" : "?"}session_id=${encodeURIComponent(sid)}` : base
   }
-  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/tiles/{z}/{x}/{y}.png${sessionQuery}`
+  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/tiles/{z}/{x}/{y}${sessionQuery}`
 }
 
 export function mbtilesTileUrl(datasetId) {
   const sid = getActiveSessionId()
   const sessionQuery = sid ? `?session_id=${encodeURIComponent(sid)}` : ""
-  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/mbtiles/{z}/{x}/{y}${sessionQuery}`
+  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/tiles/{z}/{x}/{y}${sessionQuery}`
 }
 
-export function datasetSourceImageUrl(datasetId) {
+export function datasetSourceImageUrl(datasetId, options = {}) {
   const sid = getActiveSessionId()
-  const sessionQuery = sid ? `&session_id=${encodeURIComponent(sid)}` : ""
-  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/source-image?t=${Date.now()}${sessionQuery}`
+  const params = new URLSearchParams()
+  const bust = options?.bust !== undefined ? options.bust : Date.now()
+  params.set("t", String(bust))
+  if (options?.variant) {
+    params.set("variant", String(options.variant))
+  }
+  if (sid) {
+    params.set("session_id", sid)
+  }
+  return `${API_URL}/datasets/${encodeURIComponent(datasetId)}/source-image?${params.toString()}`
 }
 
 export async function listControlPoints(datasetId, signal) {
@@ -444,8 +454,12 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
     if (exportPayload && (exportPayload.layer_ids || exportPayload.options || exportPayload.building_ids || exportPayload.format)) {
       response = await client.post(
         `/datasets/${encodeURIComponent(datasetId)}/export`,
-        { ...exportPayload, format: exportPayload.format || "mtmap", project_name: projectName },
-        { responseType: "blob", timeout: 10 * 60_000, headers: { Accept: "application/zip" } },
+        { ...exportPayload, format: exportPayload.format || "project_zip", project_name: projectName },
+        {
+          responseType: "blob",
+          timeout: 10 * 60_000,
+          headers: { Accept: "application/octet-stream, application/zip, application/x-sqlite3" },
+        },
       )
     } else {
       response = await client.get(
@@ -470,7 +484,7 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
 
   let fallback = `${safeDownloadStem(projectName)}.zip`
   if (exportPayload?.format === "mbtiles") {
-    fallback = `${safeDownloadStem(projectName)}.mbtiles.zip`
+    fallback = `${safeDownloadStem(projectName)}.mbtiles`
   } else if (exportPayload?.format === "base_layer" || exportPayload?.format === "basemap") {
     fallback = "veracity-base-map.zip"
   }
@@ -596,6 +610,7 @@ export async function applyBackgroundRemoval(datasetId, { color = "#ffffff", thr
       edge_softness: edgeSoftness,
       apply_to_all_floors: applyToAllFloors,
     },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -606,6 +621,7 @@ export async function resetBackgroundRemoval(datasetId) {
     {
       action: "reset",
     },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -627,6 +643,7 @@ export async function previewRasterTransform(datasetId, { corners, mode = "free"
       rotation_angle: rotationAngle,
       lock_aspect_ratio: lockAspectRatio,
     },
+    { timeout: 2 * 60_000 },
   )
   return response.data.data
 }
@@ -642,6 +659,7 @@ export async function applyRasterTransform(datasetId, { corners, mode = "free", 
       lock_aspect_ratio: lockAspectRatio,
       resampling,
     },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -650,6 +668,7 @@ export async function undoRasterTransform(datasetId) {
   const response = await client.post(
     `/datasets/${encodeURIComponent(datasetId)}/transform`,
     { action: "undo" },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -658,6 +677,7 @@ export async function redoRasterTransform(datasetId) {
   const response = await client.post(
     `/datasets/${encodeURIComponent(datasetId)}/transform`,
     { action: "redo" },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -666,6 +686,7 @@ export async function resetRasterTransform(datasetId) {
   const response = await client.post(
     `/datasets/${encodeURIComponent(datasetId)}/transform`,
     { action: "reset" },
+    { timeout: 5 * 60_000 },
   )
   return response.data.data
 }
@@ -797,7 +818,117 @@ export function pdfThumbnailUrl(documentId, pageNumber) {
 }
 
 export async function importPdfPages(payload) {
-  const response = await client.post("/datasets/import-pdf-pages", payload)
+  const response = await client.post("/datasets/import-pdf-pages", payload, {
+    timeout: 5 * 60_000,
+  })
+  return response.data.data
+}
+
+// -------------------------------------------------------------
+// Universal File Inspection, OpenCV/AI Enhancement, OCR & MBTiles Reopening API
+// -------------------------------------------------------------
+
+export async function inspectProjectPackage(file, onUploadProgress) {
+  const body = new FormData()
+  body.append("file", file)
+  const response = await client.post("/map-projects/inspect", body, {
+    onUploadProgress,
+    timeout: 5 * 60_000,
+  })
+  return response.data.data
+}
+
+export async function reopenProjectPackage(file, onUploadProgress) {
+  const body = new FormData()
+  body.append("file", file)
+  const response = await client.post("/map-projects/reopen", body, {
+    onUploadProgress,
+    timeout: 10 * 60_000,
+  })
+  return response.data
+}
+
+export async function getDatasetInspection(datasetId, signal) {
+  const response = await client.get(
+    `/datasets/${encodeURIComponent(datasetId)}/inspection`,
+    { signal },
+  )
+  return response.data.data
+}
+
+export async function getDatasetEnhancement(datasetId, signal) {
+  const response = await client.get(
+    `/datasets/${encodeURIComponent(datasetId)}/enhance`,
+    { signal },
+  )
+  return response.data.data
+}
+
+export async function enhanceDataset(datasetId, options = {}) {
+  const response = await client.post(
+    `/datasets/${encodeURIComponent(datasetId)}/enhance`,
+    options,
+    { timeout: 5 * 60_000 },
+  )
+  return response.data.data
+}
+
+export async function runDatasetOcr(datasetId, minConfidence = 0.35) {
+  const response = await client.post(
+    `/datasets/${encodeURIComponent(datasetId)}/ocr`,
+    { min_confidence: minConfidence },
+    { timeout: 3 * 60_000 },
+  )
+  return response.data.data
+}
+
+export async function listDatasetAnnotations(datasetId, signal) {
+  const response = await client.get(
+    `/datasets/${encodeURIComponent(datasetId)}/annotations`,
+    { signal },
+  )
+  const d = response.data.data
+  if (Array.isArray(d)) return d
+  if (Array.isArray(d?.annotations)) return d.annotations
+  return []
+}
+
+export async function saveDatasetAnnotation(datasetId, annotation) {
+  if (annotation?.id) {
+    const response = await client.put(
+      `/datasets/${encodeURIComponent(datasetId)}/annotations/${encodeURIComponent(annotation.id)}`,
+      annotation,
+    )
+    return response.data.data
+  }
+  const response = await client.post(
+    `/datasets/${encodeURIComponent(datasetId)}/annotations`,
+    annotation,
+  )
+  return response.data.data
+}
+
+export async function deleteDatasetAnnotation(datasetId, annotationId) {
+  const response = await client.delete(
+    `/datasets/${encodeURIComponent(datasetId)}/annotations/${encodeURIComponent(annotationId)}`,
+  )
+  return response.data.data
+}
+
+export async function getDatasetVectors(datasetId, signal) {
+  const response = await client.get(
+    `/datasets/${encodeURIComponent(datasetId)}/vectors`,
+    { signal },
+  )
+  return response.data.data
+}
+
+export async function generateDatasetMbtiles(datasetId, resampling = "") {
+  const response = await client.post(
+    `/datasets/${encodeURIComponent(datasetId)}/mbtiles`,
+    { resampling },
+    { timeout: 5 * 60_000 },
+  )
   return response.data.data
 }
 

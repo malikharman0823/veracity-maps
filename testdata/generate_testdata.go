@@ -92,10 +92,10 @@ func generateGridImage(path, format string, w, h int) {
 	}
 
 	// Colored corner blocks (30x30)
-	drawBlock(img, 10, 10, 40, 40, color.RGBA{230, 50, 50, 255})    // Top-left Red
-	drawBlock(img, w-40, 10, w-10, 40, color.RGBA{50, 200, 50, 255}) // Top-right Green
+	drawBlock(img, 10, 10, 40, 40, color.RGBA{230, 50, 50, 255})          // Top-left Red
+	drawBlock(img, w-40, 10, w-10, 40, color.RGBA{50, 200, 50, 255})      // Top-right Green
 	drawBlock(img, w-40, h-40, w-10, h-10, color.RGBA{50, 100, 230, 255}) // Bottom-right Blue
-	drawBlock(img, 10, h-40, 40, h-10, color.RGBA{230, 200, 50, 255}) // Bottom-left Yellow
+	drawBlock(img, 10, h-40, 40, h-10, color.RGBA{230, 200, 50, 255})     // Bottom-left Yellow
 
 	// Central bullseye marker
 	cx, cy := w/2, h/2
@@ -217,72 +217,72 @@ func generateManifestJSON(outDir string) {
 		"schema_version": "1.0.0",
 		"fixtures": []map[string]interface{}{
 			{
-				"filename":              "ordinary_grid.png",
-				"format":                "png",
-				"width":                 400,
-				"height":                300,
+				"filename":               "ordinary_grid.png",
+				"format":                 "png",
+				"width":                  400,
+				"height":                 300,
 				"expected_georeferenced": false,
-				"expected_validation":   "VALID",
-				"intended_test_case":    "Ordinary PNG upload and display without georeferencing sidecars",
+				"expected_validation":    "VALID",
+				"intended_test_case":     "Ordinary PNG upload and display without georeferencing sidecars",
 			},
 			{
-				"filename":              "ordinary_photo.jpg",
-				"format":                "jpeg",
-				"width":                 400,
-				"height":                300,
+				"filename":               "ordinary_photo.jpg",
+				"format":                 "jpeg",
+				"width":                  400,
+				"height":                 300,
 				"expected_georeferenced": false,
-				"expected_validation":   "VALID",
-				"intended_test_case":    "Ordinary JPEG upload and decoding",
+				"expected_validation":    "VALID",
+				"intended_test_case":     "Ordinary JPEG upload and decoding",
 			},
 			{
-				"filename":              "georeferenced_campus.png",
-				"format":                "png",
-				"width":                 400,
-				"height":                300,
+				"filename":               "georeferenced_campus.png",
+				"format":                 "png",
+				"width":                  400,
+				"height":                 300,
 				"expected_georeferenced": true,
-				"expected_crs":          "EPSG:4326",
-				"expected_bounds":       []float64{-73.985, 40.600, -73.785, 40.750},
-				"expected_validation":   "VALID",
-				"intended_test_case":    "Pre-georeferenced raster with world file (.pgw) and projection (.prj)",
+				"expected_crs":           "EPSG:4326",
+				"expected_bounds":        []float64{-73.985, 40.600, -73.785, 40.750},
+				"expected_validation":    "VALID",
+				"intended_test_case":     "Pre-georeferenced raster with world file (.pgw) and projection (.prj)",
 			},
 			{
-				"filename":              "valid_bundle.zip",
-				"format":                "zip",
+				"filename":               "valid_bundle.zip",
+				"format":                 "zip",
 				"expected_georeferenced": true,
-				"expected_validation":   "VALID",
-				"intended_test_case":    "ZIP bundle containing raster and sidecars",
+				"expected_validation":    "VALID",
+				"intended_test_case":     "ZIP bundle containing raster and sidecars",
 			},
 			{
-				"filename":              "multi_images.zip",
-				"format":                "zip",
-				"expected_validation":   "VALID",
-				"intended_test_case":    "ZIP containing multiple floor images",
+				"filename":            "multi_images.zip",
+				"format":              "zip",
+				"expected_validation": "VALID",
+				"intended_test_case":  "ZIP containing multiple floor images",
 			},
 			{
-				"filename":              "zip_slip_malicious.zip",
-				"format":                "zip",
-				"expected_validation":   "REJECT",
-				"intended_test_case":    "Security check: path traversal in ZIP archive",
+				"filename":            "zip_slip_malicious.zip",
+				"format":              "zip",
+				"expected_validation": "REJECT",
+				"intended_test_case":  "Security check: path traversal in ZIP archive",
 			},
 			{
-				"filename":              "truncated.png",
-				"format":                "png",
-				"expected_validation":   "REJECT",
-				"intended_test_case":    "Corrupted PNG upload handling",
+				"filename":            "truncated.png",
+				"format":              "png",
+				"expected_validation": "REJECT",
+				"intended_test_case":  "Corrupted PNG upload handling",
 			},
 			{
-				"filename":              "text_as_png.png",
-				"format":                "text/png",
-				"expected_validation":   "REJECT",
-				"intended_test_case":    "MIME spoofing rejection",
+				"filename":            "text_as_png.png",
+				"format":              "text/png",
+				"expected_validation": "REJECT",
+				"intended_test_case":  "MIME spoofing rejection",
 			},
 			{
-				"filename":              "unreferenced_park.png",
-				"format":                "png",
-				"width":                 400,
-				"height":                300,
+				"filename":               "unreferenced_park.png",
+				"format":                 "png",
+				"width":                  400,
+				"height":                 300,
 				"expected_georeferenced": false,
-				"intended_test_case":    "Interactive control-point georeferencing source",
+				"intended_test_case":     "Interactive control-point georeferencing source",
 			},
 		},
 	}

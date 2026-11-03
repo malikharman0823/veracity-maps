@@ -121,12 +121,14 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 4. Verify all root-level viewer and metadata files
+	// 4. Verify all root-level MBTiles, project manifests, viewer, and metadata files
 	expectedRootFiles := []string{
+		"project.mbtiles",
+		"project.json",
+		"manifest.json",
 		"index.html",
 		"viewer.html",
 		"style.json",
-		"mapstudio.json",
 		"metadata.json",
 		"README.txt",
 	}
@@ -144,19 +146,33 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 5. Verify NO unwanted folders or extra root files exist (strict Viewscape compatibility)
+	// 5. Verify Viewscape root files and custom local tile pyramid
+	if _, hasOld := files["mapstudio.json"]; hasOld {
+		t.Errorf("deprecated mapstudio.json should not be present in MBTiles-backed export archive")
+	}
+
+	allowedTopFolders := map[string]bool{
+		"tiles":     true,
+		"layers":    true,
+		"buildings": true,
+		"metadata":  true,
+		"basemap":   true,
+		"assets":    true,
+		"icons":     true,
+		"rasters":   true,
+		"project":   true,
+		"previews":  true,
+	}
 	for name := range files {
 		parts := strings.Split(name, "/")
 		if len(parts) == 1 {
 			if !expectedRootMap[name] {
 				t.Errorf("unwanted root file found in export archive: %s", name)
 			}
-		} else {
-			// Top-level directory must be either a numeric zoom level or 'assets'
-			if parts[0] != "assets" {
-				if _, err := strconv.Atoi(parts[0]); err != nil {
-					t.Errorf("unwanted non-numeric folder '%s' in archive entry: %s", parts[0], name)
-				}
+		} else if !allowedTopFolders[parts[0]] {
+			// Permitted: numeric zoom directories {z}/{x}/{y}.png for Viewscape Custom Local Tiles
+			if _, zErr := strconv.Atoi(parts[0]); zErr != nil {
+				t.Errorf("unexpected top-level folder '%s' in archive entry: %s", parts[0], name)
 			}
 		}
 	}
@@ -169,7 +185,20 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		}
 	}
 
-	// 6. Verify metadata.json contents
+	// 6. Verify project.mbtiles is a genuine SQLite 3 database and metadata.json matches
+	if mbFile, ok := files["project.mbtiles"]; ok {
+		rc, err := mbFile.Open()
+		if err != nil {
+			t.Fatalf("failed opening project.mbtiles: %v", err)
+		}
+		hdr := make([]byte, 16)
+		_, _ = io.ReadFull(rc, hdr)
+		_ = rc.Close()
+		if string(hdr) != "SQLite format 3\x00" {
+			t.Errorf("expected project.mbtiles SQLite 3 header, got: %q", string(hdr))
+		}
+	}
+
 	if metaFile, ok := files["metadata.json"]; ok {
 		rc, err := metaFile.Open()
 		if err != nil {
@@ -185,33 +214,33 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		if metaDoc["name"] == nil || metaDoc["bounds"] == nil {
 			t.Errorf("metadata.json missing required fields: %v", metaDoc)
 		}
-		if metaDoc["format"] != "png" {
-			t.Errorf("expected format 'png', got: %v", metaDoc["format"])
+		if metaDoc["format"] != "mbtiles" {
+			t.Errorf("expected format 'mbtiles', got: %v", metaDoc["format"])
 		}
-		if metaDoc["scale"] != "1.000000" {
-			t.Errorf("expected scale '1.000000', got: %v", metaDoc["scale"])
+		if metaDoc["project_mbtiles"] != "project.mbtiles" {
+			t.Errorf("expected project_mbtiles 'project.mbtiles', got: %v", metaDoc["project_mbtiles"])
 		}
 		if metaDoc["control_points"] == nil {
 			t.Errorf("expected control_points preserved in metadata.json")
 		}
 	}
 
-	// 7. Verify mapstudio.json and style.json
-	if msFile, ok := files["mapstudio.json"]; ok {
-		rc, err := msFile.Open()
+	// 7. Verify project.json and style.json
+	if pjFile, ok := files["project.json"]; ok {
+		rc, err := pjFile.Open()
 		if err == nil {
 			defer rc.Close()
-			var msDoc map[string]interface{}
-			if err := json.NewDecoder(rc).Decode(&msDoc); err != nil {
-				t.Errorf("mapstudio.json is not valid JSON: %v", err)
+			var pjDoc map[string]interface{}
+			if err := json.NewDecoder(rc).Decode(&pjDoc); err != nil {
+				t.Errorf("project.json is not valid JSON: %v", err)
 			} else {
-				if msDoc["format"] != "mapstudio-folder" {
-					t.Errorf("expected mapstudio.json format 'mapstudio-folder', got: %v", msDoc["format"])
+				if pjDoc["format"] != "veracity-project" {
+					t.Errorf("expected project.json format 'veracity-project', got: %v", pjDoc["format"])
 				}
 			}
 		}
 	} else {
-		t.Errorf("expected mapstudio.json in export archive")
+		t.Errorf("expected project.json in export archive")
 	}
 
 	if styleFile, ok := files["style.json"]; ok {
@@ -235,17 +264,16 @@ func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 		t.Errorf("expected style.json in export archive")
 	}
 
-	// 8. Verify numbered zoom directories exist and tiles are {z}/{x}/{y}.png
-	if len(numberedDirZooms) == 0 {
-		t.Errorf("expected at least one numbered zoom folder (e.g. 15, 16, etc.) in georeferenced export, got 0")
-	}
+	// 8. Verify per-layer MBTiles exists under tiles/
+	hasPerLayerMBTiles := false
 	for name := range files {
-		parts := strings.Split(name, "/")
-		if len(parts) == 3 && parts[0] != "assets" {
-			if !strings.HasSuffix(name, ".png") {
-				t.Errorf("tile entry should end with .png, but got: %s", name)
-			}
+		if strings.HasPrefix(name, "tiles/") && strings.HasSuffix(name, ".mbtiles") {
+			hasPerLayerMBTiles = true
+			break
 		}
+	}
+	if !hasPerLayerMBTiles {
+		t.Errorf("expected per-layer .mbtiles under tiles/")
 	}
 
 	// 9. Verify HTML files use MapLibre GL JS and have no Leaflet references

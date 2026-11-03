@@ -34,6 +34,12 @@ export default function ImportPdfModal({
     pdfInspection?.suggested_building || "Building 1"
   )
   const [startingFloor, setStartingFloor] = useState(0)
+  const [dpi, setDpi] = useState(0)
+  const [enhancePreset, setEnhancePreset] = useState("")
+  const [extractVectors, setExtractVectors] = useState(true)
+  const [runOcr, setRunOcr] = useState(() =>
+    pages.some((p) => Boolean(p?.ocr_recommended || p?.processing_path === "raster"))
+  )
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState(null)
 
@@ -70,6 +76,10 @@ export default function ImportPdfModal({
         georeferencing_mode: georefMode,
         building_name: buildingName.trim() || "Building 1",
         starting_floor: parseInt(startingFloor, 10) || 0,
+        dpi: Number(dpi) || 0,
+        enhance_preset: enhancePreset || undefined,
+        extract_vectors: extractVectors,
+        run_ocr: runOcr,
       })
       onImportSuccess(result)
     } catch (err) {
@@ -120,7 +130,10 @@ export default function ImportPdfModal({
             <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <div>
-                <strong>Import failed:</strong> {error}
+                <strong>Import failed:</strong>{" "}
+                {typeof error === "string"
+                  ? error
+                  : `${error.message || "Unable to import PDF pages."}${error.details ? ` (${error.details})` : ""}`}
               </div>
             </div>
           )}
@@ -213,6 +226,33 @@ export default function ImportPdfModal({
                       {page.width || page.width_pt ? `${page.width || Math.round(page.width_pt)} × ${page.height || Math.round(page.height_pt)}` : `Page ${page.page_number}`}
                     </span>
                   </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    {page.processing_path === "vector" && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Vector PDF
+                      </span>
+                    )}
+                    {page.processing_path === "hybrid" && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        Hybrid Vector+Raster
+                      </span>
+                    )}
+                    {page.processing_path === "raster" && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                        Scanned PDF
+                      </span>
+                    )}
+                    {page.recommended_dpi > 0 && (
+                      <span className="text-[10px] font-mono text-[#7a7a7a]">
+                        {page.recommended_dpi} DPI
+                      </span>
+                    )}
+                  </div>
+                  {(page.vector_path_count > 0 || page.text_span_count > 0) && (
+                    <div className="mt-0.5 text-[10px] text-[#555558] truncate">
+                      {page.vector_path_count || 0} paths • {page.text_span_count || 0} text spans
+                    </div>
+                  )}
                   {page.rotation > 0 && (
                     <div className="text-[10px] text-[#0066cc] flex items-center gap-1 mt-0.5">
                       <RotateCw className="size-2.5" />
@@ -325,6 +365,73 @@ export default function ImportPdfModal({
               <p className="text-[11px] text-[#7a7a7a] mt-1">
                 Floor 0 = Ground Floor. Subsequent pages increment floor levels.
               </p>
+            </div>
+          </div>
+
+          {/* Vector Extraction, Adaptive DPI, OpenCV Enhancement & OCR Options */}
+          <div className="p-4 rounded-xl bg-[#fafafc] border border-[#e0e0e0] space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7a7a7a]">
+              PDF Processing & Vector Extraction
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                  Rendering Resolution (DPI)
+                </label>
+                <select
+                  value={dpi}
+                  onChange={(e) => setDpi(Number(e.target.value))}
+                  disabled={importing}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc]"
+                >
+                  <option value={0}>Adaptive Recommended DPI (Auto)</option>
+                  <option value={200}>200 DPI (Standard Plan)</option>
+                  <option value={240}>240 DPI (High Clarity)</option>
+                  <option value={300}>300 DPI (Fine Engineering Print)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                  OpenCV Raster Enhancement
+                </label>
+                <select
+                  value={enhancePreset}
+                  onChange={(e) => setEnhancePreset(e.target.value)}
+                  disabled={importing}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc]"
+                >
+                  <option value="">Automatic per Page Type (Recommended)</option>
+                  <option value="text_clarity">Text & Label Clarity (CLAHE + Edge Sharpen)</option>
+                  <option value="line_preservation">Engineering Line Preservation</option>
+                  <option value="scanned_drawing">Scanned Drawing Cleanup</option>
+                  <option value="balanced">Balanced Contrast</option>
+                  <option value="none">No OpenCV Enhancement (Raw Render)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-1">
+              <label className="inline-flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extractVectors}
+                  onChange={(e) => setExtractVectors(e.target.checked)}
+                  disabled={importing}
+                  className="rounded border-[#b0b0b0] text-[#0066cc] focus:ring-[#0066cc]"
+                />
+                <span>Extract vector paths & positioned text labels (Path A)</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={runOcr}
+                  onChange={(e) => setRunOcr(e.target.checked)}
+                  disabled={importing}
+                  className="rounded border-[#b0b0b0] text-[#0066cc] focus:ring-[#0066cc]"
+                />
+                <span>Run PaddleOCR label detection on scanned pages (Path B)</span>
+              </label>
             </div>
           </div>
         </div>

@@ -3,7 +3,6 @@ package datasets
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -166,27 +165,16 @@ func (h *Handler) SourceImage(w http.ResponseWriter, r *http.Request, datasetID 
 		return
 	}
 
-	imagePath := dataset.StoragePath
-	transparentPNG := filepath.Join(filepath.Dir(dataset.StoragePath), "processed", "processed_transparent.png")
-	useTransparent := false
-	if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
-		if enabled, _ := bg["enabled"].(bool); enabled {
-			useTransparent = true
-		}
-	}
-	if useTransparent && fileExists(transparentPNG) {
-		imagePath = transparentPNG
-	} else if dataset.ProcessedPath != "" && fileExists(dataset.ProcessedPath) {
-		pExt := strings.ToLower(filepath.Ext(dataset.ProcessedPath))
-		if pExt == ".png" || pExt == ".jpg" || pExt == ".jpeg" {
-			imagePath = dataset.ProcessedPath
-		}
-	}
+	variant := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("variant")))
+	imagePath := h.datasetService.ResolveRenderableRasterPath(dataset, variant)
 
-	if _, err := os.Stat(imagePath); os.IsNotExist(err) || !fileExists(imagePath) {
+	if imagePath == "" || !fileExists(imagePath) || strings.EqualFold(filepath.Ext(imagePath), ".mbtiles") {
 		if rec := h.datasetService.LocateOrRestoreDatasetImage(dataset); rec != "" && fileExists(rec) {
-			imagePath = rec
-		} else {
+			if !strings.EqualFold(filepath.Ext(rec), ".mbtiles") {
+				imagePath = rec
+			}
+		}
+		if imagePath == "" || !fileExists(imagePath) || strings.EqualFold(filepath.Ext(imagePath), ".mbtiles") {
 			models.WriteError(w, http.StatusNotFound, "FILE_NOT_FOUND", "Source image file was not found", nil, nil)
 			return
 		}
@@ -194,8 +182,11 @@ func (h *Handler) SourceImage(w http.ResponseWriter, r *http.Request, datasetID 
 
 	ext := strings.ToLower(filepath.Ext(imagePath))
 	contentType := "image/png"
-	if ext == ".jpg" || ext == ".jpeg" {
+	switch ext {
+	case ".jpg", ".jpeg":
 		contentType = "image/jpeg"
+	case ".webp":
+		contentType = "image/webp"
 	}
 
 	w.Header().Set("Content-Type", contentType)

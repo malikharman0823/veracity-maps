@@ -38,3 +38,11 @@ Desktop.ini
 frontend/.vite/
 
 .vercel
+
+# Python Virtual Environment & Model Cache
+.venv/
+backend/.venv/
+__pycache__/
+*.pyc
+backend/models_cache/
+scratch/

@@ -241,12 +241,14 @@ func TestExport_IconAssetBundlingAndZoomViewscape(t *testing.T) {
 		files[f.Name] = f
 	}
 
-	// Verify required root files
+	// Verify required root files (MBTiles-backed project package)
 	requiredFiles := []string{
+		"project.mbtiles",
+		"project.json",
+		"manifest.json",
 		"index.html",
 		"viewer.html",
 		"style.json",
-		"mapstudio.json",
 		"metadata.json",
 		"README.txt",
 	}
@@ -256,16 +258,15 @@ func TestExport_IconAssetBundlingAndZoomViewscape(t *testing.T) {
 		}
 	}
 
-	// Verify overview zoom 7 tiles exist for regional and Viewscape viewports
-	hasZoom7 := false
-	for name := range files {
-		if strings.HasPrefix(name, "7/") && strings.HasSuffix(name, ".png") {
-			hasZoom7 = true
-			break
+	// Verify project.mbtiles is a genuine SQLite 3 database
+	if mbF, ok := files["project.mbtiles"]; ok {
+		rc, _ := mbF.Open()
+		hdr := make([]byte, 16)
+		_, _ = io.ReadFull(rc, hdr)
+		_ = rc.Close()
+		if string(hdr) != "SQLite format 3\x00" {
+			t.Errorf("expected project.mbtiles SQLite 3 header, got %q", string(hdr))
 		}
-	}
-	if !hasZoom7 {
-		t.Errorf("expected zoom 7 overview tiles for Viewscape default position compatibility")
 	}
 
 	// Verify metadata.json contains zoom settings, control points, and icon points

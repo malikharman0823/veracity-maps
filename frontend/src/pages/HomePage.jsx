@@ -5,7 +5,6 @@ import {
   deleteDataset,
   readableApiError,
   importProjectFolder,
-  importMapProject,
   importDatasetZip,
   uploadDataset,
   listSavedConfigs,
@@ -18,6 +17,7 @@ import DatasetCard from "../components/DatasetCard"
 import TopHeader from "../components/TopHeader"
 import ImportPdfModal from "../components/ImportPdfModal"
 import FilePreviewDialog from "../components/FilePreviewDialog"
+import ReopenProjectModal from "../components/ReopenProjectModal"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -59,6 +59,8 @@ export default function HomePage() {
   const [error, setError] = useState(null)
   const [pdfInspection, setPdfInspection] = useState(null)
   const [filePreviewOpen, setFilePreviewOpen] = useState(false)
+  const [reopenModalOpen, setReopenModalOpen] = useState(false)
+  const [reopenInitialFile, setReopenInitialFile] = useState(null)
 
   // Session dataset catalog state
   const [datasets, setDatasets] = useState([])
@@ -117,6 +119,12 @@ export default function HomePage() {
   }
 
   function selectFile(nextFile) {
+    const lowerName = String(nextFile?.name || "").toLowerCase()
+    if (lowerName.endsWith(".mbtiles")) {
+      setReopenInitialFile(nextFile)
+      setReopenModalOpen(true)
+      return
+    }
     setFile(nextFile)
     setState("selected")
     setProgress(0)
@@ -175,33 +183,6 @@ export default function HomePage() {
     }
   }
 
-  const handleReopenZip = async (event) => {
-    const selectedFile = event.target.files?.[0]
-    if (!selectedFile) return
-    setImporting(true)
-    setError(null)
-    try {
-      let targetId = null
-      try {
-        const res = await importMapProject(selectedFile)
-        targetId = res.data?.id || res.data?.dataset_id || res.dataset_id
-      } catch {
-        const res = await importDatasetZip(selectedFile)
-        targetId = res.id || res.data?.id
-      }
-      if (targetId) {
-        navigate(`/datasets/${targetId}/workspace?view=map`)
-      } else {
-        loadDatasets()
-      }
-    } catch (err) {
-      setError(readableApiError(err, "Failed to reopen exported project package."))
-    } finally {
-      setImporting(false)
-      event.target.value = ""
-    }
-  }
-
   const handleImportFolder = async (event) => {
     const files = Array.from(event.target.files)
     if (!files.length) return
@@ -250,33 +231,24 @@ export default function HomePage() {
                 Upload Dataset
               </h1>
               <p className="text-sm text-[#7a7a7a] mt-1.5 max-w-xl">
-                Upload GeoTIFF, PNG, JPG, PDF, CAD (.dxf, .dwg), SVF (.svf), GeoJSON, Shapefile (.zip), or Map Studio project packages.
+                Upload GeoTIFF/TIFF, PNG, JPG, PDF, CAD (.dxf, .dwg, .svf), standalone MBTiles (.mbtiles), or Veracity Maps project packages (.zip).
               </p>
             </div>
 
             <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                onChange={handleReopenZip}
-                className="hidden"
-                id="reopen-zip-input"
-                disabled={importing}
-              />
               <Button
-                asChild
+                type="button"
                 variant="outline"
                 size="sm"
+                onClick={() => {
+                  setReopenInitialFile(null)
+                  setReopenModalOpen(true)
+                }}
+                disabled={importing}
                 className="h-9 rounded-full border-[#0066cc]/30 bg-[#f0f7ff] hover:bg-[#e1effe] text-xs text-[#0066cc] cursor-pointer font-medium"
               >
-                <label htmlFor="reopen-zip-input">
-                  {importing ? (
-                    <Loader2 className="size-3.5 mr-1.5 animate-spin text-[#0066cc]" />
-                  ) : (
-                    <Archive className="size-3.5 mr-1.5 text-[#0066cc]" />
-                  )}
-                  <span>{importing ? "Opening…" : "Reopen Exported Map (.zip)"}</span>
-                </label>
+                <Archive className="size-3.5 mr-1.5 text-[#0066cc]" />
+                <span>Reopen Project (.mbtiles / .zip)</span>
               </Button>
 
               <input
@@ -668,6 +640,23 @@ export default function HomePage() {
         open={filePreviewOpen}
         onCancel={removeFile}
         onConfirm={() => setFilePreviewOpen(false)}
+      />
+
+      <ReopenProjectModal
+        open={reopenModalOpen}
+        initialFile={reopenInitialFile}
+        onClose={() => {
+          setReopenModalOpen(false)
+          setReopenInitialFile(null)
+        }}
+        onReopened={(restored) => {
+          setReopenModalOpen(false)
+          setReopenInitialFile(null)
+          loadDatasets()
+          if (restored?.id) {
+            navigate(`/datasets/${restored.id}/workspace?view=map`)
+          }
+        }}
       />
     </div>
   )

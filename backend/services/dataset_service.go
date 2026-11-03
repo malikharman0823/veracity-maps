@@ -53,8 +53,12 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	if ext != ".zip" && ext != ".pdf" && ext != ".dxf" && SupportedRasterExtensions[ext] == "" {
-		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, PDF, DXF, and ZIP", ext)
+	if ext != ".zip" && ext != ".mbtiles" && ext != ".pdf" && ext != ".dxf" && SupportedRasterExtensions[ext] == "" {
+		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, TIFF, PDF, DXF, MBTiles, and ZIP", ext)
+	}
+
+	if fileHeader.Size == 0 {
+		return nil, fmt.Errorf("EMPTY_FILE: Uploaded file '%s' is empty (0 bytes)", fileHeader.Filename)
 	}
 
 	if fileHeader.Size > s.cfg.MaxUploadSizeBytes {
@@ -89,16 +93,31 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 		_ = storage.SafeRemoveAll(datasetDir)
 		return nil, fmt.Errorf("UPLOAD_FAILED: Failed writing upload to disk: %w", err)
 	}
+	if size == 0 {
+		_ = storage.SafeRemoveAll(datasetDir)
+		return nil, fmt.Errorf("EMPTY_FILE: Uploaded file '%s' is empty (0 bytes)", fileHeader.Filename)
+	}
 
 	fileHash := hex.EncodeToString(hasher.Sum(nil))
 
-	if ext == ".zip" {
+	switch ext {
+	case ".mbtiles":
+		return s.ReopenMBTilesFromPath(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
+	case ".zip":
+		isProj, zErr := isProjectArchiveZip(destPath)
+		if zErr != nil {
+			_ = storage.SafeRemoveAll(datasetDir)
+			return nil, zErr
+		}
+		if isProj {
+			return s.ReopenProjectZipFromPath(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
+		}
 		return s.handleZipDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
-	}
-	if ext == ".dxf" {
+	case ".dxf":
 		return s.ConvertCadDxfToDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
+	default:
+		return s.handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash, SupportedRasterExtensions[ext])
 	}
-	return s.handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash, SupportedRasterExtensions[ext])
 }
 
 func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, filename string, size int64, fileHash, contentType string) (*models.Dataset, error) {
@@ -114,13 +133,26 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		return nil, fmt.Errorf("ICON_ASSET_NOT_A_MAP: '%s' (%dx%d) is recognized as an icon marker symbol, not a map or floorplan raster. Icons should be used as map annotations/markers, not as background raster layers.", filename, meta.Width, meta.Height)
 	}
 
+	var dpiX, dpiY float64
+	if len(meta.DPI) > 0 {
+		dpiX = meta.DPI["x"]
+		dpiY = meta.DPI["y"]
+	}
+
 	extractedMeta := map[string]interface{}{
 		"driver":               meta.Driver,
 		"width":                meta.Width,
 		"height":               meta.Height,
 		"bands":                meta.Bands,
 		"dtype":                meta.DType,
+		"color_depth_bits":     meta.ColorDepthBits,
+		"compression":          meta.Compression,
+		"dpi":                  meta.DPI,
+		"dpi_x":                dpiX,
+		"dpi_y":                dpiY,
+		"has_alpha":            meta.Bands == 4 || meta.Bands == 2,
 		"crs":                  meta.CRS,
+		"native_crs":           meta.NativeCRS,
 		"bounds":               meta.Bounds,
 		"resolution":           meta.Resolution,
 		"transform":            meta.Transform,
@@ -128,6 +160,20 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		"color_interpretation": meta.ColorInterpretation,
 		"format":               strings.ToLower(meta.Driver),
 		"archive_filename":     filename,
+		"content":              meta.Content,
+		"quality":              meta.Quality,
+		"recommendation":       meta.Recommendation,
+	}
+
+	var processedPath string
+	lowerExt := strings.ToLower(filepath.Ext(destPath))
+	if lowerExt == ".tif" || lowerExt == ".tiff" {
+		procDir := filepath.Join(datasetDir, "processed")
+		_ = os.MkdirAll(procDir, 0755)
+		displayPNG := filepath.Join(procDir, "display.png")
+		if convErr := gis.ConvertRasterToDisplayPNG(destPath, displayPNG); convErr == nil && fileExists(displayPNG) {
+			processedPath = displayPNG
+		}
 	}
 
 	fBase := strings.TrimSuffix(filename, filepath.Ext(filename))
@@ -173,6 +219,7 @@ func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir
 		ContentType:        contentType,
 		FileHash:           fileHash,
 		StoragePath:        destPath,
+		ProcessedPath:      processedPath,
 		GeoreferencedPath:  georefPath,
 		GeoreferenceStatus: georefStatus,
 		TileStatus:         "not_started",
@@ -2266,17 +2313,29 @@ func (s *DatasetService) LocateOrRestoreDatasetImage(dataset *models.Dataset) st
 		}
 	}
 
-	// 3. Check GeoreferencedPath if it's an image
+	// 3. Check GeoreferencedPath if it's an image or MBTiles database
 	if dataset.GeoreferencedPath != "" && fileExists(dataset.GeoreferencedPath) {
 		ext := strings.ToLower(filepath.Ext(dataset.GeoreferencedPath))
-		if SupportedRasterExtensions[ext] != "" && ext != ".vrt" {
+		if (SupportedRasterExtensions[ext] != "" || ext == ".mbtiles") && ext != ".vrt" {
 			return dataset.GeoreferencedPath
 		}
+	}
+
+	// 3b. Check TilePath if dataset is MBTiles-backed
+	if dataset.TilePath != "" && fileExists(dataset.TilePath) {
+		return dataset.TilePath
 	}
 
 	// 4. Resolve session and dataset directories
 	datasetDir := s.storage.GetDatasetDir(dataset.SessionID, dataset.ID)
 	sessionDir := s.storage.GetSessionDir(dataset.SessionID)
+
+	for _, fallbackName := range []string{"display.png", "mbtiles_preview.png", "enhanced.png"} {
+		cand := filepath.Join(datasetDir, "processed", fallbackName)
+		if fileExists(cand) {
+			return cand
+		}
+	}
 
 	targetFilename := dataset.Filename
 	if targetFilename == "" && dataset.StoragePath != "" {

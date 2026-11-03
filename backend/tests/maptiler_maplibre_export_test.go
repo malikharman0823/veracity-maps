@@ -188,18 +188,16 @@ func TestMapLibreZipExport_FullContentVerification(t *testing.T) {
 	}
 
 	entries := make(map[string]*zip.File)
-	tileFiles := []string{}
 	for _, f := range zipReader.File {
 		entries[f.Name] = f
-		if strings.HasSuffix(f.Name, ".png") && !strings.Contains(f.Name, "assets/") {
-			tileFiles = append(tileFiles, f.Name)
-		}
 	}
 
-	// 7. Verify Root Package Contents
+	// 7. Verify Root Package Contents (MBTiles-backed MapLibre project ZIP)
 	expectedFiles := []string{
+		"project.mbtiles",
+		"project.json",
+		"manifest.json",
 		"metadata.json",
-		"mapstudio.json",
 		"style.json",
 		"viewer.html",
 		"index.html",
@@ -211,24 +209,24 @@ func TestMapLibreZipExport_FullContentVerification(t *testing.T) {
 		}
 	}
 
-	// 8. Verify ZERO Leaflet / OpenLayers / GoogleMaps references
-	forbiddenEntries := []string{"leaflet.html", "openlayers.html", "googlemaps.html"}
+	// 8. Verify ZERO Leaflet / OpenLayers / GoogleMaps / deprecated mapstudio.json references
+	forbiddenEntries := []string{"leaflet.html", "openlayers.html", "googlemaps.html", "mapstudio.json"}
 	for _, fb := range forbiddenEntries {
 		if _, ok := entries[fb]; ok {
 			t.Errorf("legacy/forbidden entry '%s' found in export package", fb)
 		}
 	}
 
-	// 9. Verify original source raster in assets/source/
+	// 9. Verify original source raster preserved under layers/{id}/source.png
 	foundSourceRaster := false
 	for name := range entries {
-		if strings.HasPrefix(name, "assets/source/") && strings.HasSuffix(name, ".png") {
+		if strings.HasPrefix(name, "layers/") && strings.HasSuffix(name, "/source.png") {
 			foundSourceRaster = true
 			break
 		}
 	}
 	if !foundSourceRaster {
-		t.Errorf("expected source raster preserved under assets/source/")
+		t.Errorf("expected source raster preserved under layers/{id}/source.png")
 	}
 
 	// 10. Verify style.json specification v8 conformance
@@ -295,38 +293,38 @@ func TestMapLibreZipExport_FullContentVerification(t *testing.T) {
 		}
 	}
 
-	// 12. Verify tiles follow {z}/{x}/{y}.png pattern
-	if len(tileFiles) == 0 {
-		t.Errorf("expected at least one raster tile in export package")
+	// 12. Verify project.mbtiles is a valid SQLite 3 MBTiles container and tiles/{id}.mbtiles exists
+	if mbEntry := entries["project.mbtiles"]; mbEntry != nil {
+		rc, _ := mbEntry.Open()
+		hdr := make([]byte, 16)
+		_, _ = io.ReadFull(rc, hdr)
+		_ = rc.Close()
+		if string(hdr) != "SQLite format 3\x00" {
+			t.Errorf("expected SQLite format 3 header in project.mbtiles, got %q", string(hdr))
+		}
 	}
-	for _, tf := range tileFiles {
-		parts := strings.Split(tf, "/")
-		if len(parts) != 3 {
-			t.Errorf("tile '%s' does not match {z}/{x}/{y}.png hierarchy", tf)
-		}
-		if !strings.HasSuffix(parts[2], ".png") {
-			t.Errorf("tile '%s' does not have .png extension", tf)
-		}
+	if entries["tiles/"+datasetID+".mbtiles"] == nil {
+		t.Errorf("expected per-layer tiles/%s.mbtiles in export package", datasetID)
 	}
 
-	// 13. Verify mapstudio.json portable project document
-	msEntry := entries["mapstudio.json"]
-	if msEntry != nil {
-		rc, _ := msEntry.Open()
-		var msDoc map[string]interface{}
-		if err := json.NewDecoder(rc).Decode(&msDoc); err != nil {
-			t.Errorf("mapstudio.json failed to parse: %v", err)
+	// 13. Verify project.json and metadata.json portable project documents
+	metaEntry := entries["metadata.json"]
+	if metaEntry != nil {
+		rc, _ := metaEntry.Open()
+		var metaDoc map[string]interface{}
+		if err := json.NewDecoder(rc).Decode(&metaDoc); err != nil {
+			t.Errorf("metadata.json failed to parse: %v", err)
 		} else {
-			if msDoc["format"] != "mapstudio-folder" {
-				t.Errorf("expected mapstudio.json format 'mapstudio-folder', got: %v", msDoc["format"])
+			if metaDoc["format"] != "mbtiles" {
+				t.Errorf("expected metadata.json format 'mbtiles', got: %v", metaDoc["format"])
 			}
-			cps, _ := msDoc["control_points"].([]interface{})
+			cps, _ := metaDoc["control_points"].([]interface{})
 			if len(cps) != 4 {
-				t.Errorf("expected 4 control points in mapstudio.json, got: %d", len(cps))
+				t.Errorf("expected 4 control points in metadata.json, got: %d", len(cps))
 			}
-			ips, _ := msDoc["icon_points"].([]interface{})
+			ips, _ := metaDoc["icon_points"].([]interface{})
 			if len(ips) != 1 {
-				t.Errorf("expected 1 icon point in mapstudio.json, got: %d", len(ips))
+				t.Errorf("expected 1 icon point in metadata.json, got: %d", len(ips))
 			}
 		}
 		_ = rc.Close()

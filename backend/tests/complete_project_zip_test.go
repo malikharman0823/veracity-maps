@@ -169,19 +169,21 @@ func TestCompleteProjectZipExport(t *testing.T) {
 		entries[f.Name] = f
 	}
 
-	// Verify required structure from specification
+	// Verify required MBTiles-backed project structure
 	requiredFiles := []string{
+		"project.mbtiles",
 		"project.json",
+		"manifest.json",
 		"style.json",
 		"viewer.html",
 		"index.html",
 		"README.txt",
 		"layers/landmarks.geojson",
 		"layers/control_points.geojson",
+		"layers/annotations.geojson",
 		"metadata/layer_config.json",
 		"metadata/georeferencing.json",
 		"metadata.json",
-		"mapstudio.json",
 	}
 
 	for _, reqName := range requiredFiles {
@@ -190,18 +192,30 @@ func TestCompleteProjectZipExport(t *testing.T) {
 		}
 	}
 
-	// 6. Verify project.json manifest schema
+	// Verify project.mbtiles has a genuine SQLite 3 database header
+	if mbEntry := entries["project.mbtiles"]; mbEntry != nil {
+		mbRc, _ := mbEntry.Open()
+		hdr := make([]byte, 16)
+		_, _ = io.ReadFull(mbRc, hdr)
+		_ = mbRc.Close()
+		if string(hdr) != "SQLite format 3\x00" {
+			t.Errorf("expected project.mbtiles to begin with SQLite format 3 header, got %q", string(hdr))
+		}
+	}
+
+	// 6. Verify project.json manifest schema (v2 MBTiles-backed project)
 	projEntry := entries["project.json"]
 	if projEntry == nil {
 		t.Fatalf("project.json missing")
 	}
 	rc, _ := projEntry.Open()
 	var projDoc struct {
-		Format        string                 `json:"format"`
-		SchemaVersion int                    `json:"schema_version"`
-		Name          string                 `json:"name"`
-		Project       map[string]interface{} `json:"project"`
-		Map           struct {
+		Format         string                 `json:"format"`
+		SchemaVersion  int                    `json:"schema_version"`
+		ProjectMBTiles string                 `json:"project_mbtiles"`
+		Name           string                 `json:"name"`
+		Project        map[string]interface{} `json:"project"`
+		Map            struct {
 			Center []float64 `json:"center"`
 			Zoom   int       `json:"zoom"`
 			MinZ   int       `json:"min_zoom"`
@@ -219,8 +233,14 @@ func TestCompleteProjectZipExport(t *testing.T) {
 	if projDoc.Format != "veracity-project" {
 		t.Errorf("expected format 'veracity-project', got '%s'", projDoc.Format)
 	}
-	if projDoc.SchemaVersion != 1 {
-		t.Errorf("expected schema_version 1, got %d", projDoc.SchemaVersion)
+	if projDoc.SchemaVersion != 2 {
+		t.Errorf("expected schema_version 2, got %d", projDoc.SchemaVersion)
+	}
+	if projDoc.ProjectMBTiles != "project.mbtiles" {
+		t.Errorf("expected project_mbtiles 'project.mbtiles', got '%s'", projDoc.ProjectMBTiles)
+	}
+	if projDoc.Resources["project_mbtiles"] != "project.mbtiles" {
+		t.Errorf("expected project.mbtiles in resources, got %s", projDoc.Resources["project_mbtiles"])
 	}
 	if projDoc.Resources["style"] != "style.json" {
 		t.Errorf("expected style.json in resources, got %s", projDoc.Resources["style"])
@@ -282,16 +302,22 @@ func TestCompleteProjectZipExport(t *testing.T) {
 		}
 	}
 
-	// 9. Verify rasters/ directory contains source rasters
-	hasRasterInRastersDir := false
+	// 9. Verify per-layer MBTiles and source rasters exist without duplicate rasters/ copies
+	hasLayerMBTiles := false
+	hasLayerSourceRaster := false
 	for name := range entries {
-		if len(name) > 8 && name[:8] == "rasters/" {
-			hasRasterInRastersDir = true
-			break
+		if len(name) > 6 && name[:6] == "tiles/" && len(name) > 8 && name[len(name)-8:] == ".mbtiles" {
+			hasLayerMBTiles = true
+		}
+		if len(name) > 7 && name[:7] == "layers/" && len(name) > 10 && name[len(name)-10:] == "source.png" {
+			hasLayerSourceRaster = true
 		}
 	}
-	if !hasRasterInRastersDir {
-		t.Errorf("expected source or processed rasters in rasters/ directory")
+	if !hasLayerMBTiles {
+		t.Errorf("expected per-layer .mbtiles in tiles/ directory")
+	}
+	if !hasLayerSourceRaster {
+		t.Errorf("expected preserved source raster under layers/{id}/source.png")
 	}
 
 	// 10. Roundtrip Reopen / Reconstruction Test
@@ -436,7 +462,7 @@ func TestMBTilesAndBaseLayerExport(t *testing.T) {
 		t.Errorf("base_layer export missing style.json")
 	}
 
-	// 2. Test MBTiles / Tile Package Export
+	// 2. Test Standalone SQLite .mbtiles Export (must return a genuine SQLite 3 database, NOT a .zip)
 	mbReqBody := map[string]interface{}{
 		"format": "mbtiles",
 		"options": map[string]interface{}{
@@ -446,26 +472,33 @@ func TestMBTilesAndBaseLayerExport(t *testing.T) {
 	mbBytes, _ := json.Marshal(mbReqBody)
 	mReq, _ := http.NewRequest("POST", server.URL+"/datasets/"+datasetID+"/export", bytes.NewReader(mbBytes))
 	mReq.Header.Set("Content-Type", "application/json")
-	mReq.Header.Set("Accept", "application/zip")
+	mReq.Header.Set("Accept", "application/octet-stream")
 	mReq.Header.Set("X-Session-ID", sessionID)
 	mResp, err := client.Do(mReq)
 	if err != nil || mResp.StatusCode != http.StatusOK {
 		t.Fatalf("mbtiles export failed: %v, status: %d", err, mResp.StatusCode)
 	}
-	mbZipBytes, _ := io.ReadAll(mResp.Body)
+	mbRawBytes, _ := io.ReadAll(mResp.Body)
 	_ = mResp.Body.Close()
 
-	mbZip, err := zip.NewReader(bytes.NewReader(mbZipBytes), int64(len(mbZipBytes)))
-	if err != nil {
-		t.Fatalf("invalid mbtiles zip: %v", err)
+	if len(mbRawBytes) < 16 || string(mbRawBytes[:16]) != "SQLite format 3\x00" {
+		t.Fatalf("expected standalone SQLite 3 .mbtiles binary, got header: %q (len=%d)", string(mbRawBytes[:min(16, len(mbRawBytes))]), len(mbRawBytes))
 	}
-	hasMbMeta := false
-	for _, f := range mbZip.File {
-		if f.Name == "metadata.json" {
-			hasMbMeta = true
-		}
+
+	// Verify standalone .mbtiles can be reopened directly via /map-projects/import
+	reopenSess := repo.CreateSession()
+	reopenBuf := new(bytes.Buffer)
+	rmw := multipart.NewWriter(reopenBuf)
+	rpart, _ := rmw.CreateFormFile("file", "standalone_export.mbtiles")
+	_, _ = rpart.Write(mbRawBytes)
+	_ = rmw.Close()
+
+	reopenReq, _ := http.NewRequest("POST", server.URL+"/map-projects/import", reopenBuf)
+	reopenReq.Header.Set("Content-Type", rmw.FormDataContentType())
+	reopenReq.Header.Set("X-Session-ID", reopenSess.ID)
+	reopenResp, err := client.Do(reopenReq)
+	if err != nil || reopenResp.StatusCode != http.StatusCreated {
+		t.Fatalf("reopening standalone .mbtiles failed: %v, status: %d", err, reopenResp.StatusCode)
 	}
-	if !hasMbMeta {
-		t.Errorf("mbtiles export missing metadata.json")
-	}
+	_ = reopenResp.Body.Close()
 }

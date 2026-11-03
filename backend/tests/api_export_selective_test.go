@@ -122,6 +122,9 @@ func TestSelectiveExport_HierarchyAndOptions(t *testing.T) {
 	}
 
 	// Verify required entries
+	if entries["project.mbtiles"] == nil {
+		t.Errorf("project.mbtiles missing from export zip")
+	}
 	if entries["manifest.json"] == nil {
 		t.Errorf("manifest.json missing from export zip")
 	}
@@ -147,8 +150,11 @@ func TestSelectiveExport_HierarchyAndOptions(t *testing.T) {
 	_ = json.NewDecoder(manifestFile).Decode(&manifest)
 	_ = manifestFile.Close()
 
-	if manifest.FormatVersion != "2.0.0" {
-		t.Errorf("expected format_version 2.0.0, got %s", manifest.FormatVersion)
+	if manifest.FormatVersion != "3.0.0" {
+		t.Errorf("expected format_version 3.0.0, got %s", manifest.FormatVersion)
+	}
+	if manifest.ProjectMBTiles != "project.mbtiles" {
+		t.Errorf("expected project_mbtiles 'project.mbtiles', got %s", manifest.ProjectMBTiles)
 	}
 	if len(manifest.SelectedLayers) != 1 || manifest.SelectedLayers[0] != ds1ID {
 		t.Errorf("expected SelectedLayers to be [%s], got %v", ds1ID, manifest.SelectedLayers)

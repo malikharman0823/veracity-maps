@@ -42,16 +42,28 @@ graph TD
 ```
 
 ### Technology Stack
-- **Backend**: Go (`go1.22+`), zero external dependencies, standard library (`net/http`, `image`, `archive/zip`, `crypto/rand`, `math`).
+- **Backend**: Go (`go1.22+`), standard library (`net/http`, `image`, `archive/zip`, `crypto/rand`, `math`), Python GIS bridge (`backend/.venv`) for GDAL, OpenCV image enhancement, Real-ESRGAN ONNX upscaling, PyMuPDF vector/raster extraction, ezdxf CAD parsing, and PaddleOCR label recognition.
 - **Frontend**: React 19, Vite 7, TailwindCSS 4, MapLibre GL JS 6, Lucide Icons.
-- **Persistence**: Zero external database. State is managed via an in-memory session repository (`SessionRepository`) with atomic read/write locks, combined with isolated temporary disk workspaces (`temp/sessions/<session_id>/`).
-- **GIS Engine**: Pure-Go implementation of 2-point similarity and 3-to-10-point affine least-squares regression, native TIFF header decoder, world file parsing/generation (`.pgw`, `.jgw`, `.wld`, `.tfw`), GDAL VRT XML generation, and optional CLI integration with `gdal_translate`/`gdalwarp` if present in PATH.
+- **Persistence**: Zero external database. State is managed via an in-memory session repository (`SessionRepository`) with atomic read/write locks, combined with isolated temporary disk workspaces (`temp/sessions/<session_id>/`). Portable datasets export to genuine SQLite 3 MBTiles 1.3 databases.
+- **GIS Engine**: Pure-Go implementation of 2-point similarity and 3-to-10-point affine least-squares regression, native TIFF header decoder, world file parsing/generation (`.pgw`, `.jgw`, `.wld`, `.tfw`), GDAL VRT XML generation, GDAL Lanczos/Cubic raster overviews and MBTiles 1.3 generation, and universal OpenCV/PaddleOCR image pipelines.
 
 ---
 
 ## 2. Core Features
 
-### Feature A — Custom Geographic Icon Points
+### Feature A — Universal Raster Enhancement, CAD/PDF & MBTiles System
+- **Universal Input Ingestion**: Supports PNG, JPG/JPEG, TIFF/GeoTIFF (`.tif`, `.tiff`), Vector and Scanned PDF, CAD drawings (`.dxf`, `.dwg`, `.svf`), standalone MBTiles databases (`.mbtiles`), and full project archives (`.zip`).
+- **OpenCV Image Processing**: Denoising, contrast adjustment, CLAHE adaptive histogram equalization, text edge sharpening, line preservation, blur detection, adaptive thresholding for scanned engineering drawings, and grayscale conversions.
+- **AI Upscaling**: Optional 2x / 4x super-resolution powered by Real-ESRGAN ONNX with source resolution auto-detection and an engineering-truthfulness guard that prevents hallucinated details.
+- **PDF & CAD Processing**:
+  - **Vector PDF (Path A)**: Extracts native vector paths, fonts, linework, and text annotations into GeoJSON layers.
+  - **Scanned PDF (Path B)**: High-resolution DPI rendering with OpenCV noise suppression and contrast enhancement.
+  - **CAD**: Multi-layer DXF entity extraction (lines, polylines, circles, arcs, text, blocks) preserving drawing units and scales.
+- **GDAL Optimization & MBTiles 1.3**: Automated power-of-two raster overviews, Lanczos/Cubic resampling, TMS/XYZ tile coordinate calculation, and genuine SQLite 3 MBTiles database packaging.
+- **PaddleOCR Text Overlay**: Automated character recognition and bounding-box vectorization for room numbers, dimensions, and labels, projected to geographic coordinates (EPSG:4326) with interactive verification, category tagging, and false-positive deletion.
+- **Reliable Project Reopening & Restoration**: Reopens standalone `.mbtiles` and `.zip` packages without duplicate layers, restores all multi-floor building relationships, control points, camera views, custom icon landmarks, vectors, and OCR text overlays. Rejects corrupt or deprecated loose-tile archives with clear explanations.
+
+### Feature B — Custom Geographic Icon Points
 - **Icon Asset Library**: Portable icon catalog located in `frontend/public/icons/` with a deterministic `manifest.json`.
 - **Supported Formats**: PNG, SVG, WebP, ICO, JPG with transparent backgrounds fully preserved.
 - **Interactive Icon Picker**: Search by name or category, category filtering chips, recent icons memory, and transparent background checkerboard preview.

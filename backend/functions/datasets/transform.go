@@ -9,6 +9,7 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
+	"github.com/malikharman0823/veracity-maps/services"
 )
 
 type RasterTransformRequest struct {
@@ -431,9 +432,20 @@ func (h *Handler) applyCornersToDataset(sessionID string, dataset *models.Datase
 		_ = h.repo.SetControlPoints(sessionID, dataset.ID, cps)
 	}
 
+	// Reproject any PDF/CAD vectors and OCR annotations to updated footprint
+	if h.datasetService != nil {
+		services.ProjectDatasetVectorsAndAnnotations(h.datasetService.StorageManager(), dataset)
+		_ = h.repo.UpdateDataset(sessionID, dataset)
+	}
+
 	// Propagate building footprint/georeferencing to sibling floors if dataset belongs to a building
 	if h.datasetService != nil {
 		_ = h.datasetService.PropagateBuildingGeoreference(sessionID, dataset)
+	}
+
+	// If dataset has pre-existing MBTiles tiles, refresh them with the new transformed raster bounds
+	if dataset.GeoreferenceStatus == "completed" && dataset.TilePath != "" && dataset.TilePath != dataset.StoragePath && h.datasetService != nil {
+		_, _, _ = h.datasetService.GenerateDatasetMBTiles(sessionID, dataset.ID, "")
 	}
 
 	return nil

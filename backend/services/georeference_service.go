@@ -153,18 +153,26 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 		return nil, err
 	}
 
-	file, err := os.Open(dataset.StoragePath)
-	if err != nil {
-		return nil, fmt.Errorf("INVALID_SOURCE_IMAGE: Source image could not be opened: %w", err)
-	}
-	defer file.Close()
+	imgW := int(getDim(dataset.ExtractedMetadata["width"]))
+	imgH := int(getDim(dataset.ExtractedMetadata["height"]))
 
-	cfg, _, err := image.DecodeConfig(file)
-	if err != nil {
-		return nil, fmt.Errorf("INVALID_SOURCE_IMAGE: Failed reading image dimensions: %w", err)
+	if file, openErr := os.Open(dataset.StoragePath); openErr == nil {
+		if cfg, _, decErr := image.DecodeConfig(file); decErr == nil && cfg.Width > 0 && cfg.Height > 0 {
+			imgW = cfg.Width
+			imgH = cfg.Height
+		}
+		_ = file.Close()
+	}
+	if imgW <= 0 || imgH <= 0 {
+		meta, metaErr := gis.InspectRasterFile(dataset.StoragePath)
+		if metaErr != nil || meta == nil || meta.Width <= 0 || meta.Height <= 0 {
+			return nil, fmt.Errorf("INVALID_SOURCE_IMAGE: Failed reading image dimensions for %s", dataset.Filename)
+		}
+		imgW = meta.Width
+		imgH = meta.Height
 	}
 
-	result, err := gis.CalculateGeoreference(points, cfg.Width, cfg.Height, transformation)
+	result, err := gis.CalculateGeoreference(points, imgW, imgH, transformation)
 	if err != nil {
 		return nil, err
 	}
@@ -198,12 +206,12 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 
 	// Generate VRT
 	vrtPath := filepath.Join(processedDir, "georeferenced.vrt")
-	_ = gis.WriteGDALVrt(vrtPath, dataset.StoragePath, cfg.Width, cfg.Height, result.Transform, "EPSG:4326")
+	_ = gis.WriteGDALVrt(vrtPath, dataset.StoragePath, imgW, imgH, result.Transform, "EPSG:4326")
 
 	// If GDAL is installed, run gdal_translate to produce GeoTIFF
 	tifPath := filepath.Join(processedDir, "georeferenced.tif")
 	gdal := gis.DetectGDAL()
-	if gdal.Available {
+	if gdal.Available && gdal.TranslatePath != "" {
 		cmd := exec.Command(gdal.TranslatePath, "-of", "GTiff", "-co", "COMPRESS=DEFLATE", vrtPath, tifPath)
 		if out, err := cmd.CombinedOutput(); err == nil && fileExists(tifPath) {
 			dataset.GeoreferencedPath = tifPath
@@ -227,8 +235,8 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 			d*ix + e*(-iy) + f,
 		}
 	}
-	wFloat := float64(cfg.Width)
-	hFloat := float64(cfg.Height)
+	wFloat := float64(imgW)
+	hFloat := float64(imgH)
 	coordinates := [][]float64{
 		project(0, 0),
 		project(wFloat, 0),
@@ -246,6 +254,7 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 	}
 
 	dataset.GeoreferenceStatus = "completed"
+	ProjectDatasetVectorsAndAnnotations(s.storage, dataset)
 	_ = s.repo.UpdateDataset(sessionID, dataset)
 
 	// Update or initialize layers
@@ -864,6 +873,7 @@ func propagateBuildingGeoreferenceInternal(repo *repository.SessionRepository, s
 			if sib.ProcessedPath == "" {
 				sib.ProcessedPath = sib.StoragePath
 			}
+			ProjectDatasetVectorsAndAnnotations(store, sib)
 			_ = repo.UpdateDataset(sessionID, sib)
 
 			// Update or add layer in repository

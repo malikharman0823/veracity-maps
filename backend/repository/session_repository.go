@@ -243,6 +243,12 @@ func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, stri
 			r.mu.RUnlock()
 			return ds, sessID, nil
 		}
+		if proj, pExists := sess.MapProjects[datasetID]; pExists && proj != nil {
+			if ds, dExists := sess.Datasets[proj.DatasetID]; dExists {
+				r.mu.RUnlock()
+				return ds, sessID, nil
+			}
+		}
 	}
 	r.mu.RUnlock()
 
@@ -253,6 +259,11 @@ func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, stri
 	for sessID, sess := range r.sessions {
 		if ds, exists := sess.Datasets[datasetID]; exists {
 			return ds, sessID, nil
+		}
+		if proj, pExists := sess.MapProjects[datasetID]; pExists && proj != nil {
+			if ds, dExists := sess.Datasets[proj.DatasetID]; dExists {
+				return ds, sessID, nil
+			}
 		}
 	}
 

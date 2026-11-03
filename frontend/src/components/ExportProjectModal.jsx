@@ -231,7 +231,10 @@ export default function ExportProjectModal({
   const totalSelectedCount = selectedLayerIds.size
   const totalLayersCount = allLayerIds.length
   const primaryDs = datasets.find((d) => d.id === primaryDatasetId)
-  const isGeoreferenced = primaryDs?.georeference_status === "georeferenced" || (primaryDs?.extracted_metadata?.bounds && Object.keys(primaryDs.extracted_metadata.bounds).length > 0)
+  const isGeoreferenced =
+    primaryDs?.georeference_status === "completed" ||
+    primaryDs?.georeference_status === "georeferenced" ||
+    Boolean(primaryDs?.extracted_metadata?.bounds && Object.keys(primaryDs.extracted_metadata.bounds).length > 0)
 
   // Estimated Size Calculation
   const estimatedSizeMb = (() => {
@@ -279,7 +282,7 @@ export default function ExportProjectModal({
         include_layer_styles: inclusion.include_layer_styles,
         include_original_rasters: inclusion.include_original_rasters,
         include_processed_rasters: inclusion.include_raster_imagery,
-        include_base_map_settings: exportType === "base_layer" ? true : inclusion.include_base_map,
+        include_base_map_settings: exportType === "base_layer" ? true : exportType === "mbtiles" ? mbtilesIncludeBasemap : inclusion.include_base_map,
         include_project_metadata: inclusion.include_metadata,
         zoom_config: {
           initial_zoom: Number(zoomConfig.initial_zoom),
@@ -1044,7 +1047,7 @@ export default function ExportProjectModal({
                       </p>
                     </div>
 
-                    <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-lg space-y-1.5">
+                    <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-lg space-y-2">
                       <div className="font-semibold text-indigo-950">Active Layer Coverage</div>
                       <div className="text-[11px] text-indigo-800">
                         Primary Dataset: <strong>{primaryDs?.filename || "Current Map"}</strong>
@@ -1056,20 +1059,26 @@ export default function ExportProjectModal({
                           <span className="text-amber-700 font-semibold">Coordinate bounds required</span>
                         )}
                       </div>
+                      <div className="pt-1.5 border-t border-indigo-100">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={mbtilesIncludeBasemap}
+                            onChange={(e) => setMbtilesIncludeBasemap(e.target.checked)}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-[11px] font-medium text-slate-800">
+                            Bundle offline base map into MBTiles (creates a standalone, self-contained map for Viewscape)
+                          </span>
+                        </label>
+                      </div>
                     </div>
 
-                    <label className="flex items-start gap-2.5 cursor-pointer pt-1">
-                      <input
-                        type="checkbox"
-                        checked={mbtilesIncludeBasemap}
-                        onChange={(e) => setMbtilesIncludeBasemap(e.target.checked)}
-                        className="mt-0.5 size-4 rounded text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="font-semibold text-slate-800">Include compatible base map in package</span>
-                        <p className="text-[11px] text-slate-500">Packages offline base world map tiles together with overlay tiles.</p>
-                      </div>
-                    </label>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
+                      <div className="font-semibold text-slate-700">Standalone MBTiles 1.3 Specifications:</div>
+                      <div>• Output File: <strong>.mbtiles</strong> (Genuine SQLite 3 database with <code>metadata</code> &amp; <code>tiles</code> tables)</div>
+                      <div>• Directly reopenable in Veracity Maps, MapLibre tile servers, and QGIS</div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1111,8 +1120,8 @@ export default function ExportProjectModal({
 
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
                       <div className="font-semibold text-slate-700">Output Specifications:</div>
-                      <div>• Output File: <strong>veracity-base-map.zip</strong> (containing tiles and style.json)</div>
-                      <div>• Compatible with: MapLibre GL, Leaflet, QGIS, and offline Viewscapes</div>
+                      <div>• Output File: <strong>veracity-base-map.zip</strong> (containing offline base map MBTiles &amp; style.json)</div>
+                      <div>• Compatible with: MapLibre GL JS, QGIS, and offline Viewscapes</div>
                       <div>• Overlay data (floor plans, icons, control points) is excluded from this export.</div>
                     </div>
                   </div>

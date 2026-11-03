@@ -27,8 +27,11 @@ import {
   MapPin,
   MoreHorizontal,
   Move,
+  ScanText,
+  Shapes,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react"
 
@@ -40,12 +43,16 @@ const SUBLAYER_ICONS = {
   raster: Image,
   control_point: MapPin,
   icon_point: Database,
+  vector: Shapes,
+  annotation: ScanText,
 }
 
 const VISIBILITY_FIELDS = {
   raster: "raster_visible",
   control_point: "control_points_visible",
   icon_point: "icon_points_visible",
+  vector: "vectors_visible",
+  annotation: "annotations_visible",
 }
 
 function LayerCheckbox({ checked, label, onChange }) {
@@ -137,6 +144,8 @@ function FloorLevelRow({
   onDetach,
   onOpenBgRemoval,
   onOpenTransform,
+  onOpenEnhancement,
+  onOpenAnnotations,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -280,6 +289,32 @@ function FloorLevelRow({
                     <span>Transform Raster</span>
                   </button>
                 )}
+                {primaryMember && onOpenEnhancement && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn"
+                    onClick={() => {
+                      onOpenEnhancement(primaryMember)
+                      setMenuOpen(false)
+                    }}
+                  >
+                    <Wand2 />
+                    <span>Enhance &amp; Upscale</span>
+                  </button>
+                )}
+                {primaryMember && onOpenAnnotations && (
+                  <button
+                    type="button"
+                    className="workspace-layer-feature-btn"
+                    onClick={() => {
+                      onOpenAnnotations(primaryMember)
+                      setMenuOpen(false)
+                    }}
+                  >
+                    <ScanText />
+                    <span>OCR &amp; Vector Labels</span>
+                  </button>
+                )}
                 {primaryMember && (
                   <button
                     type="button"
@@ -345,6 +380,16 @@ function FloorLevelRow({
                   <span title={rawFilename}>{displayName}</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {onOpenEnhancement && (
+                    <button
+                      type="button"
+                      className="workspace-floor-tool-btn"
+                      title="Inspection, OpenCV enhancement & AI upscaling"
+                      onClick={() => onOpenEnhancement(member)}
+                    >
+                      <Wand2 />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="workspace-floor-tool-btn"
@@ -396,6 +441,8 @@ function BuildingGroup({
   onDetach,
   onOpenBgRemoval,
   onOpenTransform,
+  onOpenEnhancement,
+  onOpenAnnotations,
   buildings = [],
   onLayerChanged,
   hasAnyGeorefInWorkspace = false,
@@ -549,6 +596,8 @@ function BuildingGroup({
               onDetach={onDetach}
               onOpenBgRemoval={onOpenBgRemoval}
               onOpenTransform={onOpenTransform}
+              onOpenEnhancement={onOpenEnhancement}
+              onOpenAnnotations={onOpenAnnotations}
             />
           ))}
         </div>
@@ -565,6 +614,8 @@ function FileDocumentGroup({
   onDetach,
   onOpenBgRemoval,
   onOpenTransform,
+  onOpenEnhancement,
+  onOpenAnnotations,
 }) {
   const [expanded, setExpanded] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -748,6 +799,16 @@ function FileDocumentGroup({
                 </div>
 
                 <div className="workspace-doc-sublayer-actions" onClick={(e) => e.stopPropagation()}>
+                  {onOpenEnhancement && (
+                    <button
+                      type="button"
+                      className="workspace-floor-tool-btn"
+                      title="Inspection, OpenCV enhancement & AI upscaling"
+                      onClick={() => onOpenEnhancement(member)}
+                    >
+                      <Wand2 />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="workspace-floor-tool-btn"
@@ -798,6 +859,8 @@ function SortableMember({
   onDetach,
   onOpenBgRemoval,
   onOpenTransform,
+  onOpenEnhancement,
+  onOpenAnnotations,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -891,6 +954,32 @@ function SortableMember({
                 >
                   <MapPin />
                   <span>Georeference Layer</span>
+                </button>
+              )}
+              {onOpenEnhancement && (
+                <button
+                  type="button"
+                  className="workspace-layer-feature-btn"
+                  onClick={() => {
+                    onOpenEnhancement(member)
+                    setMenuOpen(false)
+                  }}
+                >
+                  <Wand2 />
+                  <span>Enhance &amp; Upscale</span>
+                </button>
+              )}
+              {onOpenAnnotations && (
+                <button
+                  type="button"
+                  className="workspace-layer-feature-btn"
+                  onClick={() => {
+                    onOpenAnnotations(member)
+                    setMenuOpen(false)
+                  }}
+                >
+                  <ScanText />
+                  <span>OCR &amp; Vector Labels</span>
                 </button>
               )}
               <button
@@ -1001,6 +1090,8 @@ export default function WorkspaceLayerPanel({
   onClose,
   onLayerChanged,
   onOpenTransform,
+  onOpenEnhancement,
+  onOpenAnnotations,
   activeFloorLevel = 0,
   activeBuildingName = "",
   onSelectFloor,
@@ -1205,6 +1296,8 @@ export default function WorkspaceLayerPanel({
             onDetach={onDetach}
             onOpenBgRemoval={setBgRemovalMember}
             onOpenTransform={onOpenTransform}
+            onOpenEnhancement={onOpenEnhancement}
+            onOpenAnnotations={onOpenAnnotations}
           />
         ))}
 
@@ -1222,6 +1315,8 @@ export default function WorkspaceLayerPanel({
             onDetach={onDetach}
             onOpenBgRemoval={setBgRemovalMember}
             onOpenTransform={onOpenTransform}
+            onOpenEnhancement={onOpenEnhancement}
+            onOpenAnnotations={onOpenAnnotations}
             buildings={buildings}
             onLayerChanged={onLayerChanged}
             hasAnyGeorefInWorkspace={hasAnyGeorefInWorkspace}
@@ -1247,6 +1342,8 @@ export default function WorkspaceLayerPanel({
                     onDetach={onDetach}
                     onOpenBgRemoval={setBgRemovalMember}
                     onOpenTransform={onOpenTransform}
+                    onOpenEnhancement={onOpenEnhancement}
+                    onOpenAnnotations={onOpenAnnotations}
                   />
                 ) : null
               })}

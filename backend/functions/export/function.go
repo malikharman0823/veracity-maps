@@ -25,6 +25,18 @@ func NewHandler(es *services.ExportService, repo *repository.SessionRepository) 
 	}
 }
 
+func exportContentType(filename string) string {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".mbtiles"):
+		return "application/octet-stream"
+	case strings.HasSuffix(lower, ".tif"), strings.HasSuffix(lower, ".tiff"):
+		return "image/tiff"
+	default:
+		return "application/zip"
+	}
+}
+
 func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID string) {
 	sessionID := models.GetSessionID(r)
 	if sessionID == "" {
@@ -32,7 +44,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		return
 	}
 
-	format := "mtmap"
+	format := "project_zip"
 	var req ExportRequest
 	isSelective := false
 
@@ -42,7 +54,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		if req.Format != "" {
 			format = req.Format
 		}
-		if len(req.BuildingIDs) > 0 || len(req.FloorIDs) > 0 || len(req.LayerIDs) > 0 || req.Options != nil {
+		if len(req.BuildingIDs) > 0 || len(req.FloorIDs) > 0 || len(req.LayerIDs) > 0 || req.Options != nil || req.ProjectName != "" || req.ZoomConfig != nil {
 			isSelective = true
 		}
 	case http.MethodGet:
@@ -102,15 +114,19 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		return
 	}
 
-	// If client requested via GET (frontend browser download), stream file directly
-	if r.Method == http.MethodGet || r.Header.Get("Accept") == "application/zip" || strings.Contains(r.Header.Get("Accept"), "octet-stream") {
+	accept := r.Header.Get("Accept")
+	wantsBinaryStream := r.Method == http.MethodGet ||
+		accept == "application/zip" ||
+		strings.Contains(accept, "octet-stream") ||
+		strings.Contains(accept, "application/x-sqlite3")
+
+	if wantsBinaryStream {
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Type", exportContentType(filename))
 		http.ServeFile(w, r, filePath)
 		return
 	}
 
-	// Otherwise, return JSON response with download url
 	downloadURL := fmt.Sprintf("/api/exports/%s/download?session_id=%s&file=%s", datasetID, sessionID, filename)
 	models.WriteJSON(w, http.StatusOK, ExportResponse{
 		ExportID:    datasetID,
@@ -132,15 +148,32 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request, exportID stri
 		return
 	}
 
-	filename := r.URL.Query().Get("file")
-	if filename == "" {
-		filename = "export.zip"
+	requestedFile := filepath.Base(strings.TrimSpace(r.URL.Query().Get("file")))
+	if requestedFile == "" || requestedFile == "." || requestedFile == "/" {
+		requestedFile = "export.zip"
 	}
 
-	filePath, _, err := h.exportService.GenerateExport(sessionID, exportID, "mtmap")
-	if err != nil {
-		models.WriteError(w, http.StatusNotFound, "EXPORT_NOT_FOUND", "Export could not be generated", nil, nil)
-		return
+	// 1. Serve the already-generated export artifact directly from <datasetDir>/exports/<requestedFile>
+	var filePath string
+	if sm := h.exportService.StorageManager(); sm != nil {
+		candidate := filepath.Join(sm.GetDatasetDir(sessionID, exportID), "exports", requestedFile)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			filePath = candidate
+		}
+	}
+
+	// 2. Fallback: generate matching format on demand (.mbtiles vs project_zip)
+	if filePath == "" {
+		fallbackFormat := "project_zip"
+		if strings.HasSuffix(strings.ToLower(requestedFile), ".mbtiles") {
+			fallbackFormat = "mbtiles"
+		}
+		var err error
+		filePath, _, err = h.exportService.GenerateExport(sessionID, exportID, fallbackFormat)
+		if err != nil {
+			models.WriteError(w, http.StatusNotFound, "EXPORT_NOT_FOUND", "Export could not be generated: "+err.Error(), nil, nil)
+			return
+		}
 	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -148,7 +181,8 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request, exportID stri
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(filePath)))
-	w.Header().Set("Content-Type", "application/zip")
+	serveName := filepath.Base(filePath)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, serveName))
+	w.Header().Set("Content-Type", exportContentType(serveName))
 	http.ServeFile(w, r, filePath)
 }

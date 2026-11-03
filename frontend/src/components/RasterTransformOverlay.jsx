@@ -536,9 +536,8 @@ export default function RasterTransformOverlay({
           const opp = startCorners[oppKey]
           const curStart = startCorners[curKey]
 
-          const initW = Math.abs(curStart.longitude - opp.longitude) || 1e-6
-          const initH = Math.abs(curStart.latitude - opp.latitude) || 1e-6
-          const newW = Math.abs(curStart.longitude + deltaLng - opp.longitude)
+          const initW = Math.hypot(curStart.longitude - opp.longitude, curStart.latitude - opp.latitude) || 1e-6
+          const newW = Math.hypot(curStart.longitude + deltaLng - opp.longitude, curStart.latitude + deltaLat - opp.latitude)
           const scale = newW / initW
 
           // Apply scale from opposite corner
@@ -546,40 +545,73 @@ export default function RasterTransformOverlay({
             next[k].longitude = opp.longitude + (startCorners[k].longitude - opp.longitude) * scale
             next[k].latitude = opp.latitude + (startCorners[k].latitude - opp.latitude) * scale
           }
+        } else if (["tl", "tr", "br", "bl"].includes(handleType)) {
+          // Rotated-aware corner drag: project cursor movement along box axes
+          const curKey = { tl: "top_left", tr: "top_right", br: "bottom_right", bl: "bottom_left" }[handleType]
+          const adjHMap = { tl: "tr", tr: "tl", br: "bl", bl: "br" }
+          const adjVMap = { tl: "bl", tr: "br", br: "tr", bl: "tl" }
+          const adjHKey = { tl: "top_right", tr: "top_left", br: "bottom_left", bl: "bottom_right" }[handleType]
+          const adjVKey = { tl: "bottom_left", tr: "bottom_right", br: "top_right", bl: "top_left" }[handleType]
+
+          // Horizontal edge vector (unit)
+          const hUx = startCorners.top_right.longitude - startCorners.top_left.longitude
+          const hUy = startCorners.top_right.latitude - startCorners.top_left.latitude
+          const hLen = Math.hypot(hUx, hUy) || 1
+          const hNx = hUx / hLen
+          const hNy = hUy / hLen
+
+          // Vertical edge vector (unit)
+          const vUx = startCorners.bottom_left.longitude - startCorners.top_left.longitude
+          const vUy = startCorners.bottom_left.latitude - startCorners.top_left.latitude
+          const vLen = Math.hypot(vUx, vUy) || 1
+          const vNx = vUx / vLen
+          const vNy = vUy / vLen
+
+          // Project delta onto horizontal and vertical axes
+          const dotH = deltaLng * hNx + deltaLat * hNy
+          const dotV = deltaLng * vNx + deltaLat * vNy
+
+          const deltaH_lng = dotH * hNx
+          const deltaH_lat = dotH * hNy
+          const deltaV_lng = dotV * vNx
+          const deltaV_lat = dotV * vNy
+
+          next[curKey].longitude = startCorners[curKey].longitude + deltaH_lng + deltaV_lng
+          next[curKey].latitude = startCorners[curKey].latitude + deltaH_lat + deltaV_lat
+
+          // Move adjacent corners along their respective constraint axes so rectangle remains a rectangle
+          next[adjHKey].longitude = startCorners[adjHKey].longitude + deltaV_lng
+          next[adjHKey].latitude = startCorners[adjHKey].latitude + deltaV_lat
+
+          next[adjVKey].longitude = startCorners[adjVKey].longitude + deltaH_lng
+          next[adjVKey].latitude = startCorners[adjVKey].latitude + deltaH_lat
         } else {
-          // Non-uniform resize
-          if (handleType === "tl") {
-            next.top_left.longitude += deltaLng
-            next.top_left.latitude += deltaLat
-            next.top_right.latitude += deltaLat
-            next.bottom_left.longitude += deltaLng
-          } else if (handleType === "tr") {
-            next.top_right.longitude += deltaLng
-            next.top_right.latitude += deltaLat
-            next.top_left.latitude += deltaLat
-            next.bottom_right.longitude += deltaLng
-          } else if (handleType === "br") {
-            next.bottom_right.longitude += deltaLng
-            next.bottom_right.latitude += deltaLat
-            next.bottom_left.latitude += deltaLat
-            next.top_right.longitude += deltaLng
-          } else if (handleType === "bl") {
-            next.bottom_left.longitude += deltaLng
-            next.bottom_left.latitude += deltaLat
-            next.bottom_right.latitude += deltaLat
-            next.top_left.longitude += deltaLng
-          } else if (handleType === "edge-top") {
-            next.top_left.latitude += deltaLat
-            next.top_right.latitude += deltaLat
-          } else if (handleType === "edge-bottom") {
-            next.bottom_left.latitude += deltaLat
-            next.bottom_right.latitude += deltaLat
-          } else if (handleType === "edge-left") {
-            next.top_left.longitude += deltaLng
-            next.bottom_left.longitude += deltaLng
-          } else if (handleType === "edge-right") {
-            next.top_right.longitude += deltaLng
-            next.bottom_right.longitude += deltaLng
+          // Edge handle dragging
+          if (handleType === "edge-top" || handleType === "edge-bottom") {
+            const keys = handleType === "edge-top" ? ["top_left", "top_right"] : ["bottom_left", "bottom_right"]
+            // Project delta perpendicular to top edge
+            const eUx = startCorners.top_right.longitude - startCorners.top_left.longitude
+            const eUy = startCorners.top_right.latitude - startCorners.top_left.latitude
+            const eLen = Math.hypot(eUx, eUy) || 1
+            const perpX = -eUy / eLen
+            const perpY = eUx / eLen
+            const dotPerp = deltaLng * perpX + deltaLat * perpY
+            for (const k of keys) {
+              next[k].longitude = startCorners[k].longitude + dotPerp * perpX
+              next[k].latitude = startCorners[k].latitude + dotPerp * perpY
+            }
+          } else if (handleType === "edge-left" || handleType === "edge-right") {
+            const keys = handleType === "edge-left" ? ["top_left", "bottom_left"] : ["top_right", "bottom_right"]
+            const eUx = startCorners.bottom_left.longitude - startCorners.top_left.longitude
+            const eUy = startCorners.bottom_left.latitude - startCorners.top_left.latitude
+            const eLen = Math.hypot(eUx, eUy) || 1
+            const perpX = -eUy / eLen
+            const perpY = eUx / eLen
+            const dotPerp = deltaLng * perpX + deltaLat * perpY
+            for (const k of keys) {
+              next[k].longitude = startCorners[k].longitude + dotPerp * perpX
+              next[k].latitude = startCorners[k].latitude + dotPerp * perpY
+            }
           }
         }
         setCorners(next)

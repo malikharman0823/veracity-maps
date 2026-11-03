@@ -21,7 +21,6 @@ import {
 
 import {
   importDatasetZip,
-  importMapProject,
   downloadProjectExport,
   uploadDataset,
   listIcons,
@@ -40,6 +39,9 @@ import EndSessionDialog from "../components/EndSessionDialog"
 import ZipImportReview from "../components/ZipImportReview"
 import ExportProjectModal from "../components/ExportProjectModal"
 import ImportPdfModal from "../components/ImportPdfModal"
+import EnhancementModal from "../components/EnhancementModal"
+import AnnotationReviewPanel from "../components/AnnotationReviewPanel"
+import ReopenProjectModal from "../components/ReopenProjectModal"
 import { applyFloorSelection } from "../lib/floorSelection"
 import { savedConfigMemberIds } from "../lib/sessionLoading"
 
@@ -67,12 +69,12 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
     const files = Array.from(event.target.files || [])
     event.target.value = ""
     if (!files.length) return
-    const isSupported = (name) => /\.(png|jpe?g|tif|tiff|webp|bmp|pdf|dxf|dwg|svf|zip)$/i.test(name || "")
+    const isSupported = (name) => /\.(png|jpe?g|tif|tiff|webp|bmp|pdf|dxf|dwg|svf|mbtiles|zip)$/i.test(name || "")
     const invalid = files.find((f) => !isSupported(f.name))
     if (invalid) {
       setError({
         message: "Unsupported file format.",
-        details: `File "${invalid.name}" is not supported. Supported formats are PNG, JPG, TIFF, WebP, PDF, CAD, SVF, and ZIP.`,
+        details: `File "${invalid.name}" is not supported. Supported formats are PNG, JPG, TIFF, WebP, PDF, CAD, SVF, MBTiles, and ZIP.`,
       })
       return
     }
@@ -167,7 +169,7 @@ function AddDatasetDialog({ open, onClose, onUploaded, existingMembers = [] }) {
           ref={inputRef}
           type="file"
           multiple
-          accept=".png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.pdf,.dxf,.dwg,.svf,.zip,image/png,image/jpeg,image/tiff,application/pdf,application/zip"
+          accept=".png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.pdf,.dxf,.dwg,.svf,.mbtiles,.zip,image/png,image/jpeg,image/tiff,application/pdf,application/zip"
           className="sr-only"
           onChange={selectFile}
         />
@@ -216,8 +218,10 @@ export default function WorkspacePage() {
   const [icons, setIcons] = useState([])
   const [dirty, setDirty] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [reopening, setReopening] = useState(false)
-  const reopenInputRef = useRef(null)
+  const [reopenModalOpen, setReopenModalOpen] = useState(false)
+  const [enhancementTarget, setEnhancementTarget] = useState(null)
+  const [annotationTarget, setAnnotationTarget] = useState(null)
+  const [overlayRefreshKey, setOverlayRefreshKey] = useState(0)
   const [transformingMember, setTransformingMember] = useState(null)
   const [activeFloorLevel, setActiveFloorLevel] = useState(0)
   const [activeBuildingName, setActiveBuildingName] = useState("")
@@ -225,6 +229,10 @@ export default function WorkspacePage() {
   const initializedFloorRef = useRef(false)
   const workspace = useWorkspace(id)
   const view = requestedView === "database" ? "database" : "map"
+
+  useEffect(() => {
+    initializedFloorRef.current = false
+  }, [id])
 
   useEffect(() => {
     if (!initializedFloorRef.current && workspace.manifest?.members?.length > 0) {
@@ -247,34 +255,6 @@ export default function WorkspacePage() {
       setBuildingName: setActiveBuildingName,
       updateMember: (datasetId, patch) => workspace.updateMember(datasetId, patch).catch(() => undefined),
     })
-  }
-
-  async function handleReopenExportedZip(event) {
-    const file = event.target.files?.[0]
-    event.target.value = ""
-    if (!file) return
-    if (!confirmDiscard()) return
-    setReopening(true)
-    try {
-      let targetId = null
-      try {
-        const res = await importMapProject(file)
-        targetId = res.data?.id || res.data?.dataset_id || res.dataset_id
-      } catch (projErr) {
-        const res = await importDatasetZip(file)
-        targetId = res.id || res.data?.id
-      }
-      if (targetId) {
-        navigate(`/datasets/${targetId}/workspace?view=map`)
-      }
-    } catch (err) {
-      workspace.setError({
-        message: "Failed to reopen exported project package.",
-        details: err?.response?.data?.detail || err?.message || "Invalid package.",
-      })
-    } finally {
-      setReopening(false)
-    }
   }
 
   const [exportModalOpen, setExportModalOpen] = useState(false)
@@ -520,23 +500,17 @@ export default function WorkspacePage() {
             {exporting ? <Loader2 className="animate-spin" /> : <Download />}
             <span>{exporting ? "Exporting…" : "Export"}</span>
           </button>
-          <input
-            ref={reopenInputRef}
-            type="file"
-            accept=".zip,application/zip"
-            className="sr-only"
-            onChange={handleReopenExportedZip}
-            disabled={reopening}
-          />
           <button
             type="button"
             className="workspace-secondary-button"
-            onClick={() => reopenInputRef.current?.click()}
-            disabled={reopening}
-            title="Reopen an exported Map Studio project package"
+            onClick={() => {
+              if (!confirmDiscard()) return
+              setReopenModalOpen(true)
+            }}
+            title="Reopen a standalone .mbtiles database or Veracity Maps .zip project package"
           >
-            {reopening ? <Loader2 className="animate-spin" /> : <FolderOpen />}
-            <span>{reopening ? "Opening…" : "Reopen Map (.zip)"}</span>
+            <FolderOpen />
+            <span>Reopen (.mbtiles / .zip)</span>
           </button>
           <EndSessionDialog />
         </div>
@@ -566,6 +540,18 @@ export default function WorkspacePage() {
               setTransformingMember(member)
               if (view !== "map") setView("map")
             }}
+            onOpenEnhancement={(member) =>
+              setEnhancementTarget({
+                datasetId: member.dataset_id,
+                name: member.name || member.dataset?.filename,
+              })
+            }
+            onOpenAnnotations={(member) =>
+              setAnnotationTarget({
+                datasetId: member.dataset_id,
+                name: member.name || member.dataset?.filename,
+              })
+            }
             activeFloorLevel={activeFloorLevel}
             activeBuildingName={activeBuildingName}
             onSelectFloor={handleSelectFloor}
@@ -593,6 +579,20 @@ export default function WorkspacePage() {
                 setLayersOpen(false)
                 if (view !== "map") setView("map")
               }}
+              onOpenEnhancement={(member) => {
+                setLayersOpen(false)
+                setEnhancementTarget({
+                  datasetId: member.dataset_id,
+                  name: member.name || member.dataset?.filename,
+                })
+              }}
+              onOpenAnnotations={(member) => {
+                setLayersOpen(false)
+                setAnnotationTarget({
+                  datasetId: member.dataset_id,
+                  name: member.name || member.dataset?.filename,
+                })
+              }}
               activeFloorLevel={activeFloorLevel}
               activeBuildingName={activeBuildingName}
               onSelectFloor={handleSelectFloor}
@@ -607,6 +607,9 @@ export default function WorkspacePage() {
           {view === "map" ? (
             <ErrorBoundary title="Map Canvas Error">
               <WorkspaceMap
+                key={id}
+                manifest={workspace.manifest}
+                overlayRefreshKey={overlayRefreshKey}
                 members={workspace.manifest.members}
                 records={workspace.mapRecords}
                 selectedRecordId={workspace.selectedRecordId}
@@ -763,6 +766,42 @@ export default function WorkspacePage() {
         onExport={handlePerformExport}
         exporting={exporting}
         error={exportError}
+      />
+
+      <EnhancementModal
+        open={Boolean(enhancementTarget)}
+        datasetId={enhancementTarget?.datasetId}
+        datasetName={enhancementTarget?.name}
+        onClose={() => setEnhancementTarget(null)}
+        onUpdated={() => {
+          workspace.refreshManifest().catch(() => undefined)
+          setOverlayRefreshKey((k) => k + 1)
+        }}
+        onOpenAnnotations={(dsId, dsName) => {
+          setAnnotationTarget({ datasetId: dsId, name: dsName })
+        }}
+      />
+
+      <AnnotationReviewPanel
+        open={Boolean(annotationTarget)}
+        datasetId={annotationTarget?.datasetId}
+        datasetName={annotationTarget?.name}
+        onClose={() => setAnnotationTarget(null)}
+        onUpdated={() => {
+          workspace.refreshManifest().catch(() => undefined)
+          setOverlayRefreshKey((k) => k + 1)
+        }}
+      />
+
+      <ReopenProjectModal
+        open={reopenModalOpen}
+        onClose={() => setReopenModalOpen(false)}
+        onReopened={(restored) => {
+          setReopenModalOpen(false)
+          if (restored?.id) {
+            navigate(`/datasets/${restored.id}/workspace?view=map`)
+          }
+        }}
       />
     </div>
   )

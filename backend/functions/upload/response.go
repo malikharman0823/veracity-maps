@@ -11,4 +11,5 @@ type UploadData struct {
 	Existing           bool                   `json:"existing"`
 	IsGeoreferenced    bool                   `json:"is_georeferenced"`
 	GeoreferenceStatus string                 `json:"georeference_status"`
+	ProjectReopened    bool                   `json:"project_reopened,omitempty"`
 }

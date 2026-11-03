@@ -1,0 +1,678 @@
+import React, { useCallback, useEffect, useState } from "react"
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Eye,
+  FileSearch,
+  Layers,
+  Loader2,
+  RotateCcw,
+  ScanText,
+  Sparkles,
+  Wand2,
+  X,
+} from "lucide-react"
+import {
+  datasetSourceImageUrl,
+  enhanceDataset,
+  generateDatasetMbtiles,
+  getDatasetInspection,
+  readableApiError,
+} from "../api"
+
+const PRESET_OPTIONS = [
+  {
+    value: "text_clarity",
+    label: "Text & Label Clarity",
+    description: "Edge-gated sharpening + CLAHE contrast for small dimensions, room names, and road labels.",
+  },
+  {
+    value: "line_preservation",
+    label: "Engineering Line Preservation",
+    description: "Gentle bilateral denoising that protects 1px CAD strokes, elevation ticks, and control points.",
+  },
+  {
+    value: "scanned_drawing",
+    label: "Scanned Drawing Cleanup",
+    description: "Paper illumination normalization + soft-blended adaptive thresholding for blueprint/paper scans.",
+  },
+  {
+    value: "noise_reduction",
+    label: "Sensor & Compression Denoise",
+    description: "Non-local means color denoising to suppress JPEG artifacts and scanner grain.",
+  },
+  {
+    value: "balanced",
+    label: "Balanced Raster Enhancement",
+    description: "General-purpose luminance stretch, subtle CLAHE, and detail preservation.",
+  },
+]
+
+const RESAMPLING_OPTIONS = [
+  { value: "lanczos", label: "Lanczos (Sharpest lines & text)" },
+  { value: "cubic", label: "Cubic (Smooth photographic & general)" },
+  { value: "bilinear", label: "Bilinear (Continuous gradients)" },
+  { value: "nearest", label: "Nearest Neighbour (Categorical / discrete classes)" },
+]
+
+export default function EnhancementModal({
+  open,
+  datasetId,
+  datasetName,
+  onClose,
+  onUpdated,
+  onOpenAnnotations,
+}) {
+  const [inspection, setInspection] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [tiling, setTiling] = useState(false)
+  const [error, setError] = useState(null)
+  const [statusMessage, setStatusMessage] = useState("")
+  const [imageBust, setImageBust] = useState(() => Date.now())
+
+  const [preset, setPreset] = useState("text_clarity")
+  const [upscaleFactor, setUpscaleFactor] = useState(1)
+  const [forceUpscale, setForceUpscale] = useState(false)
+  const [grayscale, setGrayscale] = useState(false)
+  const [adaptiveThreshold, setAdaptiveThreshold] = useState(false)
+  const [runOcr, setRunOcr] = useState(false)
+  const [resampling, setResampling] = useState("lanczos")
+
+  const loadInspection = useCallback(async () => {
+    if (!datasetId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getDatasetInspection(datasetId)
+      setInspection(data)
+
+      const recPreset = data?.enhancement?.preset || data?.recommendation?.recommended_preset
+      if (recPreset && recPreset !== "none") {
+        setPreset(recPreset)
+      }
+      if (data?.recommended_resample) {
+        setResampling(data.recommended_resample)
+      }
+      if (data?.recommendation?.ocr_recommended && !data?.has_annotations) {
+        setRunOcr(true)
+      }
+      setImageBust(Date.now())
+    } catch (err) {
+      setError(readableApiError(err, "Unable to inspect dataset."))
+    } finally {
+      setLoading(false)
+    }
+  }, [datasetId])
+
+  useEffect(() => {
+    if (open && datasetId) {
+      setStatusMessage("")
+      loadInspection()
+    }
+  }, [open, datasetId, loadInspection])
+
+  if (!open || !datasetId) return null
+
+  const enhancement = inspection?.enhancement || null
+  const quality = inspection?.quality || null
+  const content = inspection?.content || null
+  const recommendation = inspection?.recommendation || null
+  const hasEnhancedImage = Boolean(inspection?.has_enhanced_image || enhancement?.enabled)
+  const activeVariant = enhancement?.enabled && enhancement?.active_variant !== "original" ? "enhanced" : "original"
+  const isStandaloneMbtiles = content?.classification === "mbtiles"
+
+  async function handleApplyEnhancement() {
+    setProcessing(true)
+    setError(null)
+    setStatusMessage("")
+    try {
+      const result = await enhanceDataset(datasetId, {
+        action: "apply",
+        preset,
+        upscale_factor: Number(upscaleFactor) || 1,
+        force_upscale: Boolean(forceUpscale),
+        grayscale: Boolean(grayscale),
+        adaptive_threshold: Boolean(adaptiveThreshold),
+        run_ocr: Boolean(runOcr),
+        resampling,
+      })
+      const skippedMsg = result?.skipped_high_res_upscale
+        ? " (AI upscaling skipped automatically because source resolution is already high.)"
+        : ""
+      setStatusMessage(
+        `Applied ${result?.preset || preset} enhancement (${result?.enhanced_width || inspection?.width}×${result?.enhanced_height || inspection?.height} px)${skippedMsg}`
+      )
+      await loadInspection()
+      onUpdated?.()
+    } catch (err) {
+      setError(readableApiError(err, "Image enhancement failed."))
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  async function handleSwitchVariant(targetVariant) {
+    setProcessing(true)
+    setError(null)
+    setStatusMessage("")
+    try {
+      await enhanceDataset(datasetId, {
+        action: "set_variant",
+        active_variant: targetVariant,
+      })
+      setStatusMessage(
+        targetVariant === "enhanced"
+          ? "Switched active map layer to enhanced output."
+          : "Switched active map layer back to untouched original source."
+      )
+      await loadInspection()
+      onUpdated?.()
+    } catch (err) {
+      setError(readableApiError(err, "Failed to switch active variant."))
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  async function handleResetOriginal() {
+    setProcessing(true)
+    setError(null)
+    setStatusMessage("")
+    try {
+      await enhanceDataset(datasetId, { action: "reset" })
+      setStatusMessage("Reset active display to original upload. Original file remains unmodified.")
+      await loadInspection()
+      onUpdated?.()
+    } catch (err) {
+      setError(readableApiError(err, "Failed to reset enhancement state."))
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  async function handleGenerateMbtiles() {
+    setTiling(true)
+    setError(null)
+    setStatusMessage("")
+    try {
+      const res = await generateDatasetMbtiles(datasetId, resampling)
+      const count = res?.inspection?.tile_count || 0
+      const minZ = res?.inspection?.min_zoom ?? "–"
+      const maxZ = res?.inspection?.max_zoom ?? "–"
+      setStatusMessage(`Generated optimized GDAL MBTiles pyramid (${count} tiles, zoom ${minZ}–${maxZ}, ${resampling} resampling).`)
+      await loadInspection()
+      onUpdated?.()
+    } catch (err) {
+      setError(readableApiError(err, "Failed to generate GDAL MBTiles pyramid."))
+    } finally {
+      setTiling(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="enhancement-modal-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !processing && !tiling) onClose()
+      }}
+    >
+      <div className="bg-white text-[#1d1d1f] w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl border border-[#e0e0e0] flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="px-6 py-4 border-b border-[#e0e0e0] bg-[#fafafc] flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="size-10 rounded-xl bg-[#0066cc]/10 border border-[#0066cc]/20 flex items-center justify-center text-[#0066cc] shrink-0">
+              <Sparkles className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 id="enhancement-modal-title" className="text-base font-semibold text-[#1d1d1f] truncate">
+                Inspection, OpenCV Enhancement & AI Upscaling
+              </h2>
+              <p className="text-xs text-[#7a7a7a] truncate">
+                {datasetName || inspection?.filename || datasetId} • Non-destructive pipeline (original file preserved)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {onOpenAnnotations && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  onOpenAnnotations(datasetId, datasetName || inspection?.filename)
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#e0e0e0] bg-white px-3 py-1.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7]"
+              >
+                <ScanText className="size-3.5 text-[#0066cc]" />
+                <span>Labels & OCR ({inspection?.annotation_count || 0})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={processing || tiling}
+              className="size-8 rounded-full flex items-center justify-center text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#e8e8ed] disabled:opacity-50"
+              aria-label="Close enhancement dialog"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {error && (
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5">
+              <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">{error.message || "Operation failed"}</p>
+                {error.details && <p className="mt-0.5 text-red-600">{error.details}</p>}
+              </div>
+            </div>
+          )}
+
+          {statusMessage && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-600" />
+              <span>{statusMessage}</span>
+            </div>
+          )}
+
+          {loading && !inspection ? (
+            <div className="py-16 flex flex-col items-center justify-center text-xs text-[#7a7a7a] gap-2">
+              <Loader2 className="size-6 animate-spin text-[#0066cc]" />
+              <span>Inspecting raster dimensions, DPI, quality metrics, and vector metadata...</span>
+            </div>
+          ) : (
+            <>
+              {/* 1. Universal File Inspection Grid */}
+              <section className="rounded-xl border border-[#e0e0e0] bg-[#fafafc] p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <FileSearch className="size-4 text-[#0066cc]" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558]">
+                      Universal Dataset Inspection
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    {content?.has_raster && (
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                        Raster Imagery
+                      </span>
+                    )}
+                    {content?.has_vector && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                        Vector Geometry ({inspection?.vector_feature_count || 0})
+                      </span>
+                    )}
+                    {content?.has_embedded_text && (
+                      <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-medium">
+                        Embedded Text
+                      </span>
+                    )}
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-medium border ${
+                        inspection?.is_georeferenced
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}
+                    >
+                      {inspection?.is_georeferenced
+                        ? `Georeferenced (${inspection?.crs || "EPSG:4326"})`
+                        : "Ungeoreferenced"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
+                    <span className="text-[11px] text-[#7a7a7a] block">Original Dimensions</span>
+                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                      {inspection?.width && inspection?.height
+                        ? `${inspection.width} × ${inspection.height} px`
+                        : "Tile Pyramid"}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
+                    <span className="text-[11px] text-[#7a7a7a] block">DPI / Color Depth</span>
+                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                      {inspection?.dpi_x || inspection?.rendering_dpi
+                        ? `${Math.round(inspection.dpi_x || inspection.rendering_dpi)} DPI`
+                        : "Native px"}{" "}
+                      • {inspection?.color_depth_bits ? `${inspection.color_depth_bits}-bit` : inspection?.dtype || "RGBA"}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
+                    <span className="text-[11px] text-[#7a7a7a] block">Sharpness / Blur Score</span>
+                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                      {quality?.blur_score !== undefined
+                        ? `${quality.blur_score} (${quality.blur_status || "normal"})`
+                        : "N/A"}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
+                    <span className="text-[11px] text-[#7a7a7a] block">Text Density & Compression</span>
+                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                      {quality?.text_density_level || "standard"} • {inspection?.compression || "lossless"}
+                    </span>
+                  </div>
+                </div>
+
+                {recommendation?.reason && (
+                  <p className="text-xs text-[#555558] bg-white rounded-lg border border-[#e6e6ea] px-3 py-2">
+                    <strong className="text-[#1d1d1f]">Recommendation:</strong> {recommendation.reason}
+                  </p>
+                )}
+              </section>
+
+              {/* 2. Original vs. Enhanced Side-by-Side Preview */}
+              {!isStandaloneMbtiles && (
+                <section className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
+                      <Eye className="size-3.5 text-[#0066cc]" />
+                      Original vs. Enhanced Preview
+                    </h3>
+
+                    {hasEnhancedImage && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-[#7a7a7a]">Active Map Layer:</span>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => handleSwitchVariant("original")}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            activeVariant === "original"
+                              ? "bg-[#1d1d1f] text-white border-[#1d1d1f]"
+                              : "bg-white text-[#1d1d1f] border-[#e0e0e0] hover:bg-[#f5f5f7]"
+                          }`}
+                        >
+                          Original
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => handleSwitchVariant("enhanced")}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            activeVariant === "enhanced"
+                              ? "bg-[#0066cc] text-white border-[#0066cc]"
+                              : "bg-white text-[#1d1d1f] border-[#e0e0e0] hover:bg-[#f5f5f7]"
+                          }`}
+                        >
+                          Enhanced ({enhancement?.enhanced_width || inspection?.width}×
+                          {enhancement?.enhanced_height || inspection?.height})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={`grid grid-cols-1 ${hasEnhancedImage ? "md:grid-cols-2" : ""} gap-3`}>
+                    <div className="rounded-xl border border-[#e0e0e0] bg-[#f5f5f7] overflow-hidden flex flex-col">
+                      <div className="px-3 py-1.5 bg-white border-b border-[#e0e0e0] flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-[#1d1d1f]">Original Source (Untouched)</span>
+                        <span className="font-mono text-[#7a7a7a]">
+                          {inspection?.width} × {inspection?.height} px
+                        </span>
+                      </div>
+                      <div className="h-52 flex items-center justify-center p-2">
+                        <img
+                          src={datasetSourceImageUrl(datasetId, { variant: "original", bust: imageBust })}
+                          alt="Original dataset raster"
+                          className="max-h-48 max-w-full object-contain rounded"
+                        />
+                      </div>
+                    </div>
+
+                    {hasEnhancedImage && (
+                      <div className="rounded-xl border border-[#0066cc]/40 bg-[#f5f5f7] overflow-hidden flex flex-col">
+                        <div className="px-3 py-1.5 bg-[#f0f6ff] border-b border-[#0066cc]/20 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-[#0066cc]">
+                            Enhanced Output ({enhancement?.preset || "OpenCV"})
+                            {enhancement?.ai_upscaled ? ` • ${enhancement.ai_upscale_factor}x Real-ESRGAN` : ""}
+                          </span>
+                          <span className="font-mono text-[#0066cc]">
+                            {enhancement?.enhanced_width || inspection?.width} ×{" "}
+                            {enhancement?.enhanced_height || inspection?.height} px
+                          </span>
+                        </div>
+                        <div className="h-52 flex items-center justify-center p-2">
+                          <img
+                            src={datasetSourceImageUrl(datasetId, { variant: "enhanced", bust: imageBust })}
+                            alt="Enhanced dataset raster"
+                            className="max-h-48 max-w-full object-contain rounded"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* 3. OpenCV Enhancement & Real-ESRGAN Controls */}
+              {!isStandaloneMbtiles ? (
+                <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* OpenCV Pipeline Card */}
+                  <div className="rounded-xl border border-[#e0e0e0] p-4 space-y-3 bg-white">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
+                      <Wand2 className="size-3.5 text-[#0066cc]" />
+                      OpenCV Enhancement Profile
+                    </h3>
+
+                    <div className="space-y-2">
+                      {PRESET_OPTIONS.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className={`block rounded-lg border p-2.5 cursor-pointer transition-colors ${
+                            preset === opt.value
+                              ? "border-[#0066cc] bg-[#f0f6ff]/60"
+                              : "border-[#e6e6ea] hover:border-[#c7c7cc]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="opencvPreset"
+                              value={opt.value}
+                              checked={preset === opt.value}
+                              onChange={() => setPreset(opt.value)}
+                              disabled={processing}
+                              className="text-[#0066cc]"
+                            />
+                            <span className="text-xs font-semibold text-[#1d1d1f]">{opt.label}</span>
+                            {recommendation?.recommended_preset === opt.value && (
+                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                                Suggested
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#7a7a7a] pl-5 mt-0.5">{opt.description}</p>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="pt-1 space-y-2 border-t border-[#f0f0f2]">
+                      <label className="flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={adaptiveThreshold}
+                          onChange={(e) => setAdaptiveThreshold(e.target.checked)}
+                          disabled={processing}
+                          className="rounded border-[#b0b0b0] text-[#0066cc]"
+                        />
+                        <span>Soft-blended adaptive thresholding (for faint scanned blueprints)</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={grayscale}
+                          onChange={(e) => setGrayscale(e.target.checked)}
+                          disabled={processing}
+                          className="rounded border-[#b0b0b0] text-[#0066cc]"
+                        />
+                        <span>Monochrome / grayscale normalization</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Real-ESRGAN AI Upscaling & GDAL Optimization Card */}
+                  <div className="rounded-xl border border-[#e0e0e0] p-4 space-y-4 bg-white flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-[#0066cc]" />
+                        Optional AI Upscaling (Real-ESRGAN)
+                      </h3>
+
+                      <div>
+                        <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                          Super-Resolution Scale Factor
+                        </label>
+                        <select
+                          value={upscaleFactor}
+                          onChange={(e) => setUpscaleFactor(Number(e.target.value))}
+                          disabled={processing}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-white focus:outline-none focus:border-[#0066cc]"
+                        >
+                          <option value={1}>1x — Keep Native Pixel Dimensions (Default)</option>
+                          <option value={2}>2x — Real-ESRGAN Super-Resolution</option>
+                          <option value={4}>4x — Real-ESRGAN Super-Resolution (Low-Res Scans)</option>
+                        </select>
+                      </div>
+
+                      {recommendation?.is_high_resolution && upscaleFactor > 1 && (
+                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1.5">
+                          <p className="font-medium">
+                            Source image is already high resolution ({inspection?.width}×{inspection?.height} px).
+                            AI upscaling is automatically skipped unless forced.
+                          </p>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium">
+                            <input
+                              type="checkbox"
+                              checked={forceUpscale}
+                              onChange={(e) => setForceUpscale(e.target.checked)}
+                              disabled={processing}
+                            />
+                            <span>Force AI upscaling anyway</span>
+                          </label>
+                        </div>
+                      )}
+
+                      {(upscaleFactor > 1 || enhancement?.ai_upscaled) && (
+                        <div className="p-2.5 rounded-lg bg-[#fff8eb] border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                          <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                          <span>
+                            <strong>Engineering Truthfulness Notice:</strong> AI-upscaled pixels enhance visual readability only and are never marked as verified engineering measurements. Original raster dimensions and georeferencing control points remain untouched.
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="pt-3 border-t border-[#f0f0f2] space-y-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
+                          <Layers className="size-3.5 text-[#0066cc]" />
+                          GDAL Overview & MBTiles Resampling
+                        </h4>
+                        <select
+                          value={resampling}
+                          onChange={(e) => setResampling(e.target.value)}
+                          disabled={processing || tiling}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-white focus:outline-none focus:border-[#0066cc]"
+                        >
+                          {RESAMPLING_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        {inspection?.is_georeferenced && (
+                          <button
+                            type="button"
+                            onClick={handleGenerateMbtiles}
+                            disabled={tiling || processing}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#0066cc]/30 bg-[#f0f6ff] px-3 py-2 text-xs font-medium text-[#0066cc] hover:bg-[#e1eeff] disabled:opacity-50"
+                          >
+                            {tiling ? (
+                              <>
+                                <Loader2 className="size-3.5 animate-spin" />
+                                <span>Building GDAL Overviews & MBTiles Pyramid...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Layers className="size-3.5" />
+                                <span>Optimize GDAL Overviews & Build MBTiles Now</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              ) : (
+                <div className="rounded-xl border border-[#e0e0e0] bg-[#fafafc] p-4 text-xs text-[#555558]">
+                  This layer is backed directly by a standalone SQLite <strong>.mbtiles</strong> tile pyramid and renders natively via MapLibre tile streaming.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <footer className="px-6 py-4 border-t border-[#e0e0e0] bg-[#fafafc] flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {hasEnhancedImage && !isStandaloneMbtiles && (
+              <button
+                type="button"
+                onClick={handleResetOriginal}
+                disabled={processing || tiling}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#e0e0e0] bg-white px-3.5 py-2 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+              >
+                <RotateCcw className="size-3.5" />
+                <span>Reset to Original</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={processing || tiling}
+              className="rounded-full border border-[#e0e0e0] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+            >
+              Close
+            </button>
+            {!isStandaloneMbtiles && (
+              <button
+                type="button"
+                onClick={handleApplyEnhancement}
+                disabled={processing || tiling}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#0066cc] px-5 py-2 text-xs font-medium text-white hover:bg-[#0055b3] disabled:opacity-50 shadow-xs"
+              >
+                {processing ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>
+                      {upscaleFactor > 1
+                        ? `Running OpenCV + ${upscaleFactor}x Real-ESRGAN...`
+                        : "Applying OpenCV Enhancement..."}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" />
+                    <span>Apply Enhancement</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
