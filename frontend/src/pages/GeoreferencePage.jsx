@@ -406,6 +406,9 @@ export default function GeoreferencePage() {
       const result = await georeferenceDataset(id, "calculate")
       setCalculation(result)
       setOverlayEnabled(true)
+      if (Array.isArray(result.points) && result.points.length > 0) {
+        setPoints(result.points)
+      }
       if (Array.isArray(result.maplibre_bounds) && result.maplibre_bounds.length === 4) {
         setFocusTarget({
           bounds: result.maplibre_bounds,
@@ -536,6 +539,9 @@ export default function GeoreferencePage() {
       const result = await georeferenceDataset(id, "save")
       setCalculation(result)
       setSavedConfig(result)
+      if (Array.isArray(result.points) && result.points.length > 0) {
+        setPoints(result.points)
+      }
       setMode("view")
       setDirectPanelOpen(false)
       setNotice("Georeference saved and published to the main map.")
@@ -550,6 +556,9 @@ export default function GeoreferencePage() {
   function handleReuse() {
     if (!savedConfig?.reusable) return
     setCalculation(savedConfig)
+    if (Array.isArray(savedConfig.points) && savedConfig.points.length > 0) {
+      setPoints(savedConfig.points)
+    }
     setOverlayEnabled(true)
     setMode("view")
     setError(null)

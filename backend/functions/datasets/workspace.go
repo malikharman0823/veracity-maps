@@ -1274,6 +1274,22 @@ func (h *Handler) GetWorkspaceRecords(w http.ResponseWriter, r *http.Request, pr
 		// 2. Control points records
 		if filterKind == "" || filterKind == "control_point" {
 			cps := h.ensureDatasetControlPoints(sessionID, ds)
+			if ds.ExtractedMetadata != nil {
+				if tRaw, ok := ds.ExtractedMetadata["transform"]; ok && tRaw != nil {
+					var t []float64
+					if tArr, ok := tRaw.([]interface{}); ok && len(tArr) == 6 {
+						for _, v := range tArr {
+							f, _ := toFloat64(v)
+							t = append(t, f)
+						}
+					} else if tFloat, ok := tRaw.([]float64); ok && len(tFloat) == 6 {
+						t = tFloat
+					}
+					if len(t) == 6 {
+						gis.SynchronizeControlPoints(cps, t)
+					}
+				}
+			}
 			for idx, cp := range cps {
 				name := fmt.Sprintf("GCP %d", idx+1)
 				if filterSearch == "" || strings.Contains(strings.ToLower(name), filterSearch) || strings.Contains(strings.ToLower(dsName), filterSearch) {

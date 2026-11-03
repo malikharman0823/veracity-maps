@@ -263,7 +263,7 @@ function pointCollection(records, kind, selectedRecordId) {
         },
         geometry: {
           type: "Point",
-          coordinates: [record.longitude, record.latitude],
+          coordinates: [Number(record.longitude), Number(record.latitude)],
         },
       })),
   }
@@ -664,7 +664,7 @@ export default function WorkspaceMap({
   useEffect(() => {
     let isCancelled = false
     const georeferencedIds = sortedMembers
-      .filter((m) => !m.file_missing && (m.dataset?.georeference_status === "completed" || m.dataset?.map_layer || m.bounds || m.dataset?.extracted_metadata?.bounds))
+      .filter((m) => !m.file_missing && (m.map_layer || m.dataset?.map_layer || m.dataset?.georeference_status === "completed" || m.bounds || m.dataset?.extracted_metadata?.bounds))
       .map((m) => m.dataset_id)
 
     if (georeferencedIds.length === 0) return
@@ -777,7 +777,7 @@ export default function WorkspaceMap({
     sortedMembers.forEach((member) => {
       const ids = resourceIds(member.dataset_id)
       if (member.file_missing) return
-      const layer = member.dataset?.map_layer || (
+      const layer = member.map_layer || member.dataset?.map_layer || (
         (member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds)
           ? {
               id: `lyr_${member.dataset_id}`,
@@ -1195,8 +1195,8 @@ export default function WorkspaceMap({
     // Initial camera fit
     if (!fittedRef.current) {
       const visibleBounds = sortedMembers
-        .filter((member) => member.visible && (member.dataset?.georeference_status === "completed" || member.dataset?.map_layer))
-        .map((member) => toValidMapLibreBounds(member.dataset?.map_layer?.bounds || member.bounds || member.dataset?.extracted_metadata?.bounds))
+        .filter((member) => member.visible && (member.map_layer || member.dataset?.map_layer || member.dataset?.georeference_status === "completed"))
+        .map((member) => toValidMapLibreBounds(member.map_layer?.bounds || member.dataset?.map_layer?.bounds || member.bounds || member.dataset?.extracted_metadata?.bounds))
         .filter(Boolean)
       if (visibleBounds.length) {
         const union = visibleBounds.reduce((current, bounds) => [
@@ -1529,7 +1529,7 @@ export default function WorkspaceMap({
 
 
       {/* Empty State */}
-      {!sortedMembers.some((member) => member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (
+      {!sortedMembers.some((member) => member.map_layer || member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (
         <div className="workspace-map-empty">
           <strong>No mapped raster is available</strong>
           <span>Open Database to inspect raw datasets or georeference a layer.</span>

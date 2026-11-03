@@ -10,13 +10,14 @@ import (
 )
 
 type TransformResult struct {
-	Transformation    string             `json:"transformation"`
-	Parameters        map[string]float64 `json:"parameters"`
-	Transform         []float64          `json:"transform"` // [a, b, c, d, e, f]
-	TargetCRS         string             `json:"target_crs"`
-	Bounds            map[string]float64 `json:"bounds"`
-	MapLibreBounds    []float64          `json:"maplibre_bounds"` // [west, south, east, north]
-	ControlPointCount int                `json:"control_point_count,omitempty"`
+	Transformation    string                 `json:"transformation"`
+	Parameters        map[string]float64     `json:"parameters"`
+	Transform         []float64              `json:"transform"` // [a, b, c, d, e, f]
+	TargetCRS         string                 `json:"target_crs"`
+	Bounds            map[string]float64     `json:"bounds"`
+	MapLibreBounds    []float64              `json:"maplibre_bounds"` // [west, south, east, north]
+	ControlPointCount int                    `json:"control_point_count,omitempty"`
+	Points            []*models.ControlPoint `json:"points,omitempty"`
 }
 
 // CalculateGeoreference validates points and computes similarity or affine transformation

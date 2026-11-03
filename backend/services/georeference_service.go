@@ -177,6 +177,16 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 		return nil, err
 	}
 
+	// Synchronize control points to the calculated transformation
+	gis.SynchronizeControlPoints(points, result.Transform)
+	_ = s.repo.SetControlPoints(sessionID, datasetID, points)
+	result.Points = points
+
+	// Persist synchronized control points to disk
+	if cpBytes, err := json.MarshalIndent(points, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(s.storage.GetDatasetDir(sessionID, datasetID), "control_points.json"), cpBytes, 0644)
+	}
+
 	// Update dataset metadata
 	dataset.ExtractedMetadata["transform"] = result.Transform
 	dataset.ExtractedMetadata["bounds"] = result.Bounds
