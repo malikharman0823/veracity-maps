@@ -428,6 +428,22 @@ func (r *SessionRepository) DeleteControlPoint(sessionID, pointID string) (*mode
 	return nil, ErrControlPointNotFound
 }
 
+func (r *SessionRepository) FindControlPoint(pointID string) (*models.ControlPoint, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for sID, sess := range r.sessions {
+		for _, points := range sess.ControlPoints {
+			for _, pt := range points {
+				if pt.ID == pointID {
+					return pt, sID, nil
+				}
+			}
+		}
+	}
+	return nil, "", ErrControlPointNotFound
+}
+
 func (r *SessionRepository) SetControlPoints(sessionID, datasetID string, points []*models.ControlPoint) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

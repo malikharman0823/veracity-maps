@@ -22,14 +22,36 @@ func NewHandler(gs *services.GeoreferenceService, repo *repository.SessionReposi
 	}
 }
 
+func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
+	sessionID := models.GetSessionID(r)
+	if sessionID != "" {
+		if sess, err := h.repo.GetSession(sessionID); err == nil && sess != nil {
+			dataset, err := h.repo.GetDataset(sessionID, datasetID)
+			if err == nil && dataset != nil {
+				return dataset, sessionID, nil
+			}
+			return nil, "", repository.ErrDatasetNotFound
+		}
+	}
+
+	dataset, foundSess, err := h.repo.FindDataset(datasetID)
+	if err != nil || dataset == nil {
+		return nil, "", repository.ErrDatasetNotFound
+	}
+	if foundSess != "" && w != nil {
+		w.Header().Set("X-Session-ID", foundSess)
+	}
+	return dataset, foundSess, nil
+}
+
 func (h *Handler) ListControlPoints(w http.ResponseWriter, r *http.Request, datasetID string) {
 	if r.Method != http.MethodGet {
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is supported", nil, nil)
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
+	_, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
 		return
 	}
@@ -52,8 +74,8 @@ func (h *Handler) CreateControlPoint(w http.ResponseWriter, r *http.Request, dat
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
+	_, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
 		return
 	}
@@ -88,6 +110,14 @@ func (h *Handler) UpdateControlPoint(w http.ResponseWriter, r *http.Request, poi
 	}
 
 	sessionID := models.GetSessionID(r)
+	if sessionID == "" {
+		if _, sID, err := h.repo.FindControlPoint(pointID); err == nil && sID != "" {
+			sessionID = sID
+			if w != nil {
+				w.Header().Set("X-Session-ID", sID)
+			}
+		}
+	}
 	if sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
 		return
@@ -124,6 +154,14 @@ func (h *Handler) DeleteControlPoint(w http.ResponseWriter, r *http.Request, poi
 
 	sessionID := models.GetSessionID(r)
 	if sessionID == "" {
+		if _, sID, err := h.repo.FindControlPoint(pointID); err == nil && sID != "" {
+			sessionID = sID
+			if w != nil {
+				w.Header().Set("X-Session-ID", sID)
+			}
+		}
+	}
+	if sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
 		return
 	}
@@ -148,8 +186,8 @@ func (h *Handler) Georeference(w http.ResponseWriter, r *http.Request, datasetID
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
+	_, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
 		return
 	}
@@ -174,15 +212,9 @@ func (h *Handler) Georeference(w http.ResponseWriter, r *http.Request, datasetID
 }
 
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request, datasetID string) {
-	sessionID := models.GetSessionID(r)
-	if sessionID == "" {
+	dataset, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || sessionID == "" {
 		models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session is missing or expired", nil, nil)
-		return
-	}
-
-	dataset, err := h.repo.GetDataset(sessionID, datasetID)
-	if err != nil {
-		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
 	}
 
