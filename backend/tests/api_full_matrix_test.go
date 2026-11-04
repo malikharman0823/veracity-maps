@@ -14,9 +14,11 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/api"
 	"github.com/malikharman0823/veracity-maps/config"
+	"github.com/malikharman0823/veracity-maps/functions/auth"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/repository"
 	"github.com/malikharman0823/veracity-maps/services"
@@ -44,7 +46,15 @@ func setupMatrixTestServer(t *testing.T) (*httptest.Server, *repository.SessionR
 	}
 
 	repo := repository.NewSessionRepository()
-	mw := api.NewMiddleware(repo)
+	authRepo, err := repository.NewAuthRepository(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create auth repository: %v", err)
+	}
+	projRepo, err := repository.NewProjectRepository(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create project repository: %v", err)
+	}
+	mw := api.NewMiddleware(repo, authRepo)
 
 	dsService := services.NewDatasetService(cfg, repo, sm)
 	geoService := services.NewGeoreferenceService(repo, sm)
@@ -54,8 +64,10 @@ func setupMatrixTestServer(t *testing.T) (*httptest.Server, *repository.SessionR
 	dh := datasets.NewHandler(dsService, repo)
 	gh := georeference.NewHandler(geoService, repo)
 	eh := export.NewHandler(expService, repo)
+	ah := auth.NewHandler(authRepo)
+	ph := projects.NewHandler(projRepo, repo)
 
-	router := api.NewRouter(repo, mw, uh, dh, gh, eh)
+	router := api.NewRouter(repo, authRepo, projRepo, mw, uh, dh, gh, eh, ah, ph)
 	server := httptest.NewServer(router.BuildHandler())
 
 	return server, repo, tempDir

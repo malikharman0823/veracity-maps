@@ -18,11 +18,16 @@ import {
   UploadCloud,
   MapPin,
   Compass,
+  FolderKanban,
+  LogOut,
+  User,
 } from "lucide-react"
 import EndSessionDialog from "./EndSessionDialog"
+import { useAuth } from "../context/AuthContext"
 
 export default function Sidebar() {
   const { setOpenMobile } = useSidebar()
+  const { user, logout } = useAuth()
 
   const handleNavClick = () => {
     // Automatically close mobile drawer when link is clicked
@@ -65,6 +70,23 @@ export default function Sidebar() {
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               <SidebarMenuItem>
+                <NavLink to="/dashboard" onClick={handleNavClick}>
+                  {({ isActive }) => (
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      className={`w-full justify-start gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-all ${
+                        isActive
+                          ? "bg-[#0066cc] text-white font-medium hover:bg-[#0071e3] hover:text-white"
+                          : "text-[#333333] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
+                      }`}
+                    >
+                      <FolderKanban className={`size-4 ${isActive ? "text-white" : "text-[#7a7a7a]"}`} />
+                      <span>My Projects</span>
+                    </SidebarMenuButton>
+                  )}
+                </NavLink>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <NavLink to="/" end onClick={handleNavClick}>
                   {({ isActive }) => (
                     <SidebarMenuButton
@@ -88,6 +110,27 @@ export default function Sidebar() {
 
       {/* Footer Info */}
       <SidebarFooter className="border-t border-[#e0e0e0] p-3 text-[11px] text-[#7a7a7a] bg-[#fafafc] space-y-2">
+        {user && (
+          <div className="pb-2 border-b border-[#e0e0e0]/60 flex items-center justify-between">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="size-6 rounded-full bg-[#0066cc]/10 text-[#0066cc] font-semibold flex items-center justify-center text-[10px] shrink-0">
+                {user.name?.charAt(0) || "U"}
+              </div>
+              <div className="truncate">
+                <div className="text-[11px] font-medium text-[#1d1d1f] truncate">{user.name}</div>
+                <div className="text-[10px] text-[#7a7a7a] truncate">{user.email}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="p-1 rounded hover:bg-[#f5f5f7] text-[#7a7a7a] hover:text-[#dc2626] transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="size-3.5" />
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-[#34c759] inline-block animate-pulse"></span>

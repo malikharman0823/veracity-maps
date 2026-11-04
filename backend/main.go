@@ -12,9 +12,11 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/api"
 	"github.com/malikharman0823/veracity-maps/config"
+	"github.com/malikharman0823/veracity-maps/functions/auth"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -32,7 +34,18 @@ func main() {
 
 	repo := repository.NewSessionRepository()
 	repo.SetStorageDir(cfg.SessionStorageDir)
-	middleware := api.NewMiddleware(repo)
+
+	authRepo, err := repository.NewAuthRepository("storage")
+	if err != nil {
+		log.Fatalf("Failed to initialize auth repository: %v", err)
+	}
+
+	projRepo, err := repository.NewProjectRepository("storage")
+	if err != nil {
+		log.Fatalf("Failed to initialize project repository: %v", err)
+	}
+
+	middleware := api.NewMiddleware(repo, authRepo)
 
 	datasetService := services.NewDatasetService(cfg, repo, sm)
 	georefService := services.NewGeoreferenceService(repo, sm)
@@ -42,14 +55,20 @@ func main() {
 	datasetsHandler := datasets.NewHandler(datasetService, repo)
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)
+	authHandler := auth.NewHandler(authRepo)
+	projectsHandler := projects.NewHandler(projRepo, repo)
 
 	router := api.NewRouter(
 		repo,
+		authRepo,
+		projRepo,
 		middleware,
 		uploadHandler,
 		datasetsHandler,
 		georefHandler,
 		exportHandler,
+		authHandler,
+		projectsHandler,
 	)
 
 	// Background session cleaner

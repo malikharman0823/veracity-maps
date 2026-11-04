@@ -12,6 +12,33 @@ export const BASEMAP_TILE_URL = requiredSetting("VITE_BASEMAP_TILE_URL")
 export const BASEMAP_ATTRIBUTION = requiredSetting("VITE_BASEMAP_ATTRIBUTION")
 
 export const SESSION_STORAGE_KEY = "veracity_maps_active_session_id"
+export const AUTH_TOKEN_KEY = "veracity_maps_auth_token"
+
+export function getAuthToken() {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+export function setAuthToken(token) {
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token)
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token)
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY)
+      sessionStorage.removeItem(AUTH_TOKEN_KEY)
+    }
+  } catch {
+    // fallback
+  }
+}
+
+export function clearAuthToken() {
+  setAuthToken(null)
+}
 
 export function getActiveSessionId() {
   try {
@@ -52,6 +79,10 @@ client.interceptors.request.use((config) => {
   if (sid) {
     config.headers["X-Session-ID"] = sid
   }
+  const token = getAuthToken()
+  if (token) {
+    config.headers["Authorization"] = `Bearer ${token}`
+  }
   return config
 })
 
@@ -72,6 +103,69 @@ client.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+// --- Authentication APIs ---
+
+export async function registerUser(name, email, password) {
+  const response = await client.post("/api/auth/register", { name, email, password })
+  const data = response.data.data
+  if (data?.token) {
+    setAuthToken(data.token)
+  }
+  return data
+}
+
+export async function loginUser(email, password) {
+  const response = await client.post("/api/auth/login", { email, password })
+  const data = response.data.data
+  if (data?.token) {
+    setAuthToken(data.token)
+  }
+  return data
+}
+
+export async function logoutUser() {
+  try {
+    await client.post("/api/auth/logout")
+  } finally {
+    clearAuthToken()
+  }
+  return true
+}
+
+export async function getCurrentUser() {
+  const token = getAuthToken()
+  if (!token) return null
+  const response = await client.get("/api/auth/me")
+  return response.data.data
+}
+
+// --- Project Ownership & Dashboard APIs ---
+
+export async function listUserProjects() {
+  const response = await client.get("/api/projects")
+  return response.data.data?.projects || []
+}
+
+export async function createUserProject(name, description = "") {
+  const response = await client.post("/api/projects", { name, description })
+  return response.data.data
+}
+
+export async function getUserProject(projectId) {
+  const response = await client.get(`/api/projects/${encodeURIComponent(projectId)}`)
+  return response.data.data
+}
+
+export async function updateUserProject(projectId, { name, description }) {
+  const response = await client.patch(`/api/projects/${encodeURIComponent(projectId)}`, { name, description })
+  return response.data.data
+}
+
+export async function deleteUserProject(projectId) {
+  const response = await client.delete(`/api/projects/${encodeURIComponent(projectId)}`)
+  return response.data.data
+}
 
 export async function createSession() {
   const response = await client.post("/sessions")

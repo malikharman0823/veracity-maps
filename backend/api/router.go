@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/malikharman0823/veracity-maps/functions/auth"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
 	"github.com/malikharman0823/veracity-maps/functions/health"
+	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -16,28 +18,40 @@ import (
 
 type Router struct {
 	repo       *repository.SessionRepository
+	authRepo   *repository.AuthRepository
+	projRepo   *repository.ProjectRepository
 	middleware *Middleware
 	uploadH    *upload.Handler
 	datasetsH  *datasets.Handler
 	georefH    *georeference.Handler
 	exportH    *export.Handler
+	authH      *auth.Handler
+	projectsH  *projects.Handler
 }
 
 func NewRouter(
 	repo *repository.SessionRepository,
+	authRepo *repository.AuthRepository,
+	projRepo *repository.ProjectRepository,
 	mw *Middleware,
 	uh *upload.Handler,
 	dh *datasets.Handler,
 	gh *georeference.Handler,
 	eh *export.Handler,
+	ah *auth.Handler,
+	ph *projects.Handler,
 ) *Router {
 	return &Router{
 		repo:       repo,
+		authRepo:   authRepo,
+		projRepo:   projRepo,
 		middleware: mw,
 		uploadH:    uh,
 		datasetsH:  dh,
 		georefH:    gh,
 		exportH:    eh,
+		authH:      ah,
+		projectsH:  ph,
 	}
 }
 
@@ -56,6 +70,76 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	if path == "/health" || path == "/api/health" {
 		health.HealthHandler(w, r)
 		return
+	}
+
+	// 1a. Authentication
+	if path == "/api/auth/register" || path == "/auth/register" {
+		rt.authH.Register(w, r)
+		return
+	}
+	if path == "/api/auth/login" || path == "/auth/login" {
+		rt.authH.Login(w, r)
+		return
+	}
+	if path == "/api/auth/logout" || path == "/auth/logout" {
+		rt.authH.Logout(w, r, GetToken(r))
+		return
+	}
+	if path == "/api/auth/me" || path == "/auth/me" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		rt.authH.Me(w, r, user)
+		return
+	}
+
+	// 1b. User Projects (Dashboard & Ownership)
+	if path == "/api/projects" || path == "/projects" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		if r.Method == http.MethodGet {
+			rt.projectsH.List(w, r, user.ID)
+			return
+		}
+		if r.Method == http.MethodPost {
+			rt.projectsH.Create(w, r, user.ID)
+			return
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/projects/") || strings.HasPrefix(path, "/projects/") {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		var remainder string
+		if strings.HasPrefix(path, "/api/projects/") {
+			remainder = strings.TrimPrefix(path, "/api/projects/")
+		} else {
+			remainder = strings.TrimPrefix(path, "/projects/")
+		}
+		parts := strings.Split(remainder, "/")
+		if len(parts) == 1 {
+			projectID := parts[0]
+			if r.Method == http.MethodGet {
+				rt.projectsH.Get(w, r, projectID, user.ID)
+				return
+			}
+			if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+				rt.projectsH.Update(w, r, projectID, user.ID)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				rt.projectsH.Delete(w, r, projectID, user.ID)
+				return
+			}
+		}
 	}
 
 	// 2. Sessions
