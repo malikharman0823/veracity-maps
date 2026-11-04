@@ -214,23 +214,23 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
+    <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100">
       <TopHeader breadcrumbs={[{ label: "Upload Dataset" }]} />
 
       <main className="flex-1 pb-16">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 flex flex-col gap-8">
           {/* Header Section */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-[#e0e0e0]">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-slate-800">
             <div>
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#7a7a7a] mb-1">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
                 <span>Spatial Workspace</span>
                 <span>•</span>
-                <span className="text-[#0066cc]">New Dataset</span>
+                <span className="text-blue-400">New Dataset</span>
               </div>
-              <h1 className="text-3xl font-semibold tracking-tight text-[#1d1d1f]">
+              <h1 className="text-3xl font-semibold tracking-tight text-white">
                 Upload Dataset
               </h1>
-              <p className="text-sm text-[#7a7a7a] mt-1.5 max-w-xl">
+              <p className="text-sm text-slate-400 mt-1.5 max-w-xl">
                 Upload GeoTIFF/TIFF, PNG, JPG, PDF, CAD (.dxf, .dwg, .svf), standalone MBTiles (.mbtiles), or Veracity Maps project packages (.zip).
               </p>
             </div>
@@ -245,9 +245,9 @@ export default function HomePage() {
                   setReopenModalOpen(true)
                 }}
                 disabled={importing}
-                className="h-9 rounded-full border-[#0066cc]/30 bg-[#f0f7ff] hover:bg-[#e1effe] text-xs text-[#0066cc] cursor-pointer font-medium"
+                className="h-9 rounded-full border-blue-500/30 bg-blue-950/40 hover:bg-blue-900/50 text-xs text-blue-400 cursor-pointer font-medium"
               >
-                <Archive className="size-3.5 mr-1.5 text-[#0066cc]" />
+                <Archive className="size-3.5 mr-1.5 text-blue-400" />
                 <span>Reopen Project (.mbtiles / .zip)</span>
               </Button>
 
@@ -265,32 +265,32 @@ export default function HomePage() {
                 asChild
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-full border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] text-xs text-[#1d1d1f] cursor-pointer"
+                className="h-9 rounded-full border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs text-slate-200 hover:text-white cursor-pointer"
               >
                 <label htmlFor="import-folder-input">
                   {importing ? (
-                    <Loader2 className="size-3.5 mr-1.5 animate-spin text-[#0066cc]" />
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin text-blue-400" />
                   ) : (
-                    <FolderOpen className="size-3.5 mr-1.5 text-[#7a7a7a]" />
+                    <FolderOpen className="size-3.5 mr-1.5 text-slate-400" />
                   )}
                   <span>{importing ? "Importing…" : "Open Project Folder"}</span>
                 </label>
               </Button>
 
-              <div className="flex items-center gap-2 bg-[#ffffff] border border-[#e0e0e0] px-3.5 py-1.5 rounded-full shadow-xs">
-                <span className="size-2 rounded-full bg-[#34c759] animate-pulse"></span>
-                <span className="text-xs font-medium text-[#1d1d1f]">Ready</span>
+              <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3.5 py-1.5 rounded-full shadow-xs">
+                <span className="size-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs font-medium text-slate-200">Ready</span>
               </div>
             </div>
           </div>
 
           {/* Global Error Alert */}
           {error && (
-            <div className="rounded-[18px] border border-[#ff3b30]/30 bg-[#ff3b30]/5 p-4 flex items-center gap-3">
-              <AlertCircle className="size-5 text-[#ff3b30] shrink-0" />
+            <div className="rounded-xl border border-red-500/30 bg-red-950/30 p-4 flex items-center gap-3">
+              <AlertCircle className="size-5 text-red-400 shrink-0" />
               <div className="text-xs">
-                <p className="font-semibold text-[#ff3b30]">{error.message || "An error occurred"}</p>
-                {error.details && <p className="text-[#ff3b30]/80 mt-0.5">{error.details}</p>}
+                <p className="font-semibold text-red-400">{error.message || "An error occurred"}</p>
+                {error.details && <p className="text-red-400/80 mt-0.5">{error.details}</p>}
               </div>
             </div>
           )}
@@ -319,49 +319,49 @@ export default function HomePage() {
 
             {/* Right Column: Ingestion Parameters (5 Cols) */}
             <div className="lg:col-span-5 flex flex-col gap-4">
-              <div className="border border-[#e0e0e0] rounded-[18px] bg-[#ffffff] p-6 space-y-5 shadow-xs">
-                <div className="flex items-center justify-between pb-3 border-b border-[#f0f0f0]">
+              <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-6 space-y-5 shadow-xs">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                   <div className="flex items-center gap-2">
-                    <Sliders className="size-4 text-[#0066cc]" />
-                    <h3 className="text-sm font-semibold text-[#1d1d1f]">
+                    <Sliders className="size-4 text-blue-400" />
+                    <h3 className="text-sm font-semibold text-white">
                       Ingestion Parameters
                     </h3>
                   </div>
-                  <span className="text-[10px] font-mono text-[#7a7a7a] px-2 py-0.5 rounded-full bg-[#f5f5f7] border border-[#e0e0e0]">
+                  <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
                     Auto
                   </span>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-[#1d1d1f] flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-200 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <Globe2 className="size-3.5 text-[#7a7a7a]" />
+                      <Globe2 className="size-3.5 text-slate-400" />
                       Georeference detection
                     </span>
-                    <span className="text-[10px] text-[#0066cc] font-mono font-semibold">
+                    <span className="text-[10px] text-blue-400 font-mono font-semibold">
                       AUTOMATIC
                     </span>
                   </label>
-                  <div className="w-full bg-[#f5f5f7] border border-[#e0e0e0] rounded-xl py-2 px-3 text-xs text-[#1d1d1f] font-mono flex items-center justify-between">
+                  <div className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-white font-mono flex items-center justify-between">
                     <span>Raster metadata + sidecars</span>
-                    <FileCheck2 className="size-3.5 text-[#34c759]" />
+                    <FileCheck2 className="size-3.5 text-emerald-400" />
                   </div>
-                  <p className="text-[11px] text-[#7a7a7a]">
+                  <p className="text-[11px] text-slate-400">
                     Georeferenced rasters open directly on the map. Raw rasters allow point-based georeferencing.
                   </p>
                 </div>
 
-                <div className="pt-2 border-t border-[#f0f0f0] space-y-3">
-                  <div className="flex items-start justify-between gap-3 p-3 rounded-xl bg-[#fafafc] border border-[#e0e0e0]">
+                <div className="pt-2 border-t border-slate-800 space-y-3">
+                  <div className="flex items-start justify-between gap-3 p-3 rounded-xl bg-slate-950/50 border border-slate-800">
                     <div className="space-y-0.5">
-                      <div className="text-xs font-semibold text-[#1d1d1f]">
+                      <div className="text-xs font-semibold text-white">
                         Auto-Tiling Pipeline
                       </div>
-                      <p className="text-[11px] text-[#7a7a7a]">
+                      <p className="text-[11px] text-slate-400">
                         Rasters are automatically processed and converted into Slippy tiles.
                       </p>
                     </div>
-                    <span className="size-2 rounded-full bg-[#34c759] mt-1 shrink-0"></span>
+                    <span className="size-2 rounded-full bg-emerald-400 mt-1 shrink-0"></span>
                   </div>
                 </div>
               </div>
@@ -370,15 +370,15 @@ export default function HomePage() {
 
           {/* Saved Map Configurations in this Session (if any exist) */}
           {savedConfigs.length > 0 && (
-            <div className="pt-8 border-t border-[#e0e0e0] space-y-4">
+            <div className="pt-8 border-t border-slate-800 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Bookmark className="size-4 text-[#0066cc]" />
-                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">
+                  <Bookmark className="size-4 text-blue-400" />
+                  <h2 className="text-sm font-semibold tracking-tight text-white">
                     Saved Configurations ({savedConfigs.length})
                   </h2>
                 </div>
-                <span className="text-[11px] text-[#7a7a7a]">
+                <span className="text-[11px] text-slate-400">
                   Reopen your saved map layouts, camera views, and floor layers
                 </span>
               </div>
@@ -387,19 +387,19 @@ export default function HomePage() {
                 {savedConfigs.map((cfg) => (
                   <div
                     key={cfg.id}
-                    className="group relative bg-[#ffffff] border border-[#e0e0e0] hover:border-[#0066cc]/40 rounded-[18px] p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                    className="group relative bg-slate-900/60 border border-slate-800 hover:border-blue-500/50 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex items-center gap-2">
-                          <div className="size-7 rounded-lg bg-[#f0f7ff] text-[#0066cc] flex items-center justify-center shrink-0">
+                          <div className="size-7 rounded-lg bg-blue-950/60 text-blue-400 flex items-center justify-center shrink-0">
                             <Bookmark className="size-3.5" />
                           </div>
                           <div>
-                            <h3 className="text-xs font-semibold text-[#1d1d1f] line-clamp-1" title={cfg.name}>
+                            <h3 className="text-xs font-semibold text-white line-clamp-1" title={cfg.name}>
                               {cfg.name}
                             </h3>
-                            <span className="text-[10px] text-[#7a7a7a]">
+                            <span className="text-[10px] text-slate-400">
                               {cfg.members?.length || 1} layer(s) attached
                             </span>
                           </div>
@@ -407,35 +407,35 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setConfigToDelete(cfg)}
-                          className="size-7 rounded-lg text-[#7a7a7a] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                          className="size-7 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete saved configuration"
                         >
                           <Trash2 className="size-3.5" />
                         </button>
                       </div>
 
-                      <div className="mt-2 py-2 px-2.5 rounded-lg bg-[#fafafc] border border-[#f0f0f0] text-[11px] text-[#7a7a7a] space-y-1">
+                      <div className="mt-2 py-2 px-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
                         <div className="flex justify-between items-center">
                           <span>Primary:</span>
-                          <span className="font-mono text-[#1d1d1f] text-[10px]">{cfg.primary_dataset_id?.slice(0, 14)}…</span>
+                          <span className="font-mono text-slate-200 text-[10px]">{cfg.primary_dataset_id?.slice(0, 14)}…</span>
                         </div>
                         {cfg.configuration?.active_view && (
                           <div className="flex justify-between items-center">
                             <span>Default View:</span>
-                            <span className="uppercase text-[9px] font-semibold tracking-wider text-[#0066cc]">{cfg.configuration.active_view}</span>
+                            <span className="uppercase text-[9px] font-semibold tracking-wider text-blue-400">{cfg.configuration.active_view}</span>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-[#f0f0f0] flex items-center justify-between">
-                      <span className="text-[10px] text-[#a0a0a0]">
+                    <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">
                         {cfg.created_at ? new Date(cfg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recent"}
                       </span>
                       <button
                         type="button"
                         onClick={() => navigate(`/datasets/${cfg.primary_dataset_id}/workspace?view=map`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0066cc] hover:bg-[#0055b3] text-white text-xs font-medium shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium shadow-xs transition-colors"
                       >
                         <span>Open Map</span>
                         <ArrowUpRight className="size-3" />
@@ -449,11 +449,11 @@ export default function HomePage() {
 
           {/* Active Datasets in this Session (if any exist) */}
           {datasets.length > 0 && (
-            <div className="pt-8 border-t border-[#e0e0e0] space-y-4">
+            <div className="pt-8 border-t border-slate-800 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Layers className="size-4 text-[#0066cc]" />
-                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">
+                  <Layers className="size-4 text-blue-400" />
+                  <h2 className="text-sm font-semibold tracking-tight text-white">
                     Active Workspace Datasets ({datasets.length})
                   </h2>
                 </div>
@@ -489,28 +489,28 @@ export default function HomePage() {
       {state === "success" && result && !result.is_georeferenced && (
         <div className="workspace-dialog-backdrop" role="presentation">
           <section
-            className="workspace-dialog"
+            className="workspace-dialog bg-slate-900 border border-slate-800 text-white"
             role="dialog"
             aria-modal="true"
             aria-labelledby="upload-route-title"
           >
             <button
               type="button"
-              className="workspace-dialog-close"
+              className="workspace-dialog-close text-slate-400 hover:text-white"
               onClick={() => setState("idle")}
               aria-label="Close"
             >
               <X />
             </button>
-            <div className="workspace-dialog-icon">
+            <div className="workspace-dialog-icon bg-blue-950/60 text-blue-400">
               <MapPinned />
             </div>
-            <h2 id="upload-route-title">This raster is not georeferenced</h2>
-            <p>The dataset is safely stored. Choose where you want to continue.</p>
+            <h2 id="upload-route-title" className="text-white">This raster is not georeferenced</h2>
+            <p className="text-slate-400">The dataset is safely stored. Choose where you want to continue.</p>
             <div className="workspace-dialog-actions workspace-dialog-actions-stacked">
               <button
                 type="button"
-                className="workspace-primary-button"
+                className="workspace-primary-button bg-blue-600 hover:bg-blue-500 text-white"
                 onClick={() =>
                   navigate(
                     `/datasets/${result.id}/georeference?returnTo=${encodeURIComponent(
@@ -523,7 +523,7 @@ export default function HomePage() {
               </button>
               <button
                 type="button"
-                className="workspace-secondary-button"
+                className="workspace-secondary-button bg-slate-800 hover:bg-slate-700 text-slate-200"
                 onClick={() => navigate(`/datasets/${result.id}/workspace?view=database`)}
               >
                 <Database /> Inspect database first
@@ -538,14 +538,14 @@ export default function HomePage() {
         open={Boolean(datasetToDelete)}
         onOpenChange={(open) => !open && setDatasetToDelete(null)}
       >
-        <AlertDialogContent className="rounded-[20px] bg-[#ffffff] border border-[#e0e0e0] text-[#1d1d1f] shadow-lg max-w-md">
+        <AlertDialogContent className="rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-xl max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-base font-semibold text-[#1d1d1f]">
+            <AlertDialogTitle className="text-base font-semibold text-white">
               Delete Dataset?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs text-[#7a7a7a] mt-1.5">
+            <AlertDialogDescription className="text-xs text-slate-400 mt-1.5">
               Are you sure you want to delete{" "}
-              <strong className="text-[#1d1d1f]">
+              <strong className="text-white">
                 {datasetToDelete?.name || datasetToDelete?.filename}
               </strong>
               ? This action will permanently remove all associated rasters, vector caches, and tilesets.
@@ -554,14 +554,14 @@ export default function HomePage() {
           <AlertDialogFooter className="mt-4 gap-2">
             <AlertDialogCancel
               disabled={deleting}
-              className="rounded-full border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f]"
+              className="rounded-full border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={deleting}
-              className="rounded-full bg-[#ff3b30] hover:bg-[#e03126] text-white text-xs font-normal"
+              className="rounded-full bg-red-600 hover:bg-red-500 text-white text-xs font-normal"
             >
               {deleting ? (
                 <>
@@ -581,14 +581,14 @@ export default function HomePage() {
         open={Boolean(configToDelete)}
         onOpenChange={(open) => !open && setConfigToDelete(null)}
       >
-        <AlertDialogContent className="rounded-[20px] bg-[#ffffff] border border-[#e0e0e0] text-[#1d1d1f] shadow-lg max-w-md">
+        <AlertDialogContent className="rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-xl max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-base font-semibold text-[#1d1d1f]">
+            <AlertDialogTitle className="text-base font-semibold text-white">
               Delete Saved Configuration?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs text-[#7a7a7a] mt-1.5">
+            <AlertDialogDescription className="text-xs text-slate-400 mt-1.5">
               Are you sure you want to remove{" "}
-              <strong className="text-[#1d1d1f]">
+              <strong className="text-white">
                 {configToDelete?.name}
               </strong>
               ? The underlying datasets will remain available in your session.
@@ -597,14 +597,14 @@ export default function HomePage() {
           <AlertDialogFooter className="mt-4 gap-2">
             <AlertDialogCancel
               disabled={deletingConfig}
-              className="rounded-full border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f]"
+              className="rounded-full border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleDeleteConfig(configToDelete)}
               disabled={deletingConfig}
-              className="rounded-full bg-[#ff3b30] hover:bg-[#e03126] text-white text-xs font-normal"
+              className="rounded-full bg-red-600 hover:bg-red-500 text-white text-xs font-normal"
             >
               {deletingConfig ? (
                 <>

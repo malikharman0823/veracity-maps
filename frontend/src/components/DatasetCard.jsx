@@ -75,9 +75,9 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
 
   if (viewMode === "list") {
     return (
-      <div className="group rounded-[14px] border border-[#e0e0e0] bg-[#ffffff] hover:border-[#0066cc]/40 hover:shadow-xs transition-all duration-200 flex items-center p-3 sm:p-4 gap-3 sm:gap-4">
+      <div className="group rounded-xl border border-slate-800 bg-slate-900/60 hover:border-blue-500/50 hover:bg-slate-900/80 transition-all duration-200 flex items-center p-3 sm:p-4 gap-3 sm:gap-4">
         {/* Minimal icon/thumbnail */}
-        <div className="w-12 h-12 rounded-[10px] bg-[#f5f5f7] border border-[#e0e0e0] flex items-center justify-center shrink-0 overflow-hidden">
+        <div className="w-12 h-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
           {isRaster ? (
             <img
               src={datasetSourceImageUrl(dataset.id)}
@@ -88,17 +88,17 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
               }}
             />
           ) : (
-            <Map className="size-5 text-[#7a7a7a]" />
+            <Map className="size-5 text-slate-400" />
           )}
         </div>
 
         {/* Info */}
         <div className="flex-1 min-w-0 flex flex-col justify-center">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-sm text-[#1d1d1f] truncate group-hover:text-[#0066cc] transition-colors">
+            <h3 className="font-semibold text-sm text-white truncate group-hover:text-blue-400 transition-colors">
               {name}
             </h3>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-[#e0e0e0] bg-[#fafafc] text-[10px] font-medium text-[#1d1d1f]">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-slate-700 bg-slate-800 text-[10px] font-medium text-slate-200">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${status.dotColor} ${
                   status.isPulsing ? "animate-pulse" : ""
@@ -107,7 +107,7 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
               {status.text}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-1 text-[11px] text-[#7a7a7a]">
+          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
             <span className="font-mono truncate">{dataset.filename}</span>
             <span>•</span>
             <span className="font-mono">{format}</span>
@@ -118,7 +118,7 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-[#7a7a7a] hidden md:block mr-2">
+          <span className="text-xs text-slate-400 hidden md:block mr-2">
             Updated {dateStr}
           </span>
           {onDeleteClick && (
@@ -126,13 +126,13 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
               variant="ghost"
               size="icon"
               onClick={() => onDeleteClick(dataset)}
-              className="text-[#7a7a7a] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded-full"
+              className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-full"
               title="Delete Dataset"
             >
               <Trash2 className="size-4" />
             </Button>
           )}
-          <Button asChild variant="pill" size="sm" className="h-8 text-xs">
+          <Button asChild variant="pill" size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-500 text-white">
             <Link to={`/datasets/${dataset.id}`}>
               <span>Open</span>
               <ArrowRight className="size-3.5 ml-1" />
@@ -144,31 +144,31 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
   }
 
   return (
-    <div className="group rounded-[18px] border border-[#e0e0e0] bg-[#ffffff] hover:border-[#0066cc]/40 hover:shadow-xs transition-all duration-200 flex flex-col justify-between overflow-hidden">
+    <div className="group rounded-2xl border border-slate-800 bg-slate-900/60 hover:border-blue-500/50 hover:bg-slate-900/80 transition-all duration-200 flex flex-col justify-between overflow-hidden">
       <div>
         {/* Thumbnail preview area */}
-        <div className="relative h-44 bg-[#f5f5f7] border-b border-[#e0e0e0] flex items-center justify-center overflow-hidden p-3">
+        <div className="relative h-44 bg-slate-950 border-b border-slate-800 flex items-center justify-center overflow-hidden p-3">
           {isRaster ? (
             <img
               src={datasetSourceImageUrl(dataset.id)}
               alt="Preview"
               className="w-full h-full object-contain rounded-lg transition-transform duration-300 group-hover:scale-[1.02]"
               style={{
-                filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.12))",
+                filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.4))",
               }}
               onError={(e) => {
                 e.target.style.display = "none"
               }}
             />
           ) : (
-            <div className="w-full h-full rounded-lg bg-[#ffffff] border border-[#e0e0e0] flex items-center justify-center">
-              <Map className="size-10 text-[#7a7a7a]/60" />
+            <div className="w-full h-full rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center">
+              <Map className="size-10 text-slate-500" />
             </div>
           )}
 
           {/* Badges on image */}
           <div className="absolute top-3 left-3 flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e0e0e0] bg-[#ffffff]/90 backdrop-blur-xs text-[11px] font-medium text-[#1d1d1f] shadow-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-700 bg-slate-900/90 backdrop-blur-xs text-[11px] font-medium text-slate-200 shadow-xs">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${status.dotColor} ${
                   status.isPulsing ? "animate-pulse" : ""
@@ -181,7 +181,7 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
           {onDeleteClick && (
             <button
               onClick={() => onDeleteClick(dataset)}
-              className="absolute top-3 right-3 size-7 rounded-full bg-[#ffffff]/90 hover:bg-[#ff3b30] text-[#7a7a7a] hover:text-white border border-[#e0e0e0] flex items-center justify-center transition-colors shadow-xs"
+              className="absolute top-3 right-3 size-7 rounded-full bg-slate-900/90 hover:bg-red-500 text-slate-400 hover:text-white border border-slate-700 flex items-center justify-center transition-colors shadow-xs"
               title="Delete Dataset"
             >
               <Trash2 className="size-3.5" />
@@ -193,13 +193,13 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
         <div className="p-5 pb-3 space-y-3">
           <div>
             <h3
-              className="font-semibold text-base text-[#1d1d1f] truncate group-hover:text-[#0066cc] transition-colors tracking-tight"
+              className="font-semibold text-base text-white truncate group-hover:text-blue-400 transition-colors tracking-tight"
               title={name}
             >
               {name}
             </h3>
             <p
-              className="font-mono text-xs text-[#7a7a7a] truncate mt-0.5"
+              className="font-mono text-xs text-slate-400 truncate mt-0.5"
               title={dataset.filename}
             >
               {dataset.filename}
@@ -208,13 +208,13 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
 
           {/* Metadata badges */}
           <div className="flex flex-wrap gap-1.5 pt-1">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f]">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-slate-700 bg-slate-800 text-slate-200">
               {format}
             </span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-[#e0e0e0] bg-[#fafafc] text-[#7a7a7a]">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-slate-700 bg-slate-800 text-slate-400">
               {size}
             </span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-[#e0e0e0] bg-[#fafafc] text-[#7a7a7a]">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-slate-700 bg-slate-800 text-slate-400">
               {crs}
             </span>
           </div>
@@ -222,13 +222,13 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
       </div>
 
       {/* Card Footer */}
-      <div className="p-5 pt-3 border-t border-[#e0e0e0] space-y-3 bg-[#fafafc]/50">
-        <div className="flex items-center justify-between text-[11px] text-[#7a7a7a]">
+      <div className="p-5 pt-3 border-t border-slate-800 space-y-3 bg-slate-950/40">
+        <div className="flex items-center justify-between text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
-            <Clock className="size-3.5 text-[#7a7a7a]" />
+            <Clock className="size-3.5 text-slate-400" />
             {dateStr}
           </span>
-          <span className="font-mono text-[10px] text-[#7a7a7a]">
+          <span className="font-mono text-[10px] text-slate-400">
             {dataset.tile_status === "completed" ? "Tiled" : "Raw"}
           </span>
         </div>
@@ -236,17 +236,17 @@ export default function DatasetCard({ dataset, viewMode = "grid", onDeleteClick 
         {status.isPulsing ? (
           <Button
             variant="outline"
-            className="w-full h-9 rounded-full text-xs font-normal text-[#7a7a7a] border-[#e0e0e0] bg-white cursor-not-allowed"
+            className="w-full h-9 rounded-full text-xs font-normal text-slate-400 border-slate-700 bg-slate-800 cursor-not-allowed"
             disabled
           >
-            <Loader2 className="size-3.5 animate-spin mr-1.5 text-[#ff9500]" />
+            <Loader2 className="size-3.5 animate-spin mr-1.5 text-amber-400" />
             <span>Processing…</span>
           </Button>
         ) : (
           <Button
             asChild
             variant="pill"
-            className="w-full h-9 text-xs font-medium bg-[#0066cc] hover:bg-[#0071e3] text-white"
+            className="w-full h-9 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white"
           >
             <Link to={`/datasets/${dataset.id}`}>
               <span>Open in Studio</span>

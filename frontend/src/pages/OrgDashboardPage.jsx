@@ -15,28 +15,10 @@ import {
   listOrgActivities,
   listUserProjects,
 } from "../api"
-import {
-  Users,
-  FolderKanban,
-  Settings,
-  History,
-  Shield,
-  UserPlus,
-  Trash2,
-  Edit,
-  ArrowRightLeft,
-  Plus,
-  Calendar,
-  Database,
-  Compass,
-  ArrowLeft,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react"
 
 export default function OrgDashboardPage() {
   const { id: orgId } = useParams()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState("overview") // "overview" | "projects" | "members" | "activity" | "settings"
@@ -241,7 +223,11 @@ export default function OrgDashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] text-[#7a7a7a]">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
+        <svg className="animate-spin h-6 w-6 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
         Loading organization workspace...
       </div>
     )
@@ -249,15 +235,19 @@ export default function OrgDashboardPage() {
 
   if (error || !org) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f5f7] p-6 text-center">
-        <AlertCircle className="size-12 text-[#dc2626] mb-4" />
-        <h2 className="text-xl font-bold text-[#1d1d1f] mb-2">Access Restricted</h2>
-        <p className="text-sm text-[#7a7a7a] mb-6 max-w-md">{error || "Organization not found."}</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
+        <p className="text-sm text-slate-400 mb-6 max-w-md">{error || "Organization not found."}</p>
         <Link
           to="/dashboard"
-          className="inline-flex items-center gap-2 rounded-xl bg-[#0066cc] px-4 py-2 text-sm font-medium text-white hover:bg-[#0071e3]"
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
         >
-          <ArrowLeft className="size-4" /> Back to Dashboard
+          ← Back to Dashboard
         </Link>
       </div>
     )
@@ -269,164 +259,176 @@ export default function OrgDashboardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
-      {/* Header */}
-      <header className="border-b border-[#e0e0e0] bg-white sticky top-0 z-20">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <div className="flex items-center gap-4">
-            <Link
-              to="/dashboard"
-              className="p-2 rounded-lg hover:bg-[#f5f5f7] text-[#7a7a7a] hover:text-[#1d1d1f] transition-colors"
-              title="Back to Dashboard"
-            >
-              <ArrowLeft className="size-5" />
-            </Link>
-            <div className="h-9 w-9 rounded-xl bg-[#0066cc]/10 text-[#0066cc] flex items-center justify-center font-bold text-lg shadow-xs">
-              {org.name?.charAt(0) || "O"}
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-lg font-bold text-[#1d1d1f] tracking-tight">{org.name}</h1>
-                <span className="font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#0066cc]/10 text-[#0066cc] border border-[#0066cc]/20">
-                  {userRole}
-                </span>
-              </div>
-              <p className="text-xs text-[#7a7a7a] line-clamp-1">{org.description || "Organization Workspace"}</p>
-            </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      {/* Top Header */}
+      <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/dashboard"
+            className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition-colors"
+            title="Back to Dashboard"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </Link>
+          <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold">
+            {org.name?.charAt(0) || "O"}
           </div>
-
-          <div className="flex items-center gap-3">
-            {isEditor && (
-              <button
-                type="button"
-                onClick={() => setShowCreateProjModal(true)}
-                className="flex items-center gap-2 rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white shadow-xs hover:bg-[#0071e3] transition-all cursor-pointer"
-              >
-                <Plus className="size-4" /> New Org Project
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={handleOpenTransferModal}
-                className="flex items-center gap-2 rounded-xl border border-[#e0e0e0] bg-white px-3.5 py-2 text-xs font-medium text-[#1d1d1f] shadow-xs hover:bg-[#f5f5f7] transition-all cursor-pointer"
-              >
-                <ArrowRightLeft className="size-3.5 text-[#7a7a7a]" /> Transfer Project
-              </button>
-            )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-lg text-white tracking-tight">{org.name}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold uppercase">
+                {userRole}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 line-clamp-1">{org.description || "Organization Workspace"}</p>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="mx-auto flex max-w-7xl gap-8 px-6 text-xs font-medium">
+        <div className="flex items-center gap-3">
+          {isEditor && (
+            <button
+              type="button"
+              onClick={() => setShowCreateProjModal(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Org Project
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenTransferModal}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-colors cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              Transfer Project
+            </button>
+          )}
+          <button
+            onClick={logout}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+          >
+            Log out
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6">
+        {/* Section Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6">
           <button
             onClick={() => setActiveTab("overview")}
-            className={`border-b-2 py-3 flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === "overview"
-                ? "border-[#0066cc] text-[#0066cc] font-semibold"
-                : "border-transparent text-[#7a7a7a] hover:text-[#1d1d1f]"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
             }`}
           >
-            <Compass className="size-3.5" /> Overview
+            Overview
           </button>
           <button
             onClick={() => setActiveTab("projects")}
-            className={`border-b-2 py-3 flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === "projects"
-                ? "border-[#0066cc] text-[#0066cc] font-semibold"
-                : "border-transparent text-[#7a7a7a] hover:text-[#1d1d1f]"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
             }`}
           >
-            <FolderKanban className="size-3.5" /> Projects ({projects.length})
+            Projects ({projects.length})
           </button>
           <button
             onClick={() => setActiveTab("members")}
-            className={`border-b-2 py-3 flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === "members"
-                ? "border-[#0066cc] text-[#0066cc] font-semibold"
-                : "border-transparent text-[#7a7a7a] hover:text-[#1d1d1f]"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
             }`}
           >
-            <Users className="size-3.5" /> Members ({members.length})
+            Members ({members.length})
           </button>
           {isAdmin && (
             <button
               onClick={() => setActiveTab("activity")}
-              className={`border-b-2 py-3 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "activity"
-                  ? "border-[#0066cc] text-[#0066cc] font-semibold"
-                  : "border-transparent text-[#7a7a7a] hover:text-[#1d1d1f]"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-slate-900"
               }`}
             >
-              <History className="size-3.5" /> Activity
+              Activity Logs
             </button>
           )}
           {isAdmin && (
             <button
               onClick={() => setActiveTab("settings")}
-              className={`border-b-2 py-3 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "settings"
-                  ? "border-[#0066cc] text-[#0066cc] font-semibold"
-                  : "border-transparent text-[#7a7a7a] hover:text-[#1d1d1f]"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-slate-900"
               }`}
             >
-              <Settings className="size-3.5" /> Settings
+              Settings
             </button>
           )}
         </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="mx-auto max-w-7xl p-6">
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-6">
             {/* Metric Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[#7a7a7a] text-xs font-semibold uppercase">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Total Projects</span>
-                  <FolderKanban className="size-4 text-[#0066cc]" />
+                  <span className="text-blue-400 font-bold">#</span>
                 </div>
-                <div className="mt-3 text-3xl font-extrabold text-[#1d1d1f]">{projects.length}</div>
-                <p className="mt-1 text-[11px] text-[#7a7a7a]">Collaborative map workspaces</p>
+                <div className="mt-3 text-3xl font-extrabold text-white">{projects.length}</div>
+                <p className="mt-1 text-xs text-slate-400">Collaborative map workspaces</p>
               </div>
 
-              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[#7a7a7a] text-xs font-semibold uppercase">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Total Members</span>
-                  <Users className="size-4 text-[#34c759]" />
+                  <span className="text-emerald-400 font-bold">●</span>
                 </div>
-                <div className="mt-3 text-3xl font-extrabold text-[#1d1d1f]">{members.length}</div>
-                <p className="mt-1 text-[11px] text-[#7a7a7a]">Active teammates & collaborators</p>
+                <div className="mt-3 text-3xl font-extrabold text-white">{members.length}</div>
+                <p className="mt-1 text-xs text-slate-400">Active teammates & collaborators</p>
               </div>
 
-              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[#7a7a7a] text-xs font-semibold uppercase">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Storage Used</span>
-                  <Database className="size-4 text-[#ff9500]" />
+                  <span className="text-amber-400 font-bold">MB</span>
                 </div>
-                <div className="mt-3 text-2xl font-extrabold text-[#1d1d1f]">
+                <div className="mt-3 text-2xl font-extrabold text-white">
                   {formatBytes(org.storage_used_bytes)}
                 </div>
-                <div className="mt-2 w-full bg-[#f0f0f2] rounded-full h-1.5 overflow-hidden">
+                <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="bg-[#0066cc] h-1.5 rounded-full"
+                    className="bg-blue-500 h-1.5 rounded-full"
                     style={{ width: `${quotaPercent}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[10px] text-[#7a7a7a] text-right">
+                <p className="mt-1 text-[10px] text-slate-400 text-right">
                   {quotaPercent}% of {formatBytes(org.storage_quota_bytes || 10737418240)}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[#7a7a7a] text-xs font-semibold uppercase">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Your Role</span>
-                  <Shield className="size-4 text-[#af52de]" />
+                  <span className="text-purple-400 font-bold">★</span>
                 </div>
-                <div className="mt-3 text-2xl font-extrabold text-[#1d1d1f] capitalize">{userRole}</div>
-                <p className="mt-1 text-[11px] text-[#7a7a7a]">
+                <div className="mt-3 text-2xl font-extrabold text-white capitalize">{userRole}</div>
+                <p className="mt-1 text-xs text-slate-400">
                   {isOwner ? "Complete ownership" : isAdmin ? "Team administration" : isEditor ? "Full editing access" : "Read-only inspection"}
                 </p>
               </div>
@@ -434,18 +436,18 @@ export default function OrgDashboardPage() {
 
             {/* Quick Actions & Recent Projects */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 rounded-2xl border border-[#e0e0e0] bg-white p-6 shadow-xs">
+              <div className="md:col-span-2 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-[#1d1d1f]">Organization Projects</h3>
+                  <h3 className="text-base font-semibold text-white">Organization Projects</h3>
                   <button
                     onClick={() => setActiveTab("projects")}
-                    className="text-xs font-semibold text-[#0066cc] hover:underline"
+                    className="text-xs font-semibold text-blue-400 hover:text-blue-300"
                   >
                     View All →
                   </button>
                 </div>
                 {projects.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-[#7a7a7a]">
+                  <div className="py-8 text-center text-xs text-slate-400">
                     No projects yet. Create your organization's first mapping project!
                   </div>
                 ) : (
@@ -454,18 +456,20 @@ export default function OrgDashboardPage() {
                       <div
                         key={p.id}
                         onClick={() => navigate(`/workspace?project=${encodeURIComponent(p.id)}`)}
-                        className="flex items-center justify-between p-3 rounded-xl border border-[#e0e0e0]/70 hover:border-[#0066cc]/50 hover:bg-[#fafafc] transition-all cursor-pointer"
+                        className="flex items-center justify-between p-3.5 rounded-xl border border-slate-800/80 bg-slate-950/40 hover:bg-slate-900 hover:border-blue-500/40 transition-all cursor-pointer"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="size-8 rounded-lg bg-[#0066cc]/10 text-[#0066cc] flex items-center justify-center">
-                            <Compass className="size-4" />
+                          <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                            </svg>
                           </div>
                           <div>
-                            <div className="text-xs font-semibold text-[#1d1d1f]">{p.name}</div>
-                            <div className="text-[10px] text-[#7a7a7a]">{p.description || "No description"}</div>
+                            <div className="text-sm font-semibold text-white">{p.name}</div>
+                            <div className="text-xs text-slate-400 line-clamp-1">{p.description || "No description"}</div>
                           </div>
                         </div>
-                        <div className="text-[10px] text-[#7a7a7a]">
+                        <div className="text-[11px] text-slate-400">
                           Updated {new Date(p.updated_at).toLocaleDateString()}
                         </div>
                       </div>
@@ -474,20 +478,20 @@ export default function OrgDashboardPage() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-6 shadow-xs">
-                <h3 className="text-sm font-bold text-[#1d1d1f] mb-4">Workspace Info</h3>
-                <div className="space-y-3 text-xs">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-white mb-4">Workspace Info</h3>
+                <div className="space-y-3.5 text-xs">
                   <div>
-                    <span className="text-[#7a7a7a] block text-[11px]">Organization ID</span>
-                    <span className="font-mono text-[#1d1d1f] text-[11px] select-all">{org.id}</span>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Organization ID</span>
+                    <span className="font-mono text-slate-200 select-all bg-slate-950 px-2 py-1 rounded border border-slate-800 block text-[11px] truncate">{org.id}</span>
                   </div>
                   <div>
-                    <span className="text-[#7a7a7a] block text-[11px]">Created Date</span>
-                    <span className="text-[#1d1d1f]">{new Date(org.created_at).toLocaleDateString()}</span>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Created Date</span>
+                    <span className="text-slate-200">{new Date(org.created_at).toLocaleDateString()}</span>
                   </div>
                   <div>
-                    <span className="text-[#7a7a7a] block text-[11px]">Isolation Level</span>
-                    <span className="text-[#34c759] font-medium">Independent Workspace (Zero cross-leak)</span>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Isolation Level</span>
+                    <span className="text-emerald-400 font-medium">Independent Workspace</span>
                   </div>
                 </div>
               </div>
@@ -500,59 +504,65 @@ export default function OrgDashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1d1d1f]">Projects</h2>
-                <p className="text-xs text-[#7a7a7a]">Shared geospatial layers, floors, and vector markers.</p>
+                <h2 className="text-lg font-bold text-white">Projects</h2>
+                <p className="text-xs text-slate-400">Shared geospatial layers, floors, and vector markers.</p>
               </div>
               {isEditor && (
                 <button
                   type="button"
                   onClick={() => setShowCreateProjModal(true)}
-                  className="flex items-center gap-2 rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white shadow-xs hover:bg-[#0071e3] transition-all cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
                 >
-                  <Plus className="size-4" /> New Org Project
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Org Project
                 </button>
               )}
             </div>
 
             {projects.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#e0e0e0] bg-white p-12 text-center">
-                <FolderKanban className="size-10 text-[#7a7a7a] mx-auto mb-3" />
-                <h3 className="text-sm font-bold text-[#1d1d1f] mb-1">No Projects Found</h3>
-                <p className="text-xs text-[#7a7a7a] mb-4">
+              <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center">
+                <h3 className="text-base font-semibold text-white mb-1">No Projects Found</h3>
+                <p className="text-xs text-slate-400 mb-4">
                   This organization doesn't have any projects yet.
                 </p>
                 {isEditor && (
                   <button
                     onClick={() => setShowCreateProjModal(true)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white hover:bg-[#0071e3]"
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors"
                   >
-                    <Plus className="size-3.5" /> Create Project
+                    Create Project
                   </button>
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map((p) => (
                   <div
                     key={p.id}
                     onClick={() => navigate(`/workspace?project=${encodeURIComponent(p.id)}`)}
-                    className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                    className="group relative bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md"
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-mono text-[9px] uppercase px-2 py-0.5 rounded-full bg-[#f5f5f7] text-[#7a7a7a] border border-[#e0e0e0]">
-                          Org Project
-                        </span>
-                        <span className="text-[10px] text-[#7a7a7a]">
-                          {new Date(p.updated_at).toLocaleDateString()}
-                        </span>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold uppercase">
+                            Org Project
+                          </span>
+                          <h3 className="text-base font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                            {p.name}
+                          </h3>
+                        </div>
                       </div>
-                      <h3 className="text-sm font-bold text-[#1d1d1f] mb-1">{p.name}</h3>
-                      <p className="text-xs text-[#7a7a7a] line-clamp-2">{p.description || "No description provided."}</p>
+                      <p className="text-xs text-slate-400 line-clamp-2 min-h-[32px]">
+                        {p.description || "No description provided."}
+                      </p>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-[#e0e0e0]/70 flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-[#0066cc]">Open Project →</span>
+                    <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{p.dataset_ids?.length || 0} layers</span>
+                      <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
                     </div>
                   </div>
                 ))}
@@ -566,24 +576,27 @@ export default function OrgDashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1d1d1f]">Team Members</h2>
-                <p className="text-xs text-[#7a7a7a]">Manage organizational roles and pending member invitations.</p>
+                <h2 className="text-lg font-bold text-white">Team Members</h2>
+                <p className="text-xs text-slate-400">Manage organizational roles and pending member invitations.</p>
               </div>
               {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setShowInviteModal(true)}
-                  className="flex items-center gap-2 rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white shadow-xs hover:bg-[#0071e3] transition-all cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
                 >
-                  <UserPlus className="size-4" /> Invite Member
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Invite Member
                 </button>
               )}
             </div>
 
-            <div className="rounded-2xl border border-[#e0e0e0] bg-white overflow-hidden shadow-xs">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-sm">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-[#e0e0e0] bg-[#fafafc] text-[#7a7a7a] font-semibold">
+                  <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
                     <th className="py-3 px-4">Member</th>
                     <th className="py-3 px-4">Email</th>
                     <th className="py-3 px-4">Status</th>
@@ -591,28 +604,28 @@ export default function OrgDashboardPage() {
                     {isAdmin && <th className="py-3 px-4 text-right">Actions</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#e0e0e0]/70">
+                <tbody className="divide-y divide-slate-800/60">
                   {members.map((m) => {
                     const isSelf = m.user_id === user?.id
                     const isMemberOwner = m.role === "owner"
 
                     return (
-                      <tr key={m.id} className="hover:bg-[#fafafc]">
-                        <td className="py-3 px-4 font-medium text-[#1d1d1f]">
+                      <tr key={m.id} className="hover:bg-slate-900/80">
+                        <td className="py-3 px-4 font-medium text-white">
                           <div className="flex items-center gap-2.5">
-                            <div className="size-7 rounded-full bg-[#0066cc]/10 text-[#0066cc] font-bold flex items-center justify-center text-[11px]">
+                            <div className="w-7 h-7 rounded-full bg-blue-600/30 text-blue-300 font-bold flex items-center justify-center text-[11px] border border-blue-500/20">
                               {m.user_name?.charAt(0) || "U"}
                             </div>
                             <span>{m.user_name || "Invited User"} {isSelf && "(You)"}</span>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-[#7a7a7a]">{m.user_email}</td>
+                        <td className="py-3 px-4 text-slate-400">{m.user_email}</td>
                         <td className="py-3 px-4">
                           <span
                             className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
                               m.invitation_status === "accepted"
-                                ? "bg-[#34c759]/10 text-[#34c759]"
-                                : "bg-[#ff9500]/10 text-[#ff9500]"
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                             }`}
                           >
                             {m.invitation_status}
@@ -623,14 +636,14 @@ export default function OrgDashboardPage() {
                             <select
                               value={m.role}
                               onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                              className="rounded-lg border border-[#e0e0e0] bg-white px-2 py-1 text-xs text-[#1d1d1f] focus:outline-none focus:border-[#0066cc]"
+                              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
                             >
                               <option value="admin">Admin</option>
                               <option value="editor">Editor</option>
                               <option value="viewer">Viewer</option>
                             </select>
                           ) : (
-                            <span className="font-semibold capitalize text-[#1d1d1f]">{m.role}</span>
+                            <span className="font-semibold capitalize text-white">{m.role}</span>
                           )}
                         </td>
                         {isAdmin && (
@@ -639,10 +652,12 @@ export default function OrgDashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveMember(m)}
-                                className="p-1 rounded text-[#7a7a7a] hover:text-[#dc2626] transition-colors cursor-pointer"
+                                className="p-1 rounded text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
                                 title="Remove member"
                               >
-                                <Trash2 className="size-4" />
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                               </button>
                             )}
                           </td>
@@ -659,20 +674,20 @@ export default function OrgDashboardPage() {
         {/* TAB 4: ACTIVITY LOG */}
         {activeTab === "activity" && isAdmin && (
           <div className="space-y-4">
-            <h2 className="text-base font-bold text-[#1d1d1f]">Audit & Activity Logs</h2>
-            <div className="rounded-2xl border border-[#e0e0e0] bg-white p-5 shadow-xs">
+            <h2 className="text-lg font-bold text-white">Audit & Activity Logs</h2>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
               {activities.length === 0 ? (
-                <div className="py-8 text-center text-xs text-[#7a7a7a]">No activities logged yet.</div>
+                <div className="py-8 text-center text-xs text-slate-400">No activities logged yet.</div>
               ) : (
                 <div className="space-y-3">
                   {activities.map((a) => (
-                    <div key={a.id} className="flex items-start gap-3 text-xs border-b border-[#e0e0e0]/50 pb-3 last:border-b-0">
-                      <div className="size-2 rounded-full bg-[#0066cc] mt-1.5 shrink-0" />
+                    <div key={a.id} className="flex items-start gap-3 text-xs border-b border-slate-800/60 pb-3 last:border-b-0">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                       <div className="flex-1">
-                        <div className="font-semibold text-[#1d1d1f]">{a.user_name}</div>
-                        <div className="text-[#7a7a7a] text-[11px]">{a.details}</div>
+                        <div className="font-semibold text-white">{a.user_name}</div>
+                        <div className="text-slate-400 text-xs mt-0.5">{a.details}</div>
                       </div>
-                      <div className="text-[10px] text-[#7a7a7a] font-mono shrink-0">
+                      <div className="text-[10px] text-slate-400 font-mono shrink-0">
                         {new Date(a.timestamp).toLocaleString()}
                       </div>
                     </div>
@@ -686,32 +701,32 @@ export default function OrgDashboardPage() {
         {/* TAB 5: SETTINGS */}
         {activeTab === "settings" && isAdmin && (
           <div className="max-w-2xl space-y-6">
-            <div className="rounded-2xl border border-[#e0e0e0] bg-white p-6 shadow-xs">
-              <h2 className="text-base font-bold text-[#1d1d1f] mb-4">Organization Settings</h2>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
+              <h2 className="text-base font-bold text-white mb-4">Organization Settings</h2>
               <form onSubmit={handleSaveSettings} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Organization Name</label>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Organization Name</label>
                   <input
                     type="text"
                     required
                     value={editOrgName}
                     onChange={(e) => setEditOrgName(e.target.value)}
-                    className="w-full rounded-xl border border-[#e0e0e0] px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Description</label>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Description</label>
                   <textarea
                     rows={3}
                     value={editOrgDesc}
                     onChange={(e) => setEditOrgDesc(e.target.value)}
-                    className="w-full rounded-xl border border-[#e0e0e0] px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={savingSettings}
-                  className="rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white hover:bg-[#0071e3] transition-colors cursor-pointer"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
                 >
                   {savingSettings ? "Saving..." : "Save Changes"}
                 </button>
@@ -719,15 +734,15 @@ export default function OrgDashboardPage() {
             </div>
 
             {isOwner && (
-              <div className="rounded-2xl border border-[#dc2626]/30 bg-red-50/20 p-6 shadow-xs">
-                <h3 className="text-sm font-bold text-[#dc2626] mb-2">Danger Zone</h3>
-                <p className="text-xs text-[#7a7a7a] mb-4">
+              <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-6 shadow-sm">
+                <h3 className="text-sm font-bold text-red-400 mb-2">Danger Zone</h3>
+                <p className="text-xs text-slate-400 mb-4">
                   Permanently delete this organization, including all member memberships, activity logs, and organization-owned projects.
                 </p>
                 <button
                   type="button"
                   onClick={handleDeleteOrg}
-                  className="rounded-xl bg-[#dc2626] px-4 py-2 text-xs font-medium text-white hover:bg-red-700 transition-colors cursor-pointer"
+                  className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-500 transition-colors cursor-pointer"
                 >
                   Delete Organization
                 </button>
@@ -739,30 +754,30 @@ export default function OrgDashboardPage() {
 
       {/* INVITE MEMBER MODAL */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-[#e0e0e0]">
-            <h3 className="text-base font-bold text-[#1d1d1f] mb-1">Invite Team Member</h3>
-            <p className="text-xs text-[#7a7a7a] mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-1">Invite Team Member</h3>
+            <p className="text-xs text-slate-400 mb-4">
               Enter the email address of a registered Veracity Maps user.
             </p>
             <form onSubmit={handleInvite} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Email Address</label>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Email Address</label>
                 <input
                   type="email"
                   required
                   placeholder="colleague@domain.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full rounded-xl border border-[#e0e0e0] px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Assigned Role</label>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Assigned Role</label>
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full rounded-xl border border-[#e0e0e0] bg-white px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                 >
                   <option value="admin">Admin (Manage members & projects)</option>
                   <option value="editor">Editor (Create & edit projects)</option>
@@ -773,14 +788,14 @@ export default function OrgDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setShowInviteModal(false)}
-                  className="rounded-xl border border-[#e0e0e0] px-4 py-2 text-xs font-medium text-[#7a7a7a] hover:bg-[#f5f5f7] cursor-pointer"
+                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={inviting}
-                  className="rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white hover:bg-[#0071e3] transition-colors cursor-pointer"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
                 >
                   {inviting ? "Sending..." : "Send Invitation"}
                 </button>
@@ -792,46 +807,46 @@ export default function OrgDashboardPage() {
 
       {/* CREATE PROJECT MODAL */}
       {showCreateProjModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-[#e0e0e0]">
-            <h3 className="text-base font-bold text-[#1d1d1f] mb-1">Create Organization Project</h3>
-            <p className="text-xs text-[#7a7a7a] mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-1">Create Organization Project</h3>
+            <p className="text-xs text-slate-400 mb-4">
               This project will belong to <strong>{org.name}</strong> and be accessible to all organization members according to their roles.
             </p>
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Project Name</label>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Project Name</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. City Airport Masterplan"
                   value={newProjName}
                   onChange={(e) => setNewProjName(e.target.value)}
-                  className="w-full rounded-xl border border-[#e0e0e0] px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Description (Optional)</label>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Description (Optional)</label>
                 <textarea
                   rows={3}
                   placeholder="Brief overview of map layers and scope..."
                   value={newProjDesc}
                   onChange={(e) => setNewProjDesc(e.target.value)}
-                  className="w-full rounded-xl border border-[#e0e0e0] px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowCreateProjModal(false)}
-                  className="rounded-xl border border-[#e0e0e0] px-4 py-2 text-xs font-medium text-[#7a7a7a] hover:bg-[#f5f5f7] cursor-pointer"
+                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creatingProj}
-                  className="rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white hover:bg-[#0071e3] transition-colors cursor-pointer"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
                 >
                   {creatingProj ? "Creating..." : "Create Project"}
                 </button>
@@ -843,24 +858,24 @@ export default function OrgDashboardPage() {
 
       {/* TRANSFER PROJECT MODAL */}
       {showTransferModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-[#e0e0e0]">
-            <h3 className="text-base font-bold text-[#1d1d1f] mb-1">Transfer Personal Project to Org</h3>
-            <p className="text-xs text-[#7a7a7a] mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-1">Transfer Personal Project to Org</h3>
+            <p className="text-xs text-slate-400 mb-4">
               Select one of your personal projects to transfer ownership into <strong>{org.name}</strong>. All associated rasters, floors, and points will be preserved.
             </p>
             {myPersonalProjects.length === 0 ? (
-              <div className="py-4 text-xs text-[#7a7a7a]">
+              <div className="py-4 text-xs text-slate-400">
                 You have no personal projects available to transfer.
               </div>
             ) : (
               <form onSubmit={handleTransferProject} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">Select Project</label>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Select Project</label>
                   <select
                     value={selectedPersonalProjId}
                     onChange={(e) => setSelectedPersonalProjId(e.target.value)}
-                    className="w-full rounded-xl border border-[#e0e0e0] bg-white px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066cc]"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   >
                     {myPersonalProjects.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -873,14 +888,14 @@ export default function OrgDashboardPage() {
                   <button
                     type="button"
                     onClick={() => setShowTransferModal(false)}
-                    className="rounded-xl border border-[#e0e0e0] px-4 py-2 text-xs font-medium text-[#7a7a7a] hover:bg-[#f5f5f7] cursor-pointer"
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={transferring}
-                    className="rounded-xl bg-[#0066cc] px-4 py-2 text-xs font-medium text-white hover:bg-[#0071e3] transition-colors cursor-pointer"
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
                   >
                     {transferring ? "Transferring..." : "Confirm Transfer"}
                   </button>
