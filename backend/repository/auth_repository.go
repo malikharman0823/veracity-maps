@@ -258,3 +258,20 @@ func (r *AuthRepository) GetUserByID(userID string) (*models.User, error) {
 	}
 	return user, nil
 }
+
+// FindUserByEmail returns user info by lowercased email address.
+func (r *AuthRepository) FindUserByEmail(email string) (*models.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	uid, ok := r.emailToID[cleanEmail]
+	if !ok {
+		return nil, ErrUserNotFound
+	}
+	user, ok := r.users[uid]
+	if !ok {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
+}

@@ -95,7 +95,7 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1b. User Projects (Dashboard & Ownership)
+	// 1b. User Projects (Dashboard, Ownership, Sharing & Collaboration)
 	if path == "/api/projects" || path == "/projects" {
 		user := GetUser(r)
 		if user == nil {
@@ -107,9 +107,46 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
-			rt.projectsH.Create(w, r, user.ID)
+			rt.projectsH.Create(w, r, user)
 			return
 		}
+	}
+
+	if path == "/api/projects/shared" || path == "/projects/shared" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		rt.projectsH.ListShared(w, r, user.ID)
+		return
+	}
+
+	if path == "/api/projects/invitations" || path == "/projects/invitations" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		rt.projectsH.ListInvitations(w, r, user)
+		return
+	}
+
+	if (strings.HasPrefix(path, "/api/projects/invitations/") || strings.HasPrefix(path, "/projects/invitations/")) && strings.HasSuffix(path, "/respond") {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		var remainder string
+		if strings.HasPrefix(path, "/api/projects/invitations/") {
+			remainder = strings.TrimPrefix(path, "/api/projects/invitations/")
+		} else {
+			remainder = strings.TrimPrefix(path, "/projects/invitations/")
+		}
+		invitationID := strings.TrimSuffix(remainder, "/respond")
+		rt.projectsH.RespondInvitation(w, r, invitationID, user)
+		return
 	}
 
 	if strings.HasPrefix(path, "/api/projects/") || strings.HasPrefix(path, "/projects/") {
@@ -137,6 +174,40 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			}
 			if r.Method == http.MethodDelete {
 				rt.projectsH.Delete(w, r, projectID, user.ID)
+				return
+			}
+		}
+
+		if len(parts) == 2 {
+			projectID := parts[0]
+			sub := parts[1]
+
+			if sub == "share" && r.Method == http.MethodPost {
+				rt.projectsH.Share(w, r, projectID, user)
+				return
+			}
+
+			if sub == "members" && r.Method == http.MethodGet {
+				rt.projectsH.ListMembers(w, r, projectID, user.ID)
+				return
+			}
+
+			if sub == "activities" && r.Method == http.MethodGet {
+				rt.projectsH.ListActivities(w, r, projectID, user.ID)
+				return
+			}
+		}
+
+		if len(parts) == 3 && parts[1] == "members" {
+			projectID := parts[0]
+			memberID := parts[2]
+
+			if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+				rt.projectsH.UpdateMemberRole(w, r, projectID, memberID, user)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				rt.projectsH.RemoveMember(w, r, projectID, memberID, user)
 				return
 			}
 		}

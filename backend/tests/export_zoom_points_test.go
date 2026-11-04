@@ -65,7 +65,7 @@ func setupZoomPointsTestEnv(t *testing.T) (*repository.SessionRepository, *stora
 	gHandler := georeference.NewHandler(geoService, repo)
 	eHandler := export.NewHandler(expService, repo)
 	aHandler := auth.NewHandler(authRepo)
-	pHandler := projects.NewHandler(projRepo, repo)
+	pHandler := projects.NewHandler(projRepo, repo, authRepo)
 
 	router := api.NewRouter(repo, authRepo, projRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler)
 	handler := router.BuildHandler()

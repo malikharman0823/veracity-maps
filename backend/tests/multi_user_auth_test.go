@@ -57,7 +57,7 @@ func setupMultiUserTestServer(t *testing.T, tempDir string) (*httptest.Server, *
 	gHandler := georeference.NewHandler(geoService, sessionRepo)
 	eHandler := export.NewHandler(expService, sessionRepo)
 	aHandler := auth.NewHandler(authRepo)
-	pHandler := projects.NewHandler(projRepo, sessionRepo)
+	pHandler := projects.NewHandler(projRepo, sessionRepo, authRepo)
 
 	router := api.NewRouter(sessionRepo, authRepo, projRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler)
 	server := httptest.NewServer(router.BuildHandler())

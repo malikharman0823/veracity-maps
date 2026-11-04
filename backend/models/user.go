@@ -33,6 +33,86 @@ type UserProject struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+// ProjectRole defines the permission level of a user within a project.
+type ProjectRole string
+
+const (
+	RoleOwner  ProjectRole = "owner"
+	RoleEditor ProjectRole = "editor"
+	RoleViewer ProjectRole = "viewer"
+)
+
+// InvitationStatus defines the state of a collaboration invitation.
+type InvitationStatus string
+
+const (
+	StatusPending  InvitationStatus = "pending"
+	StatusAccepted InvitationStatus = "accepted"
+	StatusRejected InvitationStatus = "rejected"
+	StatusRevoked  InvitationStatus = "revoked"
+)
+
+// ProjectMember represents a user's membership and permission within a project.
+type ProjectMember struct {
+	ID               string           `json:"id"`
+	ProjectID        string           `json:"project_id"`
+	UserID           string           `json:"user_id"`
+	UserEmail        string           `json:"user_email"`
+	UserName         string           `json:"user_name"`
+	Role             ProjectRole      `json:"role"`
+	InvitationStatus InvitationStatus `json:"invitation_status"`
+	InvitedBy        string           `json:"invited_by"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+// ProjectActivity logs events that occur on a project.
+type ProjectActivity struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	UserID    string    `json:"user_id"`
+	UserName  string    `json:"user_name"`
+	Action    string    `json:"action"` // e.g., project_created, invitation_sent, invitation_accepted, etc.
+	Details   string    `json:"details"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// SharedProjectView represents a project shared with a user along with membership metadata.
+type SharedProjectView struct {
+	Project    *UserProject `json:"project"`
+	OwnerName  string       `json:"owner_name"`
+	OwnerEmail string       `json:"owner_email"`
+	Role       ProjectRole  `json:"role"`
+	SharedDate time.Time    `json:"shared_date"`
+}
+
+// PendingInvitationView represents an invitation awaiting user response.
+type PendingInvitationView struct {
+	InvitationID string      `json:"invitation_id"`
+	ProjectID    string      `json:"project_id"`
+	ProjectName  string      `json:"project_name"`
+	InvitedBy    string      `json:"invited_by"`
+	InviterName  string      `json:"inviter_name"`
+	Role         ProjectRole `json:"role"`
+	CreatedAt    time.Time   `json:"created_at"`
+}
+
+// ShareProjectRequest payload to invite a collaborator.
+type ShareProjectRequest struct {
+	Email string      `json:"email"`
+	Role  ProjectRole `json:"role"`
+}
+
+// UpdateMemberRoleRequest payload to change a collaborator's role.
+type UpdateMemberRoleRequest struct {
+	Role ProjectRole `json:"role"`
+}
+
+// RespondInvitationRequest payload to accept or reject an invitation.
+type RespondInvitationRequest struct {
+	Accept bool `json:"accept"`
+}
+
 // AuthToken represents a persistent or session-based bearer authentication token.
 type AuthToken struct {
 	Token     string    `json:"token"`

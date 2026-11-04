@@ -70,7 +70,7 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	gh := georeference.NewHandler(geoService, repo)
 	eh := export.NewHandler(expService, repo)
 	ah := auth.NewHandler(authRepo)
-	ph := projects.NewHandler(projRepo, repo)
+	ph := projects.NewHandler(projRepo, repo, authRepo)
 
 	router := api.NewRouter(repo, authRepo, projRepo, mw, uh, dh, gh, eh, ah, ph)
 	server := httptest.NewServer(router.BuildHandler())

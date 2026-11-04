@@ -167,6 +167,58 @@ export async function deleteUserProject(projectId) {
   return response.data.data
 }
 
+// --- Project Sharing & Collaboration APIs ---
+
+export async function listSharedProjects() {
+  const response = await client.get("/api/projects/shared")
+  return response.data.data?.shared_projects || []
+}
+
+export async function listUserInvitations() {
+  const response = await client.get("/api/projects/invitations")
+  return response.data.data?.invitations || []
+}
+
+export async function respondToInvitation(invitationId, accept) {
+  const response = await client.post(`/api/projects/invitations/${encodeURIComponent(invitationId)}/respond`, {
+    accept: !!accept,
+  })
+  return response.data.data
+}
+
+export async function shareProject(projectId, email, role = "viewer") {
+  const response = await client.post(`/api/projects/${encodeURIComponent(projectId)}/share`, {
+    email,
+    role,
+  })
+  return response.data.data
+}
+
+export async function listProjectMembers(projectId) {
+  const response = await client.get(`/api/projects/${encodeURIComponent(projectId)}/members`)
+  return response.data.data?.members || []
+}
+
+export async function updateProjectMemberRole(projectId, memberId, role) {
+  const response = await client.patch(
+    `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(memberId)}`,
+    { role }
+  )
+  return response.data.data
+}
+
+export async function removeProjectMember(projectId, memberId) {
+  const response = await client.delete(
+    `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(memberId)}`
+  )
+  return response.data.data
+}
+
+export async function listProjectActivities(projectId) {
+  const response = await client.get(`/api/projects/${encodeURIComponent(projectId)}/activities`)
+  return response.data.data?.activities || []
+}
+
 export async function createSession() {
   const response = await client.post("/sessions")
   const data = response.data.data

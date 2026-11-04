@@ -56,7 +56,7 @@ func main() {
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)
 	authHandler := auth.NewHandler(authRepo)
-	projectsHandler := projects.NewHandler(projRepo, repo)
+	projectsHandler := projects.NewHandler(projRepo, repo, authRepo)
 
 	router := api.NewRouter(
 		repo,
