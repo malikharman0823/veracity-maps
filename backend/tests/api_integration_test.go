@@ -21,6 +21,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -59,6 +60,10 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	if err != nil {
 		t.Fatalf("failed to create project repository: %v", err)
 	}
+	orgRepo, err := repository.NewOrgRepository(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create org repository: %v", err)
+	}
 	mw := api.NewMiddleware(repo, authRepo)
 
 	dsService := services.NewDatasetService(cfg, repo, sm)
@@ -71,8 +76,9 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	eh := export.NewHandler(expService, repo)
 	ah := auth.NewHandler(authRepo)
 	ph := projects.NewHandler(projRepo, repo, authRepo)
+	oh := organizations.NewHandler(orgRepo, projRepo, authRepo)
 
-	router := api.NewRouter(repo, authRepo, projRepo, mw, uh, dh, gh, eh, ah, ph)
+	router := api.NewRouter(repo, authRepo, projRepo, orgRepo, mw, uh, dh, gh, eh, ah, ph, oh)
 	server := httptest.NewServer(router.BuildHandler())
 
 	return server, repo, tempDir

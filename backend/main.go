@@ -16,6 +16,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/gis"
@@ -45,6 +46,11 @@ func main() {
 		log.Fatalf("Failed to initialize project repository: %v", err)
 	}
 
+	orgRepo, err := repository.NewOrgRepository("storage")
+	if err != nil {
+		log.Fatalf("Failed to initialize org repository: %v", err)
+	}
+
 	middleware := api.NewMiddleware(repo, authRepo)
 
 	datasetService := services.NewDatasetService(cfg, repo, sm)
@@ -57,11 +63,13 @@ func main() {
 	exportHandler := export.NewHandler(exportService, repo)
 	authHandler := auth.NewHandler(authRepo)
 	projectsHandler := projects.NewHandler(projRepo, repo, authRepo)
+	orgHandler := organizations.NewHandler(orgRepo, projRepo, authRepo)
 
 	router := api.NewRouter(
 		repo,
 		authRepo,
 		projRepo,
+		orgRepo,
 		middleware,
 		uploadHandler,
 		datasetsHandler,
@@ -69,6 +77,7 @@ func main() {
 		exportHandler,
 		authHandler,
 		projectsHandler,
+		orgHandler,
 	)
 
 	// Background session cleaner

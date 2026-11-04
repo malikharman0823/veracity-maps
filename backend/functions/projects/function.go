@@ -132,7 +132,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user *models.Us
 		req.Name = "Untitled Project"
 	}
 
-	p, err := h.projectRepo.Create(user.ID, req.Name, req.Description, user.Name, user.Email)
+	p, err := h.projectRepo.Create(user.ID, req.Name, req.Description, user.Name, user.Email, req.OrgID)
 	if err != nil {
 		models.WriteError(w, http.StatusInternalServerError, "PROJECT_CREATION_FAILED", err.Error(), nil, nil)
 		return

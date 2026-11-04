@@ -219,6 +219,105 @@ export async function listProjectActivities(projectId) {
   return response.data.data?.activities || []
 }
 
+// --- Organization & Team Management APIs (Phase 3) ---
+
+export async function listOrganizations() {
+  const response = await client.get("/api/organizations")
+  return response.data.data?.organizations || []
+}
+
+export async function createOrganization(name, description = "") {
+  const response = await client.post("/api/organizations", {
+    name,
+    description,
+  })
+  return response.data.data
+}
+
+export async function getOrganization(orgId) {
+  const response = await client.get(`/api/organizations/${encodeURIComponent(orgId)}`)
+  return response.data.data
+}
+
+export async function updateOrganization(orgId, { name, description }) {
+  const response = await client.patch(`/api/organizations/${encodeURIComponent(orgId)}`, {
+    name,
+    description,
+  })
+  return response.data.data
+}
+
+export async function deleteOrganization(orgId) {
+  const response = await client.delete(`/api/organizations/${encodeURIComponent(orgId)}`)
+  return response.data.data
+}
+
+export async function listOrgMembers(orgId) {
+  const response = await client.get(`/api/organizations/${encodeURIComponent(orgId)}/members`)
+  return response.data.data?.members || []
+}
+
+export async function inviteOrgMember(orgId, email, role = "viewer") {
+  const response = await client.post(`/api/organizations/${encodeURIComponent(orgId)}/invite`, {
+    email,
+    role,
+  })
+  return response.data.data
+}
+
+export async function updateOrgMemberRole(orgId, memberId, role) {
+  const response = await client.patch(
+    `/api/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(memberId)}`,
+    { role }
+  )
+  return response.data.data
+}
+
+export async function removeOrgMember(orgId, memberId) {
+  const response = await client.delete(
+    `/api/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(memberId)}`
+  )
+  return response.data.data
+}
+
+export async function listOrgProjects(orgId) {
+  const response = await client.get(`/api/organizations/${encodeURIComponent(orgId)}/projects`)
+  return response.data.data?.projects || []
+}
+
+export async function createOrgProject(orgId, name, description = "") {
+  const response = await client.post(`/api/organizations/${encodeURIComponent(orgId)}/projects`, {
+    name,
+    description,
+  })
+  return response.data.data
+}
+
+export async function transferProjectToOrg(orgId, projectId) {
+  const response = await client.post(`/api/organizations/${encodeURIComponent(orgId)}/transfer-project`, {
+    project_id: projectId,
+  })
+  return response.data.data
+}
+
+export async function listOrgInvitations() {
+  const response = await client.get("/api/organizations/invitations")
+  return response.data.data?.invitations || []
+}
+
+export async function respondToOrgInvitation(invitationId, accept) {
+  const response = await client.post(
+    `/api/organizations/invitations/${encodeURIComponent(invitationId)}/respond`,
+    { accept: !!accept }
+  )
+  return response.data.data
+}
+
+export async function listOrgActivities(orgId) {
+  const response = await client.get(`/api/organizations/${encodeURIComponent(orgId)}/activities`)
+  return response.data.data?.activities || []
+}
+
 export async function createSession() {
   const response = await client.post("/sessions")
   const data = response.data.data
