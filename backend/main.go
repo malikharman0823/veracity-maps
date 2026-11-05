@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/api"
 	"github.com/malikharman0823/veracity-maps/config"
+	"github.com/malikharman0823/veracity-maps/db"
 	"github.com/malikharman0823/veracity-maps/functions/auth"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
@@ -49,6 +51,28 @@ func main() {
 	orgRepo, err := repository.NewOrgRepository("storage")
 	if err != nil {
 		log.Fatalf("Failed to initialize org repository: %v", err)
+	}
+
+	// Connect to Microsoft SQL Server 2022 if configured
+	if cfg.MSSQLConnStr != "" {
+		sqlDB, err := db.InitDB(cfg.MSSQLConnStr)
+		if err != nil {
+			log.Printf("[MSSQL WARNING] Could not connect to MSSQL Server: %v (continuing with local persistent storage)", err)
+		} else {
+			log.Printf("[MSSQL SUCCESS] Connected to Microsoft SQL Server 2022 database")
+			migrationsDir := filepath.Join("migrations")
+			if err := db.RunMigrations(sqlDB, migrationsDir); err != nil {
+				log.Printf("[MSSQL WARNING] Migration execution notice: %v", err)
+			}
+			// Migrate JSON data to MSSQL
+			if err := repository.MigrateJSONToMSSQL("storage", sqlDB); err != nil {
+				log.Printf("[MSSQL WARNING] Data migration notice: %v", err)
+			}
+			// Wire DB into repositories
+			authRepo.SetDB(sqlDB)
+			projRepo.SetDB(sqlDB)
+			orgRepo.SetDB(sqlDB)
+		}
 	}
 
 	middleware := api.NewMiddleware(repo, authRepo)

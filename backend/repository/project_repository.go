@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,10 +29,17 @@ var (
 
 type ProjectRepository struct {
 	mu          sync.RWMutex
+	db          *sql.DB
 	projectsDir string
 	projects    map[string]*models.UserProject              // Key: project ID
 	members     map[string]map[string]*models.ProjectMember // Key: project ID -> member ID -> member
 	activities  map[string][]*models.ProjectActivity        // Key: project ID -> activity list
+}
+
+func (r *ProjectRepository) SetDB(db *sql.DB) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.db = db
 }
 
 func NewProjectRepository(storageDir string) (*ProjectRepository, error) {
@@ -240,6 +248,23 @@ func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEm
 	_ = r.saveMembersLocked(projectID)
 
 	r.logActivityLocked(projectID, userID, ownerName, "project_created", "Project created")
+
+	if r.db != nil {
+		var orgIDParam interface{} = nil
+		if orgID != "" {
+			orgIDParam = orgID
+		}
+		datasetBytes, _ := json.Marshal(p.DatasetIDs)
+		_, _ = r.db.Exec(`
+			INSERT INTO Projects (id, user_id, org_id, owner_type, name, description, primary_dataset_id, dataset_ids, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
+		`, p.ID, p.UserID, orgIDParam, p.OwnerType, p.Name, p.Description, nil, string(datasetBytes), p.CreatedAt, p.UpdatedAt)
+
+		_, _ = r.db.Exec(`
+			INSERT INTO ProjectMembers (id, project_id, user_id, user_email, user_name, role, invitation_status, invited_by, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
+		`, ownerMember.ID, ownerMember.ProjectID, ownerMember.UserID, ownerMember.UserEmail, ownerMember.UserName, string(ownerMember.Role), string(ownerMember.InvitationStatus), ownerMember.InvitedBy, ownerMember.CreatedAt, ownerMember.UpdatedAt)
+	}
 
 	return p, nil
 }
@@ -453,6 +478,14 @@ func (r *ProjectRepository) Update(projectID, userID, name, description string, 
 
 	r.logActivityLocked(projectID, userID, userName, "project_modified", fmt.Sprintf("Updated project info: %s", p.Name))
 
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			UPDATE Projects
+			SET name = @p1, description = @p2, updated_at = @p3
+			WHERE id = @p4;
+		`, p.Name, p.Description, p.UpdatedAt, projectID)
+	}
+
 	return p, nil
 }
 
@@ -475,6 +508,10 @@ func (r *ProjectRepository) Delete(projectID, userID string) error {
 
 	dir := filepath.Join(r.projectsDir, projectID)
 	_ = storage.SafeRemoveAll(dir)
+
+	if r.db != nil {
+		_, _ = r.db.Exec("DELETE FROM Projects WHERE id = @p1", projectID)
+	}
 
 	return nil
 }
@@ -539,6 +576,13 @@ func (r *ProjectRepository) InviteMember(projectID, ownerID string, targetUser *
 	}
 
 	r.logActivityLocked(projectID, ownerID, inviterName, "invitation_sent", fmt.Sprintf("Invited %s (%s) as %s", targetUser.Name, targetUser.Email, role))
+
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			INSERT INTO ProjectMembers (id, project_id, user_id, user_email, user_name, role, invitation_status, invited_by, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
+		`, member.ID, member.ProjectID, member.UserID, member.UserEmail, member.UserName, string(member.Role), string(member.InvitationStatus), member.InvitedBy, member.CreatedAt, member.UpdatedAt)
+	}
 
 	return member, nil
 }
@@ -632,6 +676,10 @@ func (r *ProjectRepository) UpdateMemberRole(projectID, ownerID, memberID string
 
 	r.logActivityLocked(projectID, ownerID, ownerName, "permission_changed", fmt.Sprintf("Changed %s's role to %s", m.UserName, newRole))
 
+	if r.db != nil {
+		_, _ = r.db.Exec("UPDATE ProjectMembers SET role = @p1, updated_at = @p2 WHERE id = @p3", string(newRole), m.UpdatedAt, memberID)
+	}
+
 	return m, nil
 }
 
@@ -668,6 +716,10 @@ func (r *ProjectRepository) RemoveMember(projectID, ownerID, memberID string, ow
 
 	r.logActivityLocked(projectID, ownerID, ownerName, "collaborator_removed", fmt.Sprintf("Removed %s from project", removedName))
 
+	if r.db != nil {
+		_, _ = r.db.Exec("DELETE FROM ProjectMembers WHERE id = @p1", memberID)
+	}
+
 	return nil
 }
 
@@ -702,11 +754,17 @@ func (r *ProjectRepository) RespondInvitation(invitationID, userID, userName str
 		targetMember.InvitationStatus = models.StatusAccepted
 		_ = r.saveMembersLocked(targetProjectID)
 		r.logActivityLocked(targetProjectID, userID, userName, "invitation_accepted", fmt.Sprintf("%s accepted the invitation as %s", userName, targetMember.Role))
+		if r.db != nil {
+			_, _ = r.db.Exec("UPDATE ProjectMembers SET invitation_status = @p1, updated_at = @p2 WHERE id = @p3", string(models.StatusAccepted), now, targetMember.ID)
+		}
 	} else {
 		targetMember.InvitationStatus = models.StatusRejected
 		delete(r.members[targetProjectID], targetMember.ID)
 		_ = r.saveMembersLocked(targetProjectID)
 		r.logActivityLocked(targetProjectID, userID, userName, "invitation_rejected", fmt.Sprintf("%s declined the invitation", userName))
+		if r.db != nil {
+			_, _ = r.db.Exec("UPDATE ProjectMembers SET invitation_status = @p1, updated_at = @p2 WHERE id = @p3", string(models.StatusRejected), now, targetMember.ID)
+		}
 	}
 
 	return nil

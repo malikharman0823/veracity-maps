@@ -347,6 +347,61 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 1d. Unified Invitations Endpoint (/api/invitations)
+	if path == "/api/invitations" || path == "/invitations" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		if r.Method == http.MethodGet {
+			projInvites := rt.projRepo.ListPendingInvitations(user.ID, user.Email, rt.authRepo)
+			orgInvites := rt.orgRepo.ListPendingInvitations(user)
+			models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"project_invitations":      projInvites,
+				"organization_invitations": orgInvites,
+				"total":                    len(projInvites) + len(orgInvites),
+			})
+			return
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/invitations/") || strings.HasPrefix(path, "/invitations/") {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		var remainder string
+		if strings.HasPrefix(path, "/api/invitations/") {
+			remainder = strings.TrimPrefix(path, "/api/invitations/")
+		} else {
+			remainder = strings.TrimPrefix(path, "/invitations/")
+		}
+		parts := strings.Split(remainder, "/")
+		if len(parts) == 2 {
+			invitationID := parts[0]
+			action := parts[1] // "accept" or "reject"
+			if r.Method == http.MethodPost {
+				accept := (action == "accept")
+				// Try project invitations first
+				err := rt.projRepo.RespondInvitation(invitationID, user.ID, user.Name, accept)
+				if err == nil {
+					models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "accepted": accept, "type": "project"})
+					return
+				}
+				// Try organization invitations
+				err = rt.orgRepo.RespondInvitation(invitationID, user, accept)
+				if err == nil {
+					models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "accepted": accept, "type": "organization"})
+					return
+				}
+				models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Invitation not found or already processed", nil, nil)
+				return
+			}
+		}
+	}
+
 	// 2. Sessions
 	if path == "/sessions" {
 		if r.Method == http.MethodPost {

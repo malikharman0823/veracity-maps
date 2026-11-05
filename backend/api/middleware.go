@@ -22,10 +22,10 @@ const (
 
 type Middleware struct {
 	sessionRepo *repository.SessionRepository
-	authRepo    *repository.AuthRepository
+	authRepo    repository.AuthRepo
 }
 
-func NewMiddleware(sessionRepo *repository.SessionRepository, authRepo *repository.AuthRepository) *Middleware {
+func NewMiddleware(sessionRepo *repository.SessionRepository, authRepo repository.AuthRepo) *Middleware {
 	return &Middleware{
 		sessionRepo: sessionRepo,
 		authRepo:    authRepo,

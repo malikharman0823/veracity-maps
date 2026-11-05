@@ -318,6 +318,23 @@ export async function listOrgActivities(orgId) {
   return response.data.data?.activities || []
 }
 
+// --- Unified Invitations API ---
+
+export async function listAllInvitations() {
+  const response = await client.get("/api/invitations")
+  return response.data.data || { project_invitations: [], organization_invitations: [], total: 0 }
+}
+
+export async function acceptInvitation(invitationId) {
+  const response = await client.post(`/api/invitations/${encodeURIComponent(invitationId)}/accept`)
+  return response.data.data
+}
+
+export async function rejectInvitation(invitationId) {
+  const response = await client.post(`/api/invitations/${encodeURIComponent(invitationId)}/reject`)
+  return response.data.data
+}
+
 export async function createSession() {
   const response = await client.post("/sessions")
   const data = response.data.data

@@ -8,7 +8,13 @@ import {
   updateUserProject,
   listSharedProjects,
   listUserInvitations,
+  listOrgInvitations,
   respondToInvitation,
+  respondToOrgInvitation,
+  createOrganization,
+  listOrganizations,
+  listProjectActivities,
+  listOrgActivities,
 } from "../api"
 import ShareProjectModal from "../components/ShareProjectModal"
 
@@ -16,10 +22,12 @@ export default function DashboardPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "invitations"
+  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "organizations" | "invitations" | "activity" | "settings"
   const [projects, setProjects] = useState([])
   const [sharedProjects, setSharedProjects] = useState([])
+  const [organizations, setOrganizations] = useState([])
   const [invitations, setInvitations] = useState([])
+  const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -28,6 +36,12 @@ export default function DashboardPage() {
   const [newProjectName, setNewProjectName] = useState("")
   const [newProjectDesc, setNewProjectDesc] = useState("")
   const [creating, setCreating] = useState(false)
+
+  // New Organization modal state
+  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false)
+  const [newOrgName, setNewOrgName] = useState("")
+  const [newOrgDesc, setNewOrgDesc] = useState("")
+  const [creatingOrg, setCreatingOrg] = useState(false)
 
   // Rename modal state
   const [editingProject, setEditingProject] = useState(null)
@@ -41,14 +55,43 @@ export default function DashboardPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true)
-      const [owned, shared, invites] = await Promise.all([
+      const [owned, shared, orgs, projInvites, orgInvites] = await Promise.all([
         listUserProjects().catch(() => []),
         listSharedProjects().catch(() => []),
+        listOrganizations().catch(() => []),
         listUserInvitations().catch(() => []),
+        listOrgInvitations().catch(() => []),
       ])
-      setProjects(owned)
-      setSharedProjects(shared)
-      setInvitations(invites)
+      setProjects(owned || [])
+      setSharedProjects(shared || [])
+      setOrganizations(orgs || [])
+
+      const formattedProjInvites = (projInvites || []).map((inv) => ({ ...inv, inviteType: "project" }))
+      const formattedOrgInvites = (orgInvites || []).map((inv) => ({
+        ...inv,
+        inviteType: "organization",
+        project_name: inv.org_name,
+      }))
+      setInvitations([...formattedProjInvites, ...formattedOrgInvites])
+
+      // Gather recent activities across projects and organizations
+      try {
+        const projActPromises = (owned || []).slice(0, 5).map((p) =>
+          listProjectActivities(p.id)
+            .then((acts) => (acts || []).map((a) => ({ ...a, source: p.name, sourceType: "project" })))
+            .catch(() => [])
+        )
+        const orgActPromises = (orgs || []).slice(0, 5).map((o) =>
+          listOrgActivities(o.id)
+            .then((acts) => (acts || []).map((a) => ({ ...a, source: o.name, sourceType: "organization" })))
+            .catch(() => [])
+        )
+        const actArrays = await Promise.all([...projActPromises, ...orgActPromises])
+        const mergedActs = actArrays.flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        setActivities(mergedActs)
+      } catch {
+        setActivities([])
+      }
     } catch (err) {
       setError("Failed to load your workspaces.")
     } finally {
@@ -124,12 +167,34 @@ export default function DashboardPage() {
     }
   }
 
-  const handleRespondInvite = async (invitationId, accept) => {
+  const handleRespondInvite = async (inv, accept) => {
     try {
-      await respondToInvitation(invitationId, accept)
+      if (inv.inviteType === "organization") {
+        await respondToOrgInvitation(inv.invitation_id || inv.id, accept)
+      } else {
+        await respondToInvitation(inv.invitation_id || inv.id, accept)
+      }
       await fetchAllData()
     } catch (err) {
       alert("Failed to respond to invitation: " + (err.response?.data?.error?.message || err.message))
+    }
+  }
+
+  const handleCreateOrg = async (e) => {
+    e.preventDefault()
+    if (!newOrgName.trim()) return
+
+    setCreatingOrg(true)
+    try {
+      const created = await createOrganization(newOrgName.trim(), newOrgDesc.trim())
+      setShowCreateOrgModal(false)
+      setNewOrgName("")
+      setNewOrgDesc("")
+      navigate(`/organizations/${encodeURIComponent(created.id)}`)
+    } catch (err) {
+      alert("Failed to create organization: " + (err.response?.data?.error?.message || err.message))
+    } finally {
+      setCreatingOrg(false)
     }
   }
 
@@ -174,22 +239,33 @@ export default function DashboardPage() {
               Manage your personal maps and collaborate on shared projects.
             </p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors shadow-lg shadow-blue-600/20"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Project
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setShowCreateOrgModal(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 font-medium text-xs transition-colors"
+            >
+              <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              New Organization
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors shadow-lg shadow-blue-600/20"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Project
+            </button>
+          </div>
         </div>
 
         {/* Section Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6 overflow-x-auto">
           <button
             onClick={() => setActiveTab("my")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
               activeTab === "my"
                 ? "bg-blue-600 text-white shadow-sm"
                 : "text-slate-400 hover:text-white hover:bg-slate-900"
@@ -199,28 +275,58 @@ export default function DashboardPage() {
           </button>
           <button
             onClick={() => setActiveTab("shared")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
               activeTab === "shared"
                 ? "bg-blue-600 text-white shadow-sm"
                 : "text-slate-400 hover:text-white hover:bg-slate-900"
             }`}
           >
-            Shared With Me ({sharedProjects.length})
+            Shared Projects ({sharedProjects.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("organizations")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
+              activeTab === "organizations"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+          >
+            Organizations ({organizations.length})
           </button>
           <button
             onClick={() => setActiveTab("invitations")}
-            className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
               activeTab === "invitations"
                 ? "bg-blue-600 text-white shadow-sm"
                 : "text-slate-400 hover:text-white hover:bg-slate-900"
             }`}
           >
-            Pending Invitations
+            Invitations
             {invitations.length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-black font-bold">
                 {invitations.length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab("activity")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
+              activeTab === "activity"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+          >
+            Recent Activity
+          </button>
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
+              activeTab === "settings"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+          >
+            Account Settings
           </button>
         </div>
 
@@ -378,8 +484,71 @@ export default function DashboardPage() {
               ))}
             </div>
           )
-        ) : (
-          /* PENDING INVITATIONS LIST */
+        ) : activeTab === "organizations" ? (
+          /* ORGANIZATIONS GRID */
+          organizations.length === 0 ? (
+            <div className="border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-4">
+                <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-white">No organizations yet</h3>
+              <p className="text-sm text-slate-400 max-w-sm mt-1 mb-6">
+                Create an organization workspace to manage team members, assign roles, and share datasets.
+              </p>
+              <button
+                onClick={() => setShowCreateOrgModal(true)}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors"
+              >
+                Create New Organization
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {organizations.map((org) => (
+                <div
+                  key={org.id}
+                  onClick={() => navigate(`/organizations/${encodeURIComponent(org.id)}`)}
+                  className="group relative bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase ${
+                          org.user_role === "owner"
+                            ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                            : org.user_role === "admin"
+                            ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        }`}>
+                          {org.user_role || "member"}
+                        </span>
+                        <h3 className="text-base font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                          {org.name}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-400 line-clamp-2 min-h-[32px]">
+                      {org.description || "No description provided."}
+                    </p>
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>
+                      {org.member_count || 1} {org.member_count === 1 ? "member" : "members"}
+                    </span>
+                    <span>
+                      Created {new Date(org.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : activeTab === "invitations" ? (
+          /* INVITATIONS LIST */
           invitations.length === 0 ? (
             <div className="border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
               <h3 className="text-base font-semibold text-white">No pending invitations</h3>
@@ -391,30 +560,30 @@ export default function DashboardPage() {
             <div className="space-y-3 max-w-3xl">
               {invitations.map((inv) => (
                 <div
-                  key={inv.invitation_id}
+                  key={inv.invitation_id || inv.id}
                   className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-4"
                 >
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
-                        {inv.role}
+                        {inv.inviteType || "project"} : {inv.role}
                       </span>
-                      <h4 className="text-sm font-bold text-white">{inv.project_name}</h4>
+                      <h4 className="text-sm font-bold text-white">{inv.project_name || inv.org_name}</h4>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
-                      Invited by <span className="text-slate-200 font-medium">{inv.inviter_name}</span> on {new Date(inv.created_at).toLocaleDateString()}
+                      Invited by <span className="text-slate-200 font-medium">{inv.inviter_name || inv.invited_by}</span> on {new Date(inv.created_at).toLocaleDateString()}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => handleRespondInvite(inv.invitation_id, true)}
+                      onClick={() => handleRespondInvite(inv, true)}
                       className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
                     >
                       Accept
                     </button>
                     <button
-                      onClick={() => handleRespondInvite(inv.invitation_id, false)}
+                      onClick={() => handleRespondInvite(inv, false)}
                       className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors"
                     >
                       Decline
@@ -424,6 +593,136 @@ export default function DashboardPage() {
               ))}
             </div>
           )
+        ) : activeTab === "activity" ? (
+          /* RECENT ACTIVITY TIMELINE */
+          activities.length === 0 ? (
+            <div className="border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-4">
+                <svg className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-white">No recent activity</h3>
+              <p className="text-sm text-slate-400 max-w-sm mt-1">
+                Recent actions across your projects and organizations will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-w-4xl">
+              {activities.map((act, idx) => (
+                <div
+                  key={act.id || idx}
+                  className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-4"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-white">{act.user_name || "User"}</span>
+                      <span className="text-xs text-slate-400">{act.details || act.action}</span>
+                      {act.source && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          {act.source}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">
+                      {new Date(act.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          /* ACCOUNT SETTINGS VIEW */
+          <div className="max-w-3xl space-y-6">
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
+              <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                User Profile
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">Full Name</span>
+                  <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-white font-medium">
+                    {user?.name || "Not provided"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">Email Address</span>
+                  <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-white font-medium">
+                    {user?.email || "Not provided"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">User Identifier</span>
+                  <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono text-xs">
+                    {user?.id || "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">Account Status</span>
+                  <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-emerald-400 font-medium flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Authenticated & Active
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
+              <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7z" />
+                </svg>
+                Database & Security
+              </h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div>
+                    <span className="text-white font-medium block">Database Engine</span>
+                    <span className="text-xs text-slate-400">Microsoft SQL Server 2022 (Port 1434 / veracity_maps)</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                    CONNECTED
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div>
+                    <span className="text-white font-medium block">Password Cryptography</span>
+                    <span className="text-xs text-slate-400">SHA-256 with unique 16-byte cryptographic salt per user</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">
+                    ACTIVE
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div>
+                    <span className="text-white font-medium block">Token Storage & Revocation</span>
+                    <span className="text-xs text-slate-400">Persisted in MSSQL AuthTokens table; immediate revocation on logout</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">
+                    SECURED
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-end">
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-sm font-medium transition-colors"
+                >
+                  Log Out of Session
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
@@ -541,6 +840,63 @@ export default function DashboardPage() {
                   className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
                 >
                   {updating ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Organization Modal */}
+      {showCreateOrgModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-1">Create New Organization</h2>
+            <p className="text-xs text-slate-400 mb-4">Set up an organization workspace for team collaboration.</p>
+
+            <form onSubmit={handleCreateOrg} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1.5">
+                  Organization Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Acme Mapping Team"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1.5">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe your organization's projects or purpose..."
+                  value={newOrgDesc}
+                  onChange={(e) => setNewOrgDesc(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateOrgModal(false)}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingOrg || !newOrgName.trim()}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {creatingOrg ? "Creating..." : "Create Organization"}
                 </button>
               </div>
             </form>

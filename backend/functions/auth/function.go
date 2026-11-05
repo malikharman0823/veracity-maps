@@ -10,10 +10,10 @@ import (
 )
 
 type Handler struct {
-	authRepo *repository.AuthRepository
+	authRepo repository.AuthRepo
 }
 
-func NewHandler(authRepo *repository.AuthRepository) *Handler {
+func NewHandler(authRepo repository.AuthRepo) *Handler {
 	return &Handler{authRepo: authRepo}
 }
 

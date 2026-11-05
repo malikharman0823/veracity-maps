@@ -16,6 +16,7 @@ type Config struct {
 	MaxUploadSizeBytes int64
 	SessionIdleTimeout time.Duration
 	SessionMaxLifetime time.Duration
+	MSSQLConnStr       string
 }
 
 func LoadConfig() *Config {
@@ -38,6 +39,23 @@ func LoadConfig() *Config {
 		}
 	}
 
+	mssqlConn := os.Getenv("MSSQL_CONNECTION_STRING")
+	if mssqlConn == "" {
+		mssqlHost := getEnv("MSSQL_HOST", "")
+		if mssqlHost != "" {
+			mssqlPort := getEnv("MSSQL_PORT", "1433")
+			mssqlUser := getEnv("MSSQL_USER", "")
+			mssqlPassword := getEnv("MSSQL_PASSWORD", "")
+			mssqlDatabase := getEnv("MSSQL_DATABASE", "veracity_maps")
+
+			if mssqlUser != "" {
+				mssqlConn = "sqlserver://" + mssqlUser + ":" + mssqlPassword + "@" + mssqlHost + ":" + mssqlPort + "?database=" + mssqlDatabase
+			} else {
+				mssqlConn = "server=" + mssqlHost + ";database=" + mssqlDatabase + ";trusted_connection=yes"
+			}
+		}
+	}
+
 	return &Config{
 		Port:               port,
 		Host:               host,
@@ -47,6 +65,7 @@ func LoadConfig() *Config {
 		MaxUploadSizeBytes: maxUploadBytes,
 		SessionIdleTimeout: 24 * time.Hour,
 		SessionMaxLifetime: 7 * 24 * time.Hour,
+		MSSQLConnStr:       mssqlConn,
 	}
 }
 

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,12 +23,19 @@ var (
 
 type AuthRepository struct {
 	mu         sync.RWMutex
+	db         *sql.DB
 	storageDir string
 	usersFile  string
 	tokensFile string
 	users      map[string]*models.User      // Key: user ID
 	emailToID  map[string]string            // Key: lowercased email -> user ID
 	tokens     map[string]*models.AuthToken // Key: token string
+}
+
+func (r *AuthRepository) SetDB(db *sql.DB) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.db = db
 }
 
 func NewAuthRepository(storageDir string) (*AuthRepository, error) {
@@ -171,6 +179,13 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 		return nil, fmt.Errorf("failed to persist user: %w", err)
 	}
 
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			INSERT INTO Users (id, email, name, password_hash, salt, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7);
+		`, user.ID, user.Email, user.Name, user.PasswordHash, user.Salt, user.CreatedAt, user.UpdatedAt)
+	}
+
 	return user, nil
 }
 
@@ -217,6 +232,13 @@ func (r *AuthRepository) CreateToken(userID string, duration time.Duration) (*mo
 	r.tokens[token.Token] = token
 	_ = r.saveTokensLocked()
 
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			INSERT INTO AuthTokens (token, user_id, expires_at, created_at)
+			VALUES (@p1, @p2, @p3, @p4);
+		`, token.Token, token.UserID, token.ExpiresAt, token.CreatedAt)
+	}
+
 	return token, nil
 }
 
@@ -245,6 +267,10 @@ func (r *AuthRepository) RevokeToken(tokenStr string) {
 
 	delete(r.tokens, tokenStr)
 	_ = r.saveTokensLocked()
+
+	if r.db != nil {
+		_, _ = r.db.Exec("DELETE FROM AuthTokens WHERE token = @p1", tokenStr)
+	}
 }
 
 // GetUserByID returns user info by ID.

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,10 +29,17 @@ var (
 
 type OrgRepository struct {
 	mu         sync.RWMutex
+	db         *sql.DB
 	orgsDir    string
 	orgs       map[string]*models.Organization         // Key: org ID -> Org
 	members    map[string]map[string]*models.OrgMember // Key: org ID -> member ID -> OrgMember
 	activities map[string][]*models.OrgActivity        // Key: org ID -> Activity list
+}
+
+func (r *OrgRepository) SetDB(db *sql.DB) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.db = db
 }
 
 func NewOrgRepository(storageDir string) (*OrgRepository, error) {
@@ -237,6 +245,18 @@ func (r *OrgRepository) Create(creator *models.User, name, description string) (
 
 	r.logActivityLocked(orgID, creator.ID, creator.Name, "org_created", fmt.Sprintf("Created organization %s", org.Name))
 
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			INSERT INTO Organizations (id, name, description, created_by, storage_used_bytes, storage_quota_bytes, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8);
+		`, org.ID, org.Name, org.Description, org.CreatedBy, org.StorageUsedBytes, org.StorageQuotaBytes, org.CreatedAt, org.UpdatedAt)
+
+		_, _ = r.db.Exec(`
+			INSERT INTO OrganizationMembers (id, org_id, user_id, user_email, user_name, role, invitation_status, invited_by, joined_at, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11);
+		`, ownerMember.ID, ownerMember.OrgID, ownerMember.UserID, ownerMember.UserEmail, ownerMember.UserName, string(ownerMember.Role), string(ownerMember.InvitationStatus), ownerMember.InvitedBy, ownerMember.JoinedAt, ownerMember.CreatedAt, ownerMember.UpdatedAt)
+	}
+
 	return org, nil
 }
 
@@ -336,6 +356,14 @@ func (r *OrgRepository) Update(orgID, userID, name, description string, user *mo
 
 	r.logActivityLocked(orgID, user.ID, user.Name, "org_settings_updated", fmt.Sprintf("Updated organization settings: %s", org.Name))
 
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			UPDATE Organizations
+			SET name = @p1, description = @p2, updated_at = @p3
+			WHERE id = @p4;
+		`, org.Name, org.Description, org.UpdatedAt, orgID)
+	}
+
 	return org, nil
 }
 
@@ -360,6 +388,10 @@ func (r *OrgRepository) Delete(orgID, userID string) error {
 
 	dir := filepath.Join(r.orgsDir, orgID)
 	_ = storage.SafeRemoveAll(dir)
+
+	if r.db != nil {
+		_, _ = r.db.Exec("DELETE FROM Organizations WHERE id = @p1", orgID)
+	}
 
 	return nil
 }
@@ -426,6 +458,13 @@ func (r *OrgRepository) InviteMember(orgID string, inviter *models.User, targetU
 	}
 
 	r.logActivityLocked(orgID, inviter.ID, inviter.Name, "member_invited", fmt.Sprintf("Invited %s (%s) as %s", targetUser.Name, targetUser.Email, role))
+
+	if r.db != nil {
+		_, _ = r.db.Exec(`
+			INSERT INTO OrganizationMembers (id, org_id, user_id, user_email, user_name, role, invitation_status, invited_by, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
+		`, member.ID, member.OrgID, member.UserID, member.UserEmail, member.UserName, string(member.Role), string(member.InvitationStatus), member.InvitedBy, member.CreatedAt, member.UpdatedAt)
+	}
 
 	return member, nil
 }
@@ -507,6 +546,10 @@ func (r *OrgRepository) UpdateMemberRole(orgID string, operator *models.User, me
 
 	r.logActivityLocked(orgID, operator.ID, operator.Name, "role_changed", fmt.Sprintf("Changed %s's role to %s", m.UserName, newRole))
 
+	if r.db != nil {
+		_, _ = r.db.Exec("UPDATE OrganizationMembers SET role = @p1, updated_at = @p2 WHERE id = @p3", string(newRole), m.UpdatedAt, memberID)
+	}
+
 	return m, nil
 }
 
@@ -549,6 +592,10 @@ func (r *OrgRepository) RemoveMember(orgID string, operator *models.User, member
 	_ = r.saveMembersLocked(orgID)
 
 	r.logActivityLocked(orgID, operator.ID, operator.Name, "member_removed", fmt.Sprintf("Removed %s from organization", removedName))
+
+	if r.db != nil {
+		_, _ = r.db.Exec("DELETE FROM OrganizationMembers WHERE id = @p1", memberID)
+	}
 
 	return nil
 }
@@ -629,11 +676,17 @@ func (r *OrgRepository) RespondInvitation(invitationID string, user *models.User
 		targetMember.JoinedAt = now
 		_ = r.saveMembersLocked(targetOrgID)
 		r.logActivityLocked(targetOrgID, user.ID, user.Name, "member_joined", fmt.Sprintf("%s joined the organization as %s", user.Name, targetMember.Role))
+		if r.db != nil {
+			_, _ = r.db.Exec("UPDATE OrganizationMembers SET invitation_status = @p1, user_id = @p2, joined_at = @p3, updated_at = @p4 WHERE id = @p5", string(models.StatusAccepted), user.ID, now, now, targetMember.ID)
+		}
 	} else {
 		targetMember.InvitationStatus = models.StatusRejected
 		delete(r.members[targetOrgID], targetMember.ID)
 		_ = r.saveMembersLocked(targetOrgID)
 		r.logActivityLocked(targetOrgID, user.ID, user.Name, "invitation_declined", fmt.Sprintf("%s declined the invitation", user.Name))
+		if r.db != nil {
+			_, _ = r.db.Exec("UPDATE OrganizationMembers SET invitation_status = @p1, updated_at = @p2 WHERE id = @p3", string(models.StatusRejected), now, targetMember.ID)
+		}
 	}
 
 	return nil
