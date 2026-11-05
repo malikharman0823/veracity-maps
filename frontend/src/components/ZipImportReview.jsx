@@ -188,7 +188,7 @@ export default function ZipImportReview({
               onClick={() => {
                 if (onImportComplete) onImportComplete(importResult)
               }}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors flex items-center gap-2"
+              className="px-6 py-2.5 bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs rounded-[6px] shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
             >
               <span>Open in Workspace</span>
               <ArrowRight className="size-4" />
@@ -233,7 +233,7 @@ export default function ZipImportReview({
                     <button
                       type="button"
                       onClick={handleAddBuildingSubmit}
-                      className="px-2 py-1 bg-blue-600 text-white rounded-md font-medium text-xs hover:bg-blue-700"
+                      className="px-2 py-1 bg-[#3ecf8e] text-[#171717] rounded-[4px] font-semibold text-xs hover:bg-[#24b47e] cursor-pointer"
                     >
                       Assign
                     </button>
@@ -426,7 +426,7 @@ export default function ZipImportReview({
                   type="button"
                   disabled={selectedCount === 0 || importing}
                   onClick={handleImport}
-                  className="px-5 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:pointer-events-none rounded-xl transition-colors shadow-xs flex items-center gap-2"
+                  className="px-5 py-2 text-xs font-semibold text-[#171717] bg-[#3ecf8e] hover:bg-[#24b47e] disabled:opacity-50 disabled:pointer-events-none rounded-[6px] transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
                 >
                   {importing ? (
                     <>

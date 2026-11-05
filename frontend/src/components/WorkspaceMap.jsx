@@ -1322,10 +1322,10 @@ export default function WorkspaceMap({
           <button
             type="button"
             onClick={() => setIsPlacingPoint((prev) => !prev)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-2xs ${
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-[6px] text-xs font-semibold transition-all shadow-xs cursor-pointer ${
               isPlacingPoint
                 ? "bg-amber-600 text-white animate-pulse"
-                : "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717]"
             }`}
           >
             <Plus className="size-3.5" />

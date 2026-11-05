@@ -4,24 +4,25 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { User, ChevronRight } from "lucide-react"
 import EndSessionDialog from "./EndSessionDialog"
+import ThemeToggle from "./ThemeToggle"
 
 export default function TopHeader({ breadcrumbs = [], actions }) {
   return (
-    <header className="sticky top-0 z-40 h-14 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4 md:px-6 flex items-center justify-between text-slate-100">
+    <header className="sticky top-0 z-40 h-14 bg-white/80 dark:bg-[#1c1c1c]/80 backdrop-blur-md border-b border-neutral-200 dark:border-[#2e2e2e] px-4 md:px-6 flex items-center justify-between text-neutral-900 dark:text-neutral-100 transition-colors">
       {/* Left: Sidebar trigger + Breadcrumb */}
       <div className="flex items-center gap-3 text-xs">
-        <SidebarTrigger className="text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors" />
-        <Separator orientation="vertical" className="h-4 bg-slate-800" />
+        <SidebarTrigger className="text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-neutral-900 dark:hover:text-white rounded-[6px] transition-colors" />
+        <Separator orientation="vertical" className="h-4 bg-neutral-200 dark:bg-[#2e2e2e]" />
 
         <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-slate-400 font-normal">Workspace</span>
-          <ChevronRight className="size-3 text-slate-500" />
+          <span className="text-neutral-500 dark:text-neutral-400 font-normal">Workspace</span>
+          <ChevronRight className="size-3 text-neutral-400 dark:text-neutral-600" />
           {breadcrumbs.map((crumb, i) => (
             <React.Fragment key={i}>
               {crumb.path ? (
                 <Link
                   to={crumb.path}
-                  className="text-slate-400 hover:text-blue-400 transition-colors"
+                  className="text-neutral-500 dark:text-neutral-400 hover:text-[#24b47e] dark:hover:text-[#3ecf8e] transition-colors"
                 >
                   {crumb.label}
                 </Link>
@@ -29,15 +30,15 @@ export default function TopHeader({ breadcrumbs = [], actions }) {
                 <span
                   className={
                     i === breadcrumbs.length - 1
-                      ? "text-white font-semibold"
-                      : "text-slate-400"
+                      ? "text-neutral-900 dark:text-white font-medium"
+                      : "text-neutral-500 dark:text-neutral-400"
                   }
                 >
                   {crumb.label}
                 </span>
               )}
               {i < breadcrumbs.length - 1 && (
-                <ChevronRight className="size-3 text-slate-500" />
+                <ChevronRight className="size-3 text-neutral-400 dark:text-neutral-600" />
               )}
             </React.Fragment>
           ))}
@@ -45,11 +46,12 @@ export default function TopHeader({ breadcrumbs = [], actions }) {
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         {actions}
+        <ThemeToggle />
         <EndSessionDialog />
-        <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block"></div>
-        <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 text-xs font-medium shadow-xs hover:border-blue-500 hover:text-white transition-colors cursor-pointer">
+        <div className="h-4 w-px bg-neutral-200 dark:bg-[#2e2e2e] mx-1 hidden sm:block"></div>
+        <div className="h-8 w-8 rounded-full bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-neutral-600 dark:text-neutral-300 text-xs font-medium shadow-xs hover:border-[#3ecf8e] hover:text-[#3ecf8e] transition-colors cursor-pointer">
           <User className="size-4" />
         </div>
       </div>

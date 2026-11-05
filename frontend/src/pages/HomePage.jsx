@@ -435,7 +435,7 @@ export default function HomePage() {
                       <button
                         type="button"
                         onClick={() => navigate(`/datasets/${cfg.primary_dataset_id}/workspace?view=map`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                       >
                         <span>Open Map</span>
                         <ArrowUpRight className="size-3" />
@@ -510,7 +510,7 @@ export default function HomePage() {
             <div className="workspace-dialog-actions workspace-dialog-actions-stacked">
               <button
                 type="button"
-                className="workspace-primary-button bg-blue-600 hover:bg-blue-500 text-white"
+                className="workspace-primary-button rounded-[6px]"
                 onClick={() =>
                   navigate(
                     `/datasets/${result.id}/georeference?returnTo=${encodeURIComponent(

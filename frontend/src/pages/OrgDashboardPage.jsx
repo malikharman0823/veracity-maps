@@ -15,6 +15,7 @@ import {
   listOrgActivities,
   listUserProjects,
 } from "../api"
+import ThemeToggle from "../components/ThemeToggle"
 
 export default function OrgDashboardPage() {
   const { id: orgId } = useParams()
@@ -223,8 +224,8 @@ export default function OrgDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
-        <svg className="animate-spin h-6 w-6 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24">
+      <div className="min-h-screen bg-white dark:bg-[#1c1c1c] text-neutral-500 dark:text-neutral-400 flex items-center justify-center text-sm transition-colors">
+        <svg className="animate-spin h-6 w-6 text-[#3ecf8e] mr-2" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
@@ -235,17 +236,17 @@ export default function OrgDashboardPage() {
 
   if (error || !org) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
+      <div className="min-h-screen bg-white dark:bg-[#1c1c1c] text-neutral-900 dark:text-white flex flex-col items-center justify-center p-6 text-center transition-colors">
+        <div className="w-12 h-12 rounded-[6px] bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 flex items-center justify-center mb-4">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
-        <p className="text-sm text-slate-400 mb-6 max-w-md">{error || "Organization not found."}</p>
+        <h2 className="text-xl font-bold mb-2">Access Restricted</h2>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-6 max-w-md">{error || "Organization not found."}</p>
         <Link
           to="/dashboard"
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+          className="inline-flex items-center gap-2 rounded-[6px] bg-[#3ecf8e] px-4 py-2 text-sm font-medium text-[#171717] hover:bg-[#24b47e] transition-colors shadow-xs"
         >
           ← Back to Dashboard
         </Link>
@@ -259,39 +260,40 @@ export default function OrgDashboardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-white dark:bg-[#1c1c1c] text-neutral-900 dark:text-neutral-100 flex flex-col transition-colors">
       {/* Top Header */}
-      <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
+      <header className="h-16 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white/80 dark:bg-[#1c1c1c]/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-4">
           <Link
             to="/dashboard"
-            className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition-colors"
+            className="p-1.5 rounded-[6px] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-[#2e2e2e] transition-colors shadow-xs"
             title="Back to Dashboard"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </Link>
-          <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold">
+          <div className="w-8 h-8 rounded-[6px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e] font-bold">
             {org.name?.charAt(0) || "O"}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-lg text-white tracking-tight">{org.name}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold uppercase">
+              <span className="font-semibold text-lg text-neutral-900 dark:text-white tracking-tight">{org.name}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-semibold uppercase">
                 {userRole}
               </span>
             </div>
-            <p className="text-xs text-slate-400 line-clamp-1">{org.description || "Organization Workspace"}</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{org.description || "Organization Workspace"}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <ThemeToggle />
           {isEditor && (
             <button
               type="button"
               onClick={() => setShowCreateProjModal(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-medium text-xs transition-colors shadow-xs cursor-pointer"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -303,9 +305,9 @@ export default function OrgDashboardPage() {
             <button
               type="button"
               onClick={handleOpenTransferModal}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-[6px] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] text-xs font-medium transition-colors cursor-pointer shadow-xs"
             >
-              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
               Transfer Project
@@ -313,7 +315,7 @@ export default function OrgDashboardPage() {
           )}
           <button
             onClick={logout}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+            className="px-3 py-1.5 rounded-[6px] text-xs font-medium border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:text-red-500 dark:hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
           >
             Log out
           </button>
@@ -323,33 +325,33 @@ export default function OrgDashboardPage() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6">
         {/* Section Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6">
+        <div className="flex items-center gap-1.5 border-b border-neutral-200 dark:border-[#2e2e2e] pb-3 mb-6 overflow-x-auto">
           <button
             onClick={() => setActiveTab("overview")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
               activeTab === "overview"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
+                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
             }`}
           >
             Overview
           </button>
           <button
             onClick={() => setActiveTab("projects")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
               activeTab === "projects"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
+                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
             }`}
           >
             Projects ({projects.length})
           </button>
           <button
             onClick={() => setActiveTab("members")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
               activeTab === "members"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
+                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
             }`}
           >
             Members ({members.length})
@@ -357,10 +359,10 @@ export default function OrgDashboardPage() {
           {isAdmin && (
             <button
               onClick={() => setActiveTab("activity")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
                 activeTab === "activity"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-900"
+                  ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
               }`}
             >
               Activity Logs
@@ -369,10 +371,10 @@ export default function OrgDashboardPage() {
           {isAdmin && (
             <button
               onClick={() => setActiveTab("settings")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
                 activeTab === "settings"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-900"
+                  ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
               }`}
             >
               Settings
@@ -385,50 +387,50 @@ export default function OrgDashboardPage() {
           <div className="space-y-6">
             {/* Metric Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-5 shadow-xs">
+                <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Total Projects</span>
-                  <span className="text-blue-400 font-bold">#</span>
+                  <span className="text-[#3ecf8e] font-bold">#</span>
                 </div>
-                <div className="mt-3 text-3xl font-extrabold text-white">{projects.length}</div>
-                <p className="mt-1 text-xs text-slate-400">Collaborative map workspaces</p>
+                <div className="mt-3 text-3xl font-extrabold text-neutral-900 dark:text-white">{projects.length}</div>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Collaborative map workspaces</p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-5 shadow-xs">
+                <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Total Members</span>
-                  <span className="text-emerald-400 font-bold">●</span>
+                  <span className="text-[#3ecf8e] font-bold">●</span>
                 </div>
-                <div className="mt-3 text-3xl font-extrabold text-white">{members.length}</div>
-                <p className="mt-1 text-xs text-slate-400">Active teammates & collaborators</p>
+                <div className="mt-3 text-3xl font-extrabold text-neutral-900 dark:text-white">{members.length}</div>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Active teammates & collaborators</p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-5 shadow-xs">
+                <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Storage Used</span>
-                  <span className="text-amber-400 font-bold">MB</span>
+                  <span className="text-[#ffdb13] font-bold">MB</span>
                 </div>
-                <div className="mt-3 text-2xl font-extrabold text-white">
+                <div className="mt-3 text-2xl font-extrabold text-neutral-900 dark:text-white">
                   {formatBytes(org.storage_used_bytes)}
                 </div>
-                <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div className="mt-2 w-full bg-neutral-100 dark:bg-[#171717] rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="bg-blue-500 h-1.5 rounded-full"
+                    className="bg-[#3ecf8e] h-1.5 rounded-full"
                     style={{ width: `${quotaPercent}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[10px] text-slate-400 text-right">
+                <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400 text-right">
                   {quotaPercent}% of {formatBytes(org.storage_quota_bytes || 10737418240)}
                 </p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-5 shadow-xs">
+                <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
                   <span>Your Role</span>
-                  <span className="text-purple-400 font-bold">★</span>
+                  <span className="text-[#3ecf8e] font-bold">★</span>
                 </div>
-                <div className="mt-3 text-2xl font-extrabold text-white capitalize">{userRole}</div>
-                <p className="mt-1 text-xs text-slate-400">
+                <div className="mt-3 text-2xl font-extrabold text-neutral-900 dark:text-white capitalize">{userRole}</div>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                   {isOwner ? "Complete ownership" : isAdmin ? "Team administration" : isEditor ? "Full editing access" : "Read-only inspection"}
                 </p>
               </div>
@@ -436,18 +438,18 @@ export default function OrgDashboardPage() {
 
             {/* Quick Actions & Recent Projects */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
+              <div className="md:col-span-2 rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-6 shadow-xs">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-white">Organization Projects</h3>
+                  <h3 className="text-base font-semibold text-neutral-900 dark:text-white">Organization Projects</h3>
                   <button
                     onClick={() => setActiveTab("projects")}
-                    className="text-xs font-semibold text-blue-400 hover:text-blue-300"
+                    className="text-xs font-semibold text-[#24b47e] dark:text-[#3ecf8e] hover:underline cursor-pointer"
                   >
                     View All →
                   </button>
                 </div>
                 {projects.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-400">
+                  <div className="py-8 text-center text-xs text-neutral-500 dark:text-neutral-400">
                     No projects yet. Create your organization's first mapping project!
                   </div>
                 ) : (
@@ -456,20 +458,20 @@ export default function OrgDashboardPage() {
                       <div
                         key={p.id}
                         onClick={() => navigate(`/workspace?project=${encodeURIComponent(p.id)}`)}
-                        className="flex items-center justify-between p-3.5 rounded-xl border border-slate-800/80 bg-slate-950/40 hover:bg-slate-900 hover:border-blue-500/40 transition-all cursor-pointer"
+                        className="flex items-center justify-between p-3.5 rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] hover:bg-neutral-100 dark:hover:bg-[#242424] hover:border-[#3ecf8e] transition-all cursor-pointer shadow-2xs"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs">
+                          <div className="w-8 h-8 rounded-[6px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center font-bold text-xs border border-[#3ecf8e]/30">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                             </svg>
                           </div>
                           <div>
-                            <div className="text-sm font-semibold text-white">{p.name}</div>
-                            <div className="text-xs text-slate-400 line-clamp-1">{p.description || "No description"}</div>
+                            <div className="text-sm font-semibold text-neutral-900 dark:text-white">{p.name}</div>
+                            <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{p.description || "No description"}</div>
                           </div>
                         </div>
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
                           Updated {new Date(p.updated_at).toLocaleDateString()}
                         </div>
                       </div>
@@ -478,20 +480,20 @@ export default function OrgDashboardPage() {
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-white mb-4">Workspace Info</h3>
+              <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-6 shadow-xs">
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-white mb-4">Workspace Info</h3>
                 <div className="space-y-3.5 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Organization ID</span>
-                    <span className="font-mono text-slate-200 select-all bg-slate-950 px-2 py-1 rounded border border-slate-800 block text-[11px] truncate">{org.id}</span>
+                    <span className="text-neutral-500 dark:text-neutral-400 block text-[11px] uppercase tracking-wider mb-0.5">Organization ID</span>
+                    <span className="font-mono text-neutral-800 dark:text-neutral-200 select-all bg-neutral-100 dark:bg-[#171717] px-2 py-1 rounded-[4px] border border-neutral-200 dark:border-[#2e2e2e] block text-[11px] truncate">{org.id}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Created Date</span>
-                    <span className="text-slate-200">{new Date(org.created_at).toLocaleDateString()}</span>
+                    <span className="text-neutral-500 dark:text-neutral-400 block text-[11px] uppercase tracking-wider mb-0.5">Created Date</span>
+                    <span className="text-neutral-800 dark:text-neutral-200">{new Date(org.created_at).toLocaleDateString()}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider mb-0.5">Isolation Level</span>
-                    <span className="text-emerald-400 font-medium">Independent Workspace</span>
+                    <span className="text-neutral-500 dark:text-neutral-400 block text-[11px] uppercase tracking-wider mb-0.5">Isolation Level</span>
+                    <span className="text-[#24b47e] dark:text-[#3ecf8e] font-medium">Independent Workspace</span>
                   </div>
                 </div>
               </div>
@@ -504,14 +506,14 @@ export default function OrgDashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-white">Projects</h2>
-                <p className="text-xs text-slate-400">Shared geospatial layers, floors, and vector markers.</p>
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Projects</h2>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Shared geospatial layers, floors, and vector markers.</p>
               </div>
               {isEditor && (
                 <button
                   type="button"
                   onClick={() => setShowCreateProjModal(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-medium text-xs transition-colors shadow-xs cursor-pointer"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -522,15 +524,15 @@ export default function OrgDashboardPage() {
             </div>
 
             {projects.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center">
-                <h3 className="text-base font-semibold text-white mb-1">No Projects Found</h3>
-                <p className="text-xs text-slate-400 mb-4">
+              <div className="rounded-[12px] border border-dashed border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-12 text-center">
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-white mb-1">No Projects Found</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
                   This organization doesn't have any projects yet.
                 </p>
                 {isEditor && (
                   <button
                     onClick={() => setShowCreateProjModal(true)}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors"
+                    className="inline-flex items-center gap-2 rounded-[6px] bg-[#3ecf8e] px-4 py-2 text-xs font-semibold text-[#171717] hover:bg-[#24b47e] transition-colors cursor-pointer shadow-xs"
                   >
                     Create Project
                   </button>
@@ -542,25 +544,25 @@ export default function OrgDashboardPage() {
                   <div
                     key={p.id}
                     onClick={() => navigate(`/workspace?project=${encodeURIComponent(p.id)}`)}
-                    className="group relative bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md"
+                    className="group relative bg-white dark:bg-[#202020] hover:bg-neutral-50 dark:hover:bg-[#242424] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e] dark:hover:border-[#3ecf8e] rounded-[12px] p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-md"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold uppercase">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-semibold uppercase">
                             Org Project
                           </span>
-                          <h3 className="text-base font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                          <h3 className="text-base font-semibold text-neutral-900 dark:text-white group-hover:text-[#24b47e] dark:group-hover:text-[#3ecf8e] transition-colors line-clamp-1">
                             {p.name}
                           </h3>
                         </div>
                       </div>
-                      <p className="text-xs text-slate-400 line-clamp-2 min-h-[32px]">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2 min-h-[32px]">
                         {p.description || "No description provided."}
                       </p>
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+                    <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
                       <span>{p.dataset_ids?.length || 0} layers</span>
                       <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
                     </div>
@@ -576,14 +578,14 @@ export default function OrgDashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-white">Team Members</h2>
-                <p className="text-xs text-slate-400">Manage organizational roles and pending member invitations.</p>
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Team Members</h2>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Manage organizational roles and pending member invitations.</p>
               </div>
               {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setShowInviteModal(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs transition-colors shadow-xs cursor-pointer"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -593,10 +595,10 @@ export default function OrgDashboardPage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-sm">
+            <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] overflow-hidden shadow-xs">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
+                  <tr className="border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-600 dark:text-neutral-400 font-semibold">
                     <th className="py-3 px-4">Member</th>
                     <th className="py-3 px-4">Email</th>
                     <th className="py-3 px-4">Status</th>
@@ -604,28 +606,28 @@ export default function OrgDashboardPage() {
                     {isAdmin && <th className="py-3 px-4 text-right">Actions</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-neutral-200 dark:divide-[#2e2e2e]">
                   {members.map((m) => {
                     const isSelf = m.user_id === user?.id
                     const isMemberOwner = m.role === "owner"
 
                     return (
-                      <tr key={m.id} className="hover:bg-slate-900/80">
-                        <td className="py-3 px-4 font-medium text-white">
+                      <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-[#282828] transition-colors">
+                        <td className="py-3 px-4 font-medium text-neutral-900 dark:text-white">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-full bg-blue-600/30 text-blue-300 font-bold flex items-center justify-center text-[11px] border border-blue-500/20">
+                            <div className="w-7 h-7 rounded-full bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] font-bold flex items-center justify-center text-[11px] border border-[#3ecf8e]/30">
                               {m.user_name?.charAt(0) || "U"}
                             </div>
                             <span>{m.user_name || "Invited User"} {isSelf && "(You)"}</span>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-slate-400">{m.user_email}</td>
+                        <td className="py-3 px-4 text-neutral-500 dark:text-neutral-400">{m.user_email}</td>
                         <td className="py-3 px-4">
                           <span
-                            className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                            className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-[4px] ${
                               m.invitation_status === "accepted"
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                ? "bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30"
+                                : "bg-amber-500/10 text-amber-500 border border-amber-500/30"
                             }`}
                           >
                             {m.invitation_status}
@@ -636,14 +638,14 @@ export default function OrgDashboardPage() {
                             <select
                               value={m.role}
                               onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                              className="rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-2 py-1 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                             >
                               <option value="admin">Admin</option>
                               <option value="editor">Editor</option>
                               <option value="viewer">Viewer</option>
                             </select>
                           ) : (
-                            <span className="font-semibold capitalize text-white">{m.role}</span>
+                            <span className="font-semibold capitalize text-neutral-900 dark:text-white">{m.role}</span>
                           )}
                         </td>
                         {isAdmin && (
@@ -652,7 +654,7 @@ export default function OrgDashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveMember(m)}
-                                className="p-1 rounded text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
+                                className="p-1 rounded-[4px] text-neutral-400 hover:text-red-500 transition-colors cursor-pointer"
                                 title="Remove member"
                               >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -674,20 +676,20 @@ export default function OrgDashboardPage() {
         {/* TAB 4: ACTIVITY LOG */}
         {activeTab === "activity" && isAdmin && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-white">Audit & Activity Logs</h2>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Audit & Activity Logs</h2>
+            <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-5 shadow-xs">
               {activities.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">No activities logged yet.</div>
+                <div className="py-8 text-center text-xs text-neutral-500 dark:text-neutral-400">No activities logged yet.</div>
               ) : (
                 <div className="space-y-3">
                   {activities.map((a) => (
-                    <div key={a.id} className="flex items-start gap-3 text-xs border-b border-slate-800/60 pb-3 last:border-b-0">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                    <div key={a.id} className="flex items-start gap-3 text-xs border-b border-neutral-200 dark:border-[#2e2e2e] pb-3 last:border-b-0">
+                      <div className="w-2 h-2 rounded-full bg-[#3ecf8e] mt-1.5 shrink-0" />
                       <div className="flex-1">
-                        <div className="font-semibold text-white">{a.user_name}</div>
-                        <div className="text-slate-400 text-xs mt-0.5">{a.details}</div>
+                        <div className="font-semibold text-neutral-900 dark:text-white">{a.user_name}</div>
+                        <div className="text-neutral-500 dark:text-neutral-400 text-xs mt-0.5">{a.details}</div>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono shrink-0">
+                      <div className="text-[10px] text-neutral-400 font-mono shrink-0">
                         {new Date(a.timestamp).toLocaleString()}
                       </div>
                     </div>
@@ -701,32 +703,32 @@ export default function OrgDashboardPage() {
         {/* TAB 5: SETTINGS */}
         {activeTab === "settings" && isAdmin && (
           <div className="max-w-2xl space-y-6">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
-              <h2 className="text-base font-bold text-white mb-4">Organization Settings</h2>
+            <div className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-6 shadow-xs">
+              <h2 className="text-base font-bold text-neutral-900 dark:text-white mb-4">Organization Settings</h2>
               <form onSubmit={handleSaveSettings} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Organization Name</label>
+                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Organization Name</label>
                   <input
                     type="text"
                     required
                     value={editOrgName}
                     onChange={(e) => setEditOrgName(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Description</label>
+                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Description</label>
                   <textarea
                     rows={3}
                     value={editOrgDesc}
                     onChange={(e) => setEditOrgDesc(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
+                    className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e] resize-none"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={savingSettings}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
+                  className="rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-4 py-2 text-xs font-semibold text-[#171717] transition-colors cursor-pointer shadow-xs"
                 >
                   {savingSettings ? "Saving..." : "Save Changes"}
                 </button>
@@ -734,15 +736,15 @@ export default function OrgDashboardPage() {
             </div>
 
             {isOwner && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-red-400 mb-2">Danger Zone</h3>
-                <p className="text-xs text-slate-400 mb-4">
+              <div className="rounded-[12px] border border-red-500/30 bg-red-500/5 p-6 shadow-xs">
+                <h3 className="text-sm font-bold text-red-500 dark:text-red-400 mb-2">Danger Zone</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
                   Permanently delete this organization, including all member memberships, activity logs, and organization-owned projects.
                 </p>
                 <button
                   type="button"
                   onClick={handleDeleteOrg}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-500 transition-colors cursor-pointer"
+                  className="rounded-[6px] bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-500 transition-colors cursor-pointer"
                 >
                   Delete Organization
                 </button>
@@ -755,29 +757,29 @@ export default function OrgDashboardPage() {
       {/* INVITE MEMBER MODAL */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Invite Team Member</h3>
-            <p className="text-xs text-slate-400 mb-4">
+          <div className="w-full max-w-md rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-neutral-900 dark:text-white mb-1">Invite Team Member</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
               Enter the email address of a registered Veracity Maps user.
             </p>
             <form onSubmit={handleInvite} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Email Address</label>
+                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Email Address</label>
                 <input
                   type="email"
                   required
                   placeholder="colleague@domain.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Assigned Role</label>
+                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Assigned Role</label>
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                 >
                   <option value="admin">Admin (Manage members & projects)</option>
                   <option value="editor">Editor (Create & edit projects)</option>
@@ -788,14 +790,14 @@ export default function OrgDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setShowInviteModal(false)}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
+                  className="rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] px-4 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={inviting}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
+                  className="rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-4 py-2 text-xs font-semibold text-[#171717] transition-colors cursor-pointer shadow-xs"
                 >
                   {inviting ? "Sending..." : "Send Invitation"}
                 </button>
@@ -808,45 +810,45 @@ export default function OrgDashboardPage() {
       {/* CREATE PROJECT MODAL */}
       {showCreateProjModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Create Organization Project</h3>
-            <p className="text-xs text-slate-400 mb-4">
+          <div className="w-full max-w-md rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-neutral-900 dark:text-white mb-1">Create Organization Project</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
               This project will belong to <strong>{org.name}</strong> and be accessible to all organization members according to their roles.
             </p>
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Project Name</label>
+                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Project Name</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. City Airport Masterplan"
                   value={newProjName}
                   onChange={(e) => setNewProjName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Description (Optional)</label>
+                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Description (Optional)</label>
                 <textarea
                   rows={3}
                   placeholder="Brief overview of map layers and scope..."
                   value={newProjDesc}
                   onChange={(e) => setNewProjDesc(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
+                  className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e] resize-none"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowCreateProjModal(false)}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
+                  className="rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] px-4 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creatingProj}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
+                  className="rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-4 py-2 text-xs font-semibold text-[#171717] transition-colors cursor-pointer shadow-xs"
                 >
                   {creatingProj ? "Creating..." : "Create Project"}
                 </button>
@@ -859,23 +861,23 @@ export default function OrgDashboardPage() {
       {/* TRANSFER PROJECT MODAL */}
       {showTransferModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Transfer Personal Project to Org</h3>
-            <p className="text-xs text-slate-400 mb-4">
+          <div className="w-full max-w-md rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-neutral-900 dark:text-white mb-1">Transfer Personal Project to Org</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
               Select one of your personal projects to transfer ownership into <strong>{org.name}</strong>. All associated rasters, floors, and points will be preserved.
             </p>
             {myPersonalProjects.length === 0 ? (
-              <div className="py-4 text-xs text-slate-400">
+              <div className="py-4 text-xs text-neutral-500 dark:text-neutral-400">
                 You have no personal projects available to transfer.
               </div>
             ) : (
               <form onSubmit={handleTransferProject} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Select Project</label>
+                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">Select Project</label>
                   <select
                     value={selectedPersonalProjId}
                     onChange={(e) => setSelectedPersonalProjId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-3.5 py-2 text-xs text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                   >
                     {myPersonalProjects.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -888,14 +890,14 @@ export default function OrgDashboardPage() {
                   <button
                     type="button"
                     onClick={() => setShowTransferModal(false)}
-                    className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer"
+                    className="rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] px-4 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={transferring}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer"
+                    className="rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-4 py-2 text-xs font-semibold text-[#171717] transition-colors cursor-pointer shadow-xs"
                   >
                     {transferring ? "Transferring..." : "Confirm Transfer"}
                   </button>

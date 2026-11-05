@@ -230,7 +230,7 @@ export default function IconPointForm({
           <button
             type="submit"
             disabled={submitting}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-xs transition-colors disabled:opacity-50"
+            className="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold rounded-[6px] shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
           >
             {submitting ? "Saving…" : submitLabel}
           </button>

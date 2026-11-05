@@ -242,7 +242,7 @@ export default function IconPicker({
                       {icon.name}
                     </span>
                     {isSelected && (
-                      <span className="absolute top-1 right-1 size-4 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-xs">
+                      <span className="absolute top-1 right-1 size-4 bg-[#3ecf8e] text-[#171717] rounded-full flex items-center justify-center shadow-xs">
                         <Check className="size-2.5 stroke-[3]" />
                       </span>
                     )}
@@ -280,7 +280,7 @@ export default function IconPicker({
                   onStartPlacement()
                   onClose()
                 }}
-                className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors shadow-xs"
+                className="px-4 py-1.5 text-xs font-semibold text-[#171717] bg-[#3ecf8e] hover:bg-[#24b47e] disabled:opacity-50 disabled:pointer-events-none rounded-[6px] transition-colors shadow-xs cursor-pointer"
               >
                 {placementModeActive ? "Placement Active" : "Place Point on Map →"}
               </button>

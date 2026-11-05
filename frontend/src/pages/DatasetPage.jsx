@@ -632,15 +632,15 @@ export default function DatasetPage() {
             layoutRevision={panelOpen}
           />
           {mapMode === "add-icon-point" && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/90 backdrop-blur text-white px-5 py-2.5 rounded-full text-sm font-medium shadow-lg flex items-center gap-3 z-40">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#3ecf8e] text-[#171717] px-4 py-2 rounded-[6px] text-xs font-semibold shadow-md flex items-center gap-3 z-40">
               <span>Click anywhere on the map to place a new icon point</span>
-              <button onClick={cancelIconPointPlacement} className="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded text-xs transition-colors">Cancel</button>
+              <button onClick={cancelIconPointPlacement} className="px-2.5 py-1 bg-[#171717]/10 hover:bg-[#171717]/20 text-[#171717] rounded-[4px] text-xs transition-colors cursor-pointer">Cancel</button>
             </div>
           )}
           {mapMode === "add-control-point" && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/90 backdrop-blur text-white px-5 py-2.5 rounded-full text-sm font-medium shadow-lg flex items-center gap-3 z-40">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#3ecf8e] text-[#171717] px-4 py-2 rounded-[6px] text-xs font-semibold shadow-md flex items-center gap-3 z-40">
               <span>Click the map to reverse-calculate and add a control point</span>
-              <button onClick={cancelControlPointPlacement} className="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded text-xs transition-colors">Cancel</button>
+              <button onClick={cancelControlPointPlacement} className="px-2.5 py-1 bg-[#171717]/10 hover:bg-[#171717]/20 text-[#171717] rounded-[4px] text-xs transition-colors cursor-pointer">Cancel</button>
             </div>
           )}
 

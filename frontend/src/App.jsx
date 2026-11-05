@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-
 import DashboardLayout from "./components/DashboardLayout"
 import ProtectedRoute from "./components/ProtectedRoute"
 import { AuthProvider } from "./context/AuthContext"
+import { ThemeProvider } from "./context/ThemeContext"
 import { ensureActiveSession } from "./api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
@@ -30,17 +31,18 @@ export default function App() {
   }, [])
 
   return (
-    <TooltipProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Suspense
-            fallback={
-              <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] text-[#7a7a7a] text-sm">
-                Loading…
-              </div>
-            }
-          >
-            <Routes>
+    <ThemeProvider>
+      <TooltipProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center bg-[#ffffff] dark:bg-[#1c1c1c] text-[#707070] dark:text-[#9a9a9a] text-sm">
+                  Loading…
+                </div>
+              }
+            >
+              <Routes>
               {/* Public Auth Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -116,5 +118,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>
+  </ThemeProvider>
   )
 }

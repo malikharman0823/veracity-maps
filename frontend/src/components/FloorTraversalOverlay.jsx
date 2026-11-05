@@ -352,10 +352,10 @@ export default function FloorTraversalOverlay({
                 <div
                   key={`${activeBuildingName}_level_${level}`}
                   onClick={() => handleSelectFloor(level)}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left text-xs transition-all cursor-pointer ${
                     isActive
-                      ? "bg-blue-600 text-white font-medium shadow-sm shadow-blue-500/30"
-                      : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      ? "bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs"
+                      : "text-slate-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-slate-900 dark:hover:text-white"
                   }`}
                   title={`Click to select ${name} (Level ${level})`}
                 >

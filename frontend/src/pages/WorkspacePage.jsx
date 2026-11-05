@@ -36,6 +36,7 @@ import WorkspaceMap from "../components/WorkspaceMap"
 import ErrorBoundary from "../components/ErrorBoundary"
 import useWorkspace from "../hooks/useWorkspace"
 import EndSessionDialog from "../components/EndSessionDialog"
+import ThemeToggle from "../components/ThemeToggle"
 import ZipImportReview from "../components/ZipImportReview"
 import ExportProjectModal from "../components/ExportProjectModal"
 import ImportPdfModal from "../components/ImportPdfModal"
@@ -448,7 +449,7 @@ export default function WorkspacePage() {
         <span className="max-w-md text-center text-slate-500 mb-4">
           {workspace.error?.details || "The requested dataset belongs to a different or previous session that was cleared. Return to the library to view available datasets or upload new floor plans."}
         </span>
-        <Link to="/" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors">
+        <Link to="/" className="px-4 py-2 bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold rounded-[6px] shadow-xs transition-colors">
           Return to library
         </Link>
       </div>
@@ -512,6 +513,7 @@ export default function WorkspacePage() {
             <FolderOpen />
             <span>Reopen (.mbtiles / .zip)</span>
           </button>
+          <ThemeToggle />
           <EndSessionDialog />
         </div>
       </header>

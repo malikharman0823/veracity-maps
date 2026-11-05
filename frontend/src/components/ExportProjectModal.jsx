@@ -861,7 +861,7 @@ export default function ExportProjectModal({
                           }}
                           className={`size-4 rounded flex items-center justify-center border transition-colors ${
                             isLayerSelected(lyr.id)
-                              ? "bg-blue-600 border-blue-600 text-white"
+                              ? "bg-[#3ecf8e] border-[#3ecf8e] text-[#171717]"
                               : "border-slate-300 bg-white hover:border-slate-400"
                           }`}
                         >
@@ -913,7 +913,7 @@ export default function ExportProjectModal({
                                     toggleLayer(lyr.id)
                                   }}
                                   className={`size-3.5 rounded flex items-center justify-center border ${
-                                    isLayerSelected(lyr.id) ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"
+                                    isLayerSelected(lyr.id) ? "bg-[#3ecf8e] border-[#3ecf8e] text-[#171717]" : "border-slate-300 bg-white"
                                   }`}
                                 >
                                   {isLayerSelected(lyr.id) && <Check className="size-2 stroke-[3]" />}
@@ -1152,8 +1152,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("auto")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.preset === "auto" ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.preset === "auto" ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     Auto View
@@ -1161,8 +1161,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("house")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.initial_zoom === 21 ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.initial_zoom === 21 ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     House (z21)
@@ -1170,8 +1170,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("building")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.initial_zoom === 20 ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.initial_zoom === 20 ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     Building (z20)
@@ -1179,8 +1179,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("street")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.initial_zoom === 19 ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.initial_zoom === 19 ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     Street (z19)
@@ -1188,8 +1188,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("neighborhood")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.initial_zoom === 18 ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.initial_zoom === 18 ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     Neighborhood (z18)
@@ -1197,8 +1197,8 @@ export default function ExportProjectModal({
                   <button
                     type="button"
                     onClick={() => handlePresetChange("city")}
-                    className={`p-2 rounded-lg border text-center transition-all ${
-                      zoomConfig.initial_zoom === 15 ? "bg-blue-600 text-white border-blue-600 font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                    className={`p-2 rounded-[6px] border text-center transition-all ${
+                      zoomConfig.initial_zoom === 15 ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-bold" : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
                     }`}
                   >
                     City (z15)
@@ -1459,13 +1459,7 @@ export default function ExportProjectModal({
               type="button"
               onClick={handleExportClick}
               disabled={(exportType !== "base_layer" && totalSelectedCount === 0) || exporting || !!zoomValidation}
-              className={`inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed ${
-                exportType === "project_zip"
-                  ? "bg-blue-600 hover:bg-blue-700"
-                  : exportType === "mbtiles"
-                  ? "bg-indigo-600 hover:bg-indigo-700"
-                  : "bg-emerald-600 hover:bg-emerald-700"
-              }`}
+              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-[#171717] bg-[#3ecf8e] hover:bg-[#24b47e] rounded-[6px] transition-all shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {exporting ? (
                 <>
