@@ -67,7 +67,7 @@ function EditableCoordinateField({
     return (
       <label className="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 text-[12px] text-muted">
         <span>{label}</span>
-        <span className="h-9 min-w-0 truncate rounded-lg border border-hairline bg-pearl px-2 py-2 text-right tabular-nums text-ink">
+        <span className="h-9 min-w-0 truncate rounded-lg border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-100 dark:bg-[#171717] px-2 py-2 text-right tabular-nums text-neutral-900 dark:text-white">
           {formatted || "—"}
         </span>
       </label>
@@ -177,15 +177,17 @@ export default function ControlPointList({
         {points.map((point, index) => (
           <article
             key={point.id}
-            className={`grid cursor-pointer gap-3 px-4 py-3 transition-colors tablet:grid-cols-[36px_1fr_1.2fr_auto] tablet:items-center${
-              selectedId === point.id ? " bg-[#eaf3ff]" : " hover:bg-pearl"
+            className={`grid cursor-pointer gap-3 px-4 py-3 transition-colors tablet:grid-cols-[36px_1fr_1.2fr_auto] tablet:items-center ${
+              selectedId === point.id
+                ? "bg-[#3ecf8e]/15 dark:bg-[#3ecf8e]/20 text-neutral-900 dark:text-white"
+                : "hover:bg-neutral-100 dark:hover:bg-[#252525] text-neutral-700 dark:text-neutral-300"
             }`}
             onClick={() => onSelect(point.id)}
           >
             <div className="flex items-center gap-2 text-[14px] font-semibold tabular-nums">
               <span
-                className={`h-2.5 w-2.5 rounded-full${
-                  selectedId === point.id ? " bg-[#004c99]" : " bg-primary"
+                className={`h-2.5 w-2.5 rounded-full ${
+                  selectedId === point.id ? "bg-[#24b47e] ring-2 ring-[#3ecf8e]" : "bg-[#3ecf8e]"
                 }`}
               />
               {index + 1}

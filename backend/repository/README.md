@@ -6,6 +6,14 @@ The `repository` package provides the thread-safe, in-memory data store for anon
 
 ---
 
+## User-Owned Projects
+
+`ProjectRepository.Create(userID, name, description, ownerName, ownerEmail)` and
+`ProjectRepo.CreateProject(userID, name, description)` create projects owned by an individual user.
+Collaboration uses project members, invitations, and owner/editor/viewer permissions.
+Organization repositories and project-transfer methods have been removed. Existing SQL schema
+compatibility columns remain in place; session storage and lifecycle remain the GIS boundary.
+
 ## File: `session_repository.go`
 
 ### Purpose

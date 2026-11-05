@@ -8,13 +8,8 @@ import {
   updateUserProject,
   listSharedProjects,
   listUserInvitations,
-  listOrgInvitations,
   respondToInvitation,
-  respondToOrgInvitation,
-  createOrganization,
-  listOrganizations,
   listProjectActivities,
-  listOrgActivities,
 } from "../api"
 import ShareProjectModal from "../components/ShareProjectModal"
 import ThemeToggle from "../components/ThemeToggle"
@@ -23,10 +18,9 @@ export default function DashboardPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "organizations" | "invitations" | "activity" | "settings"
+  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "invitations" | "activity" | "settings"
   const [projects, setProjects] = useState([])
   const [sharedProjects, setSharedProjects] = useState([])
-  const [organizations, setOrganizations] = useState([])
   const [invitations, setInvitations] = useState([])
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
@@ -37,12 +31,6 @@ export default function DashboardPage() {
   const [newProjectName, setNewProjectName] = useState("")
   const [newProjectDesc, setNewProjectDesc] = useState("")
   const [creating, setCreating] = useState(false)
-
-  // New Organization modal state
-  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false)
-  const [newOrgName, setNewOrgName] = useState("")
-  const [newOrgDesc, setNewOrgDesc] = useState("")
-  const [creatingOrg, setCreatingOrg] = useState(false)
 
   // Rename modal state
   const [editingProject, setEditingProject] = useState(null)
@@ -56,38 +44,25 @@ export default function DashboardPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true)
-      const [owned, shared, orgs, projInvites, orgInvites] = await Promise.all([
+      const [owned, shared, projInvites] = await Promise.all([
         listUserProjects().catch(() => []),
         listSharedProjects().catch(() => []),
-        listOrganizations().catch(() => []),
         listUserInvitations().catch(() => []),
-        listOrgInvitations().catch(() => []),
       ])
       setProjects(owned || [])
       setSharedProjects(shared || [])
-      setOrganizations(orgs || [])
 
       const formattedProjInvites = (projInvites || []).map((inv) => ({ ...inv, inviteType: "project" }))
-      const formattedOrgInvites = (orgInvites || []).map((inv) => ({
-        ...inv,
-        inviteType: "organization",
-        project_name: inv.org_name,
-      }))
-      setInvitations([...formattedProjInvites, ...formattedOrgInvites])
+      setInvitations(formattedProjInvites)
 
-      // Gather recent activities across projects and organizations
+      // Gather recent activities across projects
       try {
         const projActPromises = (owned || []).slice(0, 5).map((p) =>
           listProjectActivities(p.id)
             .then((acts) => (acts || []).map((a) => ({ ...a, source: p.name, sourceType: "project" })))
             .catch(() => [])
         )
-        const orgActPromises = (orgs || []).slice(0, 5).map((o) =>
-          listOrgActivities(o.id)
-            .then((acts) => (acts || []).map((a) => ({ ...a, source: o.name, sourceType: "organization" })))
-            .catch(() => [])
-        )
-        const actArrays = await Promise.all([...projActPromises, ...orgActPromises])
+        const actArrays = await Promise.all(projActPromises)
         const mergedActs = actArrays.flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         setActivities(mergedActs)
       } catch {
@@ -170,32 +145,10 @@ export default function DashboardPage() {
 
   const handleRespondInvite = async (inv, accept) => {
     try {
-      if (inv.inviteType === "organization") {
-        await respondToOrgInvitation(inv.invitation_id || inv.id, accept)
-      } else {
-        await respondToInvitation(inv.invitation_id || inv.id, accept)
-      }
+      await respondToInvitation(inv.invitation_id || inv.id, accept)
       await fetchAllData()
     } catch (err) {
       alert("Failed to respond to invitation: " + (err.response?.data?.error?.message || err.message))
-    }
-  }
-
-  const handleCreateOrg = async (e) => {
-    e.preventDefault()
-    if (!newOrgName.trim()) return
-
-    setCreatingOrg(true)
-    try {
-      const created = await createOrganization(newOrgName.trim(), newOrgDesc.trim())
-      setShowCreateOrgModal(false)
-      setNewOrgName("")
-      setNewOrgDesc("")
-      navigate(`/organizations/${encodeURIComponent(created.id)}`)
-    } catch (err) {
-      alert("Failed to create organization: " + (err.response?.data?.error?.message || err.message))
-    } finally {
-      setCreatingOrg(false)
     }
   }
 
@@ -243,15 +196,6 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2.5">
             <button
-              onClick={() => setShowCreateOrgModal(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] font-medium text-xs transition-colors cursor-pointer shadow-xs"
-            >
-              <svg className="w-3.5 h-3.5 text-[#24b47e] dark:text-[#3ecf8e]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              New Organization
-            </button>
-            <button
               onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-medium text-sm transition-colors shadow-xs cursor-pointer"
             >
@@ -284,16 +228,6 @@ export default function DashboardPage() {
             }`}
           >
             Shared Projects ({sharedProjects.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("organizations")}
-            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all shrink-0 cursor-pointer ${
-              activeTab === "organizations"
-                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
-            }`}
-          >
-            Organizations ({organizations.length})
           </button>
           <button
             onClick={() => setActiveTab("invitations")}
@@ -486,69 +420,6 @@ export default function DashboardPage() {
               ))}
             </div>
           )
-        ) : activeTab === "organizations" ? (
-          /* ORGANIZATIONS GRID */
-          organizations.length === 0 ? (
-            <div className="border border-dashed border-neutral-300 dark:border-[#2e2e2e] rounded-[12px] p-12 text-center flex flex-col items-center justify-center">
-              <div className="w-12 h-12 rounded-[8px] bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-neutral-400 mb-4">
-                <svg className="w-6 h-6 text-[#24b47e] dark:text-[#3ecf8e]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
-              <h3 className="text-base font-semibold text-neutral-900 dark:text-white">No organizations yet</h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mt-1 mb-6">
-                Create an organization workspace to manage team members, assign roles, and share datasets.
-              </p>
-              <button
-                onClick={() => setShowCreateOrgModal(true)}
-                className="px-4 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-medium text-sm transition-colors cursor-pointer shadow-xs"
-              >
-                Create New Organization
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {organizations.map((org) => (
-                <div
-                  key={org.id}
-                  onClick={() => navigate(`/organizations/${encodeURIComponent(org.id)}`)}
-                  className="group relative bg-white dark:bg-[#202020] hover:bg-neutral-50 dark:hover:bg-[#242424] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e] dark:hover:border-[#3ecf8e] rounded-[12px] p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-md"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-[4px] font-semibold uppercase ${
-                          org.user_role === "owner"
-                            ? "bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30"
-                            : org.user_role === "admin"
-                            ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-                            : "bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border border-neutral-500/20"
-                        }`}>
-                          {org.user_role || "member"}
-                        </span>
-                        <h3 className="text-base font-semibold text-neutral-900 dark:text-white group-hover:text-[#24b47e] dark:group-hover:text-[#3ecf8e] transition-colors line-clamp-1">
-                          {org.name}
-                        </h3>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2 min-h-[32px]">
-                      {org.description || "No description provided."}
-                    </p>
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
-                    <span>
-                      {org.member_count || 1} {org.member_count === 1 ? "member" : "members"}
-                    </span>
-                    <span>
-                      Created {new Date(org.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
         ) : activeTab === "invitations" ? (
           /* INVITATIONS LIST */
           invitations.length === 0 ? (
@@ -606,7 +477,7 @@ export default function DashboardPage() {
               </div>
               <h3 className="text-base font-semibold text-neutral-900 dark:text-white">No recent activity</h3>
               <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mt-1">
-                Recent actions across your projects and organizations will appear here.
+                Recent actions across your projects will appear here.
               </p>
             </div>
           ) : (
@@ -838,63 +709,6 @@ export default function DashboardPage() {
                   className="px-4 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
                 >
                   {updating ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* New Organization Modal */}
-      {showCreateOrgModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] max-w-md w-full p-6 shadow-2xl">
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">Create New Organization</h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">Set up an organization workspace for team collaboration.</p>
-
-            <form onSubmit={handleCreateOrg} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">
-                  Organization Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder="e.g. Acme Mapping Team"
-                  value={newOrgName}
-                  onChange={(e) => setNewOrgName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-sm focus:outline-none focus:border-[#3ecf8e]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5">
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Describe your organization's projects or purpose..."
-                  value={newOrgDesc}
-                  onChange={(e) => setNewOrgDesc(e.target.value)}
-                  className="w-full px-3 py-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-sm focus:outline-none focus:border-[#3ecf8e] resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateOrgModal(false)}
-                  className="px-4 py-2 rounded-[6px] text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingOrg || !newOrgName.trim()}
-                  className="px-4 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
-                >
-                  {creatingOrg ? "Creating..." : "Create Organization"}
                 </button>
               </div>
             </form>

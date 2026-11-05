@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"os"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -13,7 +12,7 @@ import (
 func TestAPI_BuildingsAndFloors(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 

@@ -70,6 +70,10 @@ The `tests` package houses the automated test suites for the Veracity Maps Go ba
 
 ## Running the Test Suite
 
+`organization_routes_removed_test.go` verifies that the removed organization API returns HTTP 404.
+The shared `cleanupTestDir(t, path)` helper beside `createTestServer` uses
+`storage.SafeRemoveAll` for temporary test directory cleanup, including Windows file-lock retries.
+
 From the `backend/` directory:
 ```powershell
 go test -v -count=1 ./tests/...

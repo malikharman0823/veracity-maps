@@ -452,7 +452,7 @@ export default function Map({
       source: VECTOR_SOURCE_ID,
       filter: ["==", ["geometry-type"], "Polygon"],
       paint: {
-        "fill-color": "#1677ff",
+        "fill-color": "#3ecf8e",
         "fill-opacity": initialOpacityRef.current * 0.45,
       },
     })
@@ -462,7 +462,7 @@ export default function Map({
       source: VECTOR_SOURCE_ID,
       filter: ["==", ["geometry-type"], "LineString"],
       paint: {
-        "line-color": "#0057b8",
+        "line-color": "#24b47e",
         "line-width": 2,
         "line-opacity": initialOpacityRef.current,
       },
@@ -473,7 +473,7 @@ export default function Map({
       source: VECTOR_SOURCE_ID,
       filter: ["==", ["geometry-type"], "Point"],
       paint: {
-        "circle-color": "#0057b8",
+        "circle-color": "#24b47e",
         "circle-radius": 4,
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1,
@@ -505,19 +505,19 @@ export default function Map({
           id: `dataset-vector-tile-${index}-fill`,
           type: "fill",
           filter: ["==", ["geometry-type"], "Polygon"],
-          paint: { "fill-color": "#1677ff", "fill-opacity": initialOpacityRef.current * 0.45 },
+          paint: { "fill-color": "#3ecf8e", "fill-opacity": initialOpacityRef.current * 0.45 },
         },
         {
           id: `dataset-vector-tile-${index}-line`,
           type: "line",
           filter: ["==", ["geometry-type"], "LineString"],
-          paint: { "line-color": "#0057b8", "line-width": 2, "line-opacity": initialOpacityRef.current },
+          paint: { "line-color": "#24b47e", "line-width": 2, "line-opacity": initialOpacityRef.current },
         },
         {
           id: `dataset-vector-tile-${index}-point`,
           type: "circle",
           filter: ["==", ["geometry-type"], "Point"],
-          paint: { "circle-color": "#0057b8", "circle-radius": 4, "circle-stroke-color": "#ffffff", "circle-stroke-width": 1, "circle-opacity": initialOpacityRef.current },
+          paint: { "circle-color": "#24b47e", "circle-radius": 4, "circle-stroke-color": "#ffffff", "circle-stroke-width": 1, "circle-opacity": initialOpacityRef.current },
         },
       ]
       definitions.forEach((definition) => {
@@ -834,9 +834,9 @@ export default function Map({
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" aria-label="Dataset map" />
       {hoveredFeature?.summary && (
-        <div className="pointer-events-none absolute z-10 max-w-52 rounded-lg border border-hairline bg-white px-3 py-2 text-[12px] shadow-sm" style={{ left: hoveredFeature.x + 14, top: hoveredFeature.y + 14 }}>
-          <p className="font-semibold text-ink">{hoveredFeature.summary.label}</p>
-          <p className="mt-0.5 break-words text-muted">{hoveredFeature.summary.value}</p>
+        <div className="pointer-events-none absolute z-10 max-w-52 rounded-lg border border-hairline dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-3 py-2 text-[12px] shadow-sm text-neutral-900 dark:text-white" style={{ left: hoveredFeature.x + 14, top: hoveredFeature.y + 14 }}>
+          <p className="font-semibold text-neutral-900 dark:text-white">{hoveredFeature.summary.label}</p>
+          <p className="mt-0.5 break-words text-neutral-500 dark:text-neutral-400">{hoveredFeature.summary.value}</p>
         </div>
       )}
       <MapCoordinates coordinate={cursorCoordinate} />

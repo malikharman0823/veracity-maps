@@ -14,8 +14,12 @@ The `api` package provides the central HTTP request multiplexer, routing logic, 
   - `Router`: Holds references to `SessionRepository`, `Middleware`, and functional handlers (`uploadH`, `datasetsH`, `georefH`, `exportH`).
 - **Core Functions**:
   - `NewRouter(...) *Router`: Constructs a new router with dependency injection.
+    It receives session, authentication, and project repositories plus middleware and upload, dataset, georeference, export, authentication, and project handlers.
   - `BuildHandler() http.Handler`: Wraps the core routing dispatcher with `Session`, `Recovery`, and `CORS` middleware.
   - `route(w http.ResponseWriter, r *http.Request)`: Implements URL path matching:
+    - `/api/projects`: Authenticated user-owned project listing and creation; project sharing uses owner, editor, and viewer roles.
+    - `/api/invitations`: Returns only `project_invitations` and their `total`; accept/reject endpoints handle project invitations.
+    - `/api/organizations` and its former subroutes are removed and return HTTP 404.
     - `/health` & `/api/health`: Dispatches to `health.HealthHandler`.
     - `/sessions`: Anonymous session creation (`POST`).
     - `/sessions/current`: Retrieves active session metadata (`GET`).

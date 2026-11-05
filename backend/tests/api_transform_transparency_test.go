@@ -87,7 +87,7 @@ func TestTransparency_AlgorithmUnits(t *testing.T) {
 func TestTransparency_APIEndpoints(t *testing.T) {
 	server, repo, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -348,7 +348,7 @@ func TestRasterCorners_ValidationAndAffineFit(t *testing.T) {
 func TestRasterTransform_APIEndpoints(t *testing.T) {
 	server, repo, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -525,7 +525,7 @@ func TestRasterTransform_APIEndpoints(t *testing.T) {
 func TestMapProject_ImportEndpoint(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 

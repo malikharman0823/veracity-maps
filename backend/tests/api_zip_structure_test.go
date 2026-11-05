@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 func TestZipExport_ExactRootStructureAndViewers(t *testing.T) {
 	server, repo, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 	client := server.Client()
 
 	sess := repo.CreateSession()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,10 +181,12 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 	}
 
 	if r.db != nil {
-		_, _ = r.db.Exec(`
+		if _, err := r.db.Exec(`
 			INSERT INTO Users (id, email, name, password_hash, salt, created_at, updated_at)
 			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7);
-		`, user.ID, user.Email, user.Name, user.PasswordHash, user.Salt, user.CreatedAt, user.UpdatedAt)
+		`, user.ID, user.Email, user.Name, user.PasswordHash, user.Salt, user.CreatedAt, user.UpdatedAt); err != nil {
+			log.Printf("[MSSQL ERROR] Users INSERT failed: %v", err)
+		}
 	}
 
 	return user, nil

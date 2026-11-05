@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (.dark &, &.dark);
+@variant dark (&:is(.dark, .dark *), .dark &);
 @config "../tailwind.config.js";
 
 :root {
@@ -523,7 +523,7 @@ input[type="radio"] {
 .workspace-danger-action { width: 100%; min-height: 34px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; background: #fff1f0; color: #b42318; font-size: 12px; }
 .workspace-sublayers { margin: 0 6px 7px 38px; padding-left: 10px; border-left: 1px solid #dfe5eb; }
 .workspace-sublayer { min-height: 34px; display: grid; grid-template-columns: 25px minmax(0, 1fr); align-items: center; gap: 4px; border-radius: 7px; color: #5b6673; font-size: 12px; }
-.workspace-sublayer.is-selected { background: #eaf3fc; color: #0757a4; }
+.workspace-sublayer.is-selected { background: rgba(62, 207, 142, 0.15); color: #24b47e; }
 .workspace-sublayer button { border: 0; background: transparent; color: inherit; text-align: left; }
 .workspace-sublayer > button { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 5px; padding: 7px 6px; }
 .workspace-sublayer > button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -587,8 +587,8 @@ input[type="radio"] {
   border-radius: 9999px;
   font-size: 10px;
   font-weight: 600;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: rgba(62, 207, 142, 0.15);
+  color: #24b47e;
 }
 .workspace-building-floors {
   padding: 4px 6px;
@@ -611,8 +611,8 @@ input[type="radio"] {
   background: #f1f5f9;
 }
 .workspace-floor-item.is-active {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: rgba(62, 207, 142, 0.15);
+  border: 1px solid rgba(62, 207, 142, 0.4);
 }
 .workspace-floor-badge {
   display: inline-flex;
@@ -870,8 +870,8 @@ input[type="radio"] {
   border-color: #e2e8f0;
 }
 .workspace-doc-sublayer.is-selected {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: rgba(62, 207, 142, 0.15);
+  border-color: rgba(62, 207, 142, 0.4);
 }
 .workspace-doc-sublayer-info {
   display: flex;
@@ -1163,9 +1163,9 @@ input[type="radio"] {
   border: 1px solid #ddd6fe;
 }
 .record-badge-control_point {
-  background: #e0f2fe;
-  color: #0369a1;
-  border: 1px solid #bae6fd;
+  background: rgba(62, 207, 142, 0.15);
+  color: #24b47e;
+  border: 1px solid rgba(62, 207, 142, 0.3);
 }
 .record-badge-icon_point {
   background: #ecfdf5;
@@ -1197,10 +1197,10 @@ input[type="radio"] {
 .workspace-loading svg { width: 20px; height: 20px; }
 .workspace-load-error { flex-direction: column; text-align: center; }
 
-.workspace-dialog-backdrop { z-index: 100; position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(18, 27, 38, .52); backdrop-filter: blur(3px); }
+.workspace-dialog-backdrop { z-index: 100; position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); }
 .workspace-dialog { position: relative; width: min(460px, 100%); padding: 28px; border: 1px solid rgba(255,255,255,.8); border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(17,24,39,.3); }
 .workspace-dialog-close { position: absolute; right: 12px; top: 12px; width: 34px; height: 34px; border-radius: 8px; }
-.workspace-dialog-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 11px; background: #eaf3fc; color: #0757a4; }
+.workspace-dialog-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 11px; background: rgba(62, 207, 142, 0.15); color: #24b47e; }
 .workspace-dialog-icon svg { width: 21px; height: 21px; }
 .workspace-dialog h2 { margin: 0 34px 8px 0; font-size: 19px; font-weight: 700; }
 .workspace-dialog > p { margin: 0; color: #65707c; font-size: 13px; line-height: 1.6; }
@@ -1219,7 +1219,7 @@ input[type="radio"] {
   .workspace-desktop-layers { display: none; }
   .workspace-mobile-layers { display: inline-flex; }
   .workspace-mobile-layer-sheet { z-index: 80; position: fixed; inset: 0; }
-  .workspace-sheet-backdrop { position: absolute; inset: 0; background: rgba(17,24,39,.45); }
+  .workspace-sheet-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.75); }
   .workspace-mobile-layer-sheet .workspace-layer-panel { position: relative; width: min(340px, 88vw); box-shadow: 16px 0 44px rgba(17,24,39,.22); }
   .workspace-record-editor { z-index: 20; position: absolute; inset: 0 0 0 auto; width: min(360px, 92vw); }
 }
@@ -1350,7 +1350,7 @@ input[type="radio"] {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.48);
+  background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
   animation: fadeIn 0.15s ease-out;
 }
@@ -1605,7 +1605,7 @@ input[type="radio"] {
   right: 8px;
   padding: 3px 8px;
   border-radius: 5px;
-  background: rgba(15, 23, 42, 0.65);
+  background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
   color: #ffffff;
   font-size: 10px;
@@ -2467,4 +2467,316 @@ input[type="radio"] {
   background: #202020;
 }
 
+/* ==========================================================================
+   Supabase Dark Theme Enforcement: Eliminating all white spaces, white buttons,
+   white popups, blue buttons, and blue backdrops in Dark Mode
+   ========================================================================== */
 
+/* Universal Dark Canvas, Cards & Overlays */
+.dark,
+.dark body,
+.dark #root {
+  background-color: #1c1c1c !important;
+  color: #ffffff !important;
+}
+
+/* Backdrops: Pure neutral dark, no blue/slate tint */
+.dark .workspace-dialog-backdrop,
+.dark .bg-removal-backdrop,
+.dark .workspace-sheet-backdrop,
+.dark [role="presentation"].fixed {
+  background: rgba(0, 0, 0, 0.78) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* All Modal Windows, Dialogs & Floating Panels */
+.dark .workspace-dialog,
+.dark .bg-removal-modal,
+.dark .workspace-transform-toolbar,
+.dark .workspace-layer-popover,
+.dark .workspace-columns-popover,
+.dark [role="dialog"],
+.dark [role="menu"],
+.dark [role="listbox"] {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75) !important;
+}
+
+/* Modal Headers & Footers */
+.dark .workspace-dialog header,
+.dark .workspace-dialog footer,
+.dark .bg-removal-header,
+.dark .bg-removal-footer,
+.dark [role="dialog"] header,
+.dark [role="dialog"] footer {
+  background-color: #171717 !important;
+  border-color: #2e2e2e !important;
+}
+
+/* Dialog & Card Sub-Containers */
+.dark [role="dialog"] .bg-white,
+.dark [role="dialog"] .bg-neutral-50,
+.dark [role="dialog"] .bg-neutral-100 {
+  background-color: #1c1c1c !important;
+  border-color: #2e2e2e !important;
+  color: #ededed !important;
+}
+
+/* Form Controls: Inputs, Selects, and Dropdowns in Dark Mode */
+.dark input[type="text"],
+.dark input[type="search"],
+.dark input[type="password"],
+.dark input[type="email"],
+.dark input[type="number"],
+.dark textarea,
+.dark select {
+  background-color: #171717 !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+}
+
+.dark select option {
+  background-color: #202020 !important;
+  color: #ffffff !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #707070 !important;
+}
+
+/* Sliders, Radios & Checkboxes: Emerald accents, never blue */
+.dark input[type="range"],
+.dark .bg-removal-slider {
+  accent-color: #3ecf8e !important;
+}
+
+.dark input[type="checkbox"],
+.dark input[type="radio"] {
+  accent-color: #3ecf8e !important;
+}
+
+/* Buttons in Dark Mode: Prevent any white or blue buttons */
+/* Primary CTA Buttons -> Emerald Green */
+.dark .primary-button,
+.dark .workspace-primary-button,
+.dark .bg-removal-btn-apply,
+.dark button.bg-primary,
+.dark [data-slot="button"].bg-primary,
+.dark button.bg-\[\#3ecf8e\] {
+  background-color: #3ecf8e !important;
+  border-color: #24b47e !important;
+  color: #171717 !important;
+  font-weight: 600 !important;
+}
+
+.dark .primary-button:hover,
+.dark .workspace-primary-button:hover,
+.dark .bg-removal-btn-apply:hover:not(:disabled),
+.dark button.bg-primary:hover,
+.dark [data-slot="button"].bg-primary:hover,
+.dark button.bg-\[\#3ecf8e\]:hover {
+  background-color: #24b47e !important;
+  color: #171717 !important;
+}
+
+/* Secondary & Action Buttons in Dark Mode -> Dark Neutral Surface */
+.dark .workspace-secondary-button,
+.dark .bg-removal-btn-reset,
+.dark [role="dialog"] button:not(.bg-primary):not(.workspace-primary-button):not(.bg-\[\#3ecf8e\]):not(.bg-destructive),
+.dark [role="region"] button:not(.bg-primary):not(.workspace-primary-button):not(.bg-\[\#3ecf8e\]),
+.dark .workspace-table-footer button,
+.dark .workspace-columns-menu > button {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #ededed !important;
+}
+
+.dark .workspace-secondary-button:hover,
+.dark .bg-removal-btn-reset:hover:not(:disabled),
+.dark [role="dialog"] button:not(.bg-primary):not(.workspace-primary-button):not(.bg-\[\#3ecf8e\]):not(.bg-destructive):hover,
+.dark [role="region"] button:not(.bg-primary):not(.workspace-primary-button):not(.bg-\[\#3ecf8e\]):hover,
+.dark .workspace-table-footer button:hover:not(:disabled),
+.dark .workspace-columns-menu > button:hover {
+  background-color: #282828 !important;
+  color: #ffffff !important;
+}
+
+/* Workspace Records Database Table Dark Styling */
+.dark .workspace-table-layout {
+  background-color: #1c1c1c !important;
+}
+
+.dark .workspace-table-view {
+  background-color: #1c1c1c !important;
+}
+
+.dark .workspace-table-toolbar {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .workspace-table-scroll {
+  background-color: #1c1c1c !important;
+}
+
+.dark .workspace-table {
+  background-color: #1c1c1c !important;
+  border-color: #2e2e2e !important;
+  color: #ededed !important;
+}
+
+.dark .workspace-table th {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #a1a1a1 !important;
+}
+
+.dark .workspace-table td {
+  background-color: #1c1c1c !important;
+  border-color: #2e2e2e !important;
+  color: #ededed !important;
+}
+
+.dark .workspace-table .is-name-column {
+  background-color: #1c1c1c !important;
+}
+
+.dark .workspace-table thead .is-name-column {
+  background-color: #202020 !important;
+}
+
+.dark .workspace-table .is-status-column {
+  background-color: #1c1c1c !important;
+  box-shadow: -1px 0 #2e2e2e !important;
+}
+
+.dark .workspace-table thead .is-status-column {
+  background-color: #202020 !important;
+}
+
+.dark .workspace-table tbody tr:hover td {
+  background-color: #252525 !important;
+}
+
+.dark .workspace-table tbody tr.is-selected td {
+  background-color: rgba(62, 207, 142, 0.12) !important;
+}
+
+/* Floating Map Overlays: Floor Traversal & Transform */
+.dark .workspace-elevator-widget,
+.dark [aria-label="Floor Traversal Overlay"] > div,
+.dark .workspace-transform-toolbar {
+  background-color: rgba(32, 32, 32, 0.96) !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+}
+
+/* Layer Panel Dark Mode Precision */
+.dark .workspace-layer-panel {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .workspace-panel-header {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .workspace-doc-container,
+.dark .workspace-building-container {
+  background-color: #1c1c1c !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .workspace-doc-header,
+.dark .workspace-building-header {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .workspace-doc-sublayer,
+.dark .workspace-floor-item {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #ededed !important;
+}
+
+.dark .workspace-doc-sublayer:hover,
+.dark .workspace-floor-item:hover {
+  background-color: #282828 !important;
+  color: #ffffff !important;
+}
+
+.dark .workspace-doc-sublayer.is-selected,
+.dark .workspace-floor-item.is-active {
+  background-color: rgba(62, 207, 142, 0.15) !important;
+  border-color: rgba(62, 207, 142, 0.4) !important;
+  color: #3ecf8e !important;
+}
+
+.dark .record-inspector {
+  background-color: #202020 !important;
+  border-color: #2e2e2e !important;
+}
+
+/* Map Coordinates & Canvas Controls Dark Mode */
+.dark .map-coordinates {
+  background: rgba(32, 32, 32, 0.95) !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark .geo-canvas-control {
+  background: #202020 !important;
+  color: #ffffff !important;
+  border-color: #2e2e2e !important;
+}
+
+.dark .geo-canvas-control:hover {
+  background: #282828 !important;
+}
+
+.dark .geo-action-button {
+  background: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+}
+
+.dark .geo-action-button:hover:not(:disabled) {
+  background: #282828 !important;
+}
+
+.dark .maplibregl-ctrl-group {
+  background: #202020 !important;
+  border-color: #2e2e2e !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.dark .maplibregl-ctrl-group button {
+  background-color: #202020 !important;
+  color: #ffffff !important;
+}
+
+.dark .maplibregl-ctrl-group button:hover {
+  background-color: #282828 !important;
+}
+
+.dark .maplibregl-ctrl-attrib {
+  background-color: rgba(32, 32, 32, 0.75) !important;
+  color: #9a9a9a !important;
+}
+
+.dark .maplibregl-ctrl-attrib a {
+  color: #3ecf8e !important;
+}
+
+.dark .dataset-control-point-marker__label {
+  background: #202020 !important;
+  border-color: #2e2e2e !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}

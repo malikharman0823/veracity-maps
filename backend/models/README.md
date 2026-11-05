@@ -8,6 +8,10 @@ The `models` package defines all core domain entities, API response wrappers, an
 
 ## Files in Package
 
+### `user.go`
+- `UserProject` contains user ownership, name, description, dataset IDs, and timestamps; it no longer exposes `org_id` or `owner_type`.
+- `ProjectMember`, `ProjectRole`, and `PendingInvitationView` represent project-only collaboration. Organization models and payloads have been removed.
+
 ### 1. `dataset.go`
 - **`type Dataset struct`**:
   - `ID`: Unique dataset identifier (`ds_<32-hex>`).

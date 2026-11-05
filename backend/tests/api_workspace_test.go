@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -14,7 +13,7 @@ import (
 func TestAPI_WorkspaceAndIcons(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 

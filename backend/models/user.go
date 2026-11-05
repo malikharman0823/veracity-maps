@@ -21,12 +21,10 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// UserProject represents a project owned either personally or by an organization.
+// UserProject represents a personal project owned by a user.
 type UserProject struct {
 	ID               string    `json:"id"`
 	UserID           string    `json:"user_id"`
-	OrgID            string    `json:"org_id,omitempty"`
-	OwnerType        string    `json:"owner_type,omitempty"` // "personal" | "organization"
 	Name             string    `json:"name"`
 	Description      string    `json:"description,omitempty"`
 	PrimaryDatasetID string    `json:"primary_dataset_id,omitempty"`
@@ -44,16 +42,6 @@ const (
 	RoleViewer ProjectRole = "viewer"
 )
 
-// OrgRole defines the permission level of a user within an organization.
-type OrgRole string
-
-const (
-	OrgRoleOwner  OrgRole = "owner"
-	OrgRoleAdmin  OrgRole = "admin"
-	OrgRoleEditor OrgRole = "editor"
-	OrgRoleViewer OrgRole = "viewer"
-)
-
 // InvitationStatus defines the state of a collaboration invitation.
 type InvitationStatus string
 
@@ -63,94 +51,6 @@ const (
 	StatusRejected InvitationStatus = "rejected"
 	StatusRevoked  InvitationStatus = "revoked"
 )
-
-// Organization represents an organizational workspace.
-type Organization struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description,omitempty"`
-	CreatedBy         string    `json:"created_by"`
-	StorageUsedBytes  int64     `json:"storage_used_bytes"`
-	StorageQuotaBytes int64     `json:"storage_quota_bytes"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-}
-
-// OrgMember represents a user's membership and permission within an organization.
-type OrgMember struct {
-	ID               string           `json:"id"`
-	OrgID            string           `json:"org_id"`
-	UserID           string           `json:"user_id"`
-	UserEmail        string           `json:"user_email"`
-	UserName         string           `json:"user_name"`
-	Role             OrgRole          `json:"role"`
-	InvitationStatus InvitationStatus `json:"invitation_status"`
-	InvitedBy        string           `json:"invited_by"`
-	JoinedAt         time.Time        `json:"joined_at,omitempty"`
-	CreatedAt        time.Time        `json:"created_at"`
-	UpdatedAt        time.Time        `json:"updated_at"`
-}
-
-// OrgActivity logs organizational audit events.
-type OrgActivity struct {
-	ID        string    `json:"id"`
-	OrgID     string    `json:"org_id"`
-	UserID    string    `json:"user_id"`
-	UserName  string    `json:"user_name"`
-	Action    string    `json:"action"` // org_created, member_invited, member_joined, role_changed, etc.
-	Details   string    `json:"details"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-// PendingOrgInvitationView represents an invitation awaiting user response.
-type PendingOrgInvitationView struct {
-	InvitationID string    `json:"invitation_id"`
-	OrgID        string    `json:"org_id"`
-	OrgName      string    `json:"org_name"`
-	InvitedBy    string    `json:"invited_by"`
-	InviterName  string    `json:"inviter_name"`
-	Role         OrgRole   `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-// OrgOverviewData summarizes statistics for the organization dashboard.
-type OrgOverviewData struct {
-	Organization      *Organization `json:"organization"`
-	UserRole          OrgRole       `json:"user_role"`
-	TotalMembers      int           `json:"total_members"`
-	TotalProjects     int           `json:"total_projects"`
-	TotalDatasets     int           `json:"total_datasets"`
-	StorageUsedBytes  int64         `json:"storage_used_bytes"`
-	StorageQuotaBytes int64         `json:"storage_quota_bytes"`
-}
-
-// CreateOrgRequest payload.
-type CreateOrgRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
-// UpdateOrgRequest payload.
-type UpdateOrgRequest struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
-// InviteOrgMemberRequest payload.
-type InviteOrgMemberRequest struct {
-	Email string  `json:"email"`
-	Role  OrgRole `json:"role"`
-}
-
-// UpdateOrgMemberRoleRequest payload.
-type UpdateOrgMemberRoleRequest struct {
-	Role OrgRole `json:"role"`
-}
-
-// TransferProjectRequest payload.
-type TransferProjectRequest struct {
-	ProjectID string `json:"project_id"`
-}
 
 // ProjectMember represents a user's membership and permission within a project.
 type ProjectMember struct {
@@ -263,7 +163,6 @@ type AuthResponse struct {
 type CreateProjectRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	OrgID       string `json:"org_id,omitempty"`
 }
 
 // UpdateProjectRequest payload.

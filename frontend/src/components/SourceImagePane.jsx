@@ -184,18 +184,18 @@ export default function SourceImagePane({
   }, [view.zoom])
 
   return (
-    <section className="relative flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-utility border border-hairline bg-white">
-      <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-hairline px-4">
+    <section className="relative flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-utility border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white">
+      <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-4 text-neutral-900 dark:text-white">
         <div>
-          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-ink">SOURCE IMAGE</h2>
-          <p className="mt-0.5 text-[12px] text-muted">Original pixel coordinates</p>
+          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-neutral-900 dark:text-white">SOURCE IMAGE</h2>
+          <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">Original pixel coordinates</p>
         </div>
-        <p className="text-[12px] tabular-nums text-muted">{sourceWidth.toLocaleString()} × {sourceHeight.toLocaleString()}</p>
+        <p className="text-[12px] tabular-nums text-neutral-500 dark:text-neutral-400">{sourceWidth.toLocaleString()} × {sourceHeight.toLocaleString()}</p>
       </header>
 
       <div
         ref={viewportRef}
-        className={`relative min-h-0 flex-1 touch-none overflow-hidden bg-[#eef0f2]${placementMode && !readOnly ? " cursor-crosshair" : " cursor-grab"}`}
+        className={`relative min-h-0 flex-1 touch-none overflow-hidden bg-[#eef0f2] dark:bg-[#171717]${placementMode && !readOnly ? " cursor-crosshair" : " cursor-grab"}`}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={(event) => setCursorCoordinate(coordinatesFromClient(event.clientX, event.clientY))}
         onPointerLeave={() => setCursorCoordinate(null)}
@@ -261,7 +261,7 @@ export default function SourceImagePane({
             )}
           </div>
         )}
-        <div className="absolute bottom-3 left-3 z-10 flex overflow-hidden rounded-full border border-hairline bg-white shadow-sm">
+        <div className="absolute bottom-3 left-3 z-10 flex overflow-hidden rounded-full border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] shadow-sm">
           <Button type="button" className="geo-canvas-control" aria-label="Zoom in source image" onClick={() => changeZoom(view.zoom * 1.25)}>+</Button>
           <Button type="button" className="geo-canvas-control border-l border-hairline" aria-label="Zoom out source image" onClick={() => changeZoom(view.zoom / 1.25)}>−</Button>
         </div>

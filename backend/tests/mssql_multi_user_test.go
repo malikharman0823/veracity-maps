@@ -3,12 +3,14 @@ package tests
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/malikharman0823/veracity-maps/api"
 	"github.com/malikharman0823/veracity-maps/config"
@@ -17,7 +19,6 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
-	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -62,7 +63,7 @@ func getTestMSSQLDB(t *testing.T) *sql.DB {
 	return sqlDB
 }
 
-func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repository.AuthRepository, *repository.ProjectRepository, *repository.OrgRepository) {
+func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repository.AuthRepository, *repository.ProjectRepository) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
 		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
@@ -91,12 +92,6 @@ func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repositor
 	}
 	projRepo.SetDB(sqlDB)
 
-	orgRepo, err := repository.NewOrgRepository(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to initialize orgRepo: %v", err)
-	}
-	orgRepo.SetDB(sqlDB)
-
 	middleware := api.NewMiddleware(sessionRepo, authRepo)
 	datasetService := services.NewDatasetService(cfg, sessionRepo, sm)
 	georefService := services.NewGeoreferenceService(sessionRepo, sm)
@@ -108,13 +103,11 @@ func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repositor
 	exportHandler := export.NewHandler(exportService, sessionRepo)
 	authHandler := auth.NewHandler(authRepo)
 	projectsHandler := projects.NewHandler(projRepo, sessionRepo, authRepo)
-	orgHandler := organizations.NewHandler(orgRepo, projRepo, authRepo)
 
 	router := api.NewRouter(
 		sessionRepo,
 		authRepo,
 		projRepo,
-		orgRepo,
 		middleware,
 		uploadHandler,
 		datasetsHandler,
@@ -122,11 +115,10 @@ func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repositor
 		exportHandler,
 		authHandler,
 		projectsHandler,
-		orgHandler,
 	)
 
 	server := httptest.NewServer(router.BuildHandler())
-	return server, authRepo, projRepo, orgRepo
+	return server, authRepo, projRepo
 }
 
 func parseResponse(resp *http.Response, target interface{}) {
@@ -145,14 +137,15 @@ func TestMSSQL_CompleteMultiUserWorkflow(t *testing.T) {
 	}
 	defer sqlDB.Close()
 
-	server, _, _, _ := setupMSSQLServer(t, sqlDB)
+	server, _, _ := setupMSSQLServer(t, sqlDB)
 	defer server.Close()
 
 	client := server.Client()
 
 	// 1. User A & User B Register
-	emailA := strings.ToLower("userA_" + t.Name() + "@veracity.com")
-	emailB := strings.ToLower("userB_" + t.Name() + "@veracity.com")
+	ts := time.Now().UnixNano()
+	emailA := fmt.Sprintf("usera_%s_%d@veracity.com", strings.ToLower(t.Name()), ts)
+	emailB := fmt.Sprintf("userb_%s_%d@veracity.com", strings.ToLower(t.Name()), ts)
 
 	regPayloadA := `{"name":"User Alpha","email":"` + emailA + `","password":"password123"}`
 	respA, err := client.Post(server.URL+"/api/auth/register", "application/json", strings.NewReader(regPayloadA))
@@ -205,53 +198,7 @@ func TestMSSQL_CompleteMultiUserWorkflow(t *testing.T) {
 		t.Fatalf("Expected 403 Forbidden or 404 for User B, got %d", respBGet.StatusCode)
 	}
 
-	// 4. User A creates an Organization
-	createOrgPayload := `{"name":"Alpha Mapping Corp","description":"Primary Geo Org"}`
-	reqOrg, _ := http.NewRequest("POST", server.URL+"/api/organizations", strings.NewReader(createOrgPayload))
-	reqOrg.Header.Set("Authorization", "Bearer "+authA.Token)
-	reqOrg.Header.Set("Content-Type", "application/json")
-	respOrg, err := client.Do(reqOrg)
-	if err != nil || respOrg.StatusCode != http.StatusCreated {
-		t.Fatalf("User A create organization failed: status %d", respOrg.StatusCode)
-	}
-	var orgA models.Organization
-	parseResponse(respOrg, &orgA)
-
-	// Verify org in MSSQL Organizations table
-	var orgCount int
-	_ = sqlDB.QueryRow("SELECT COUNT(*) FROM Organizations WHERE id = @p1", orgA.ID).Scan(&orgCount)
-	if orgCount != 1 {
-		t.Fatalf("Expected organization in MSSQL Organizations table, got count %d", orgCount)
-	}
-
-	// 5. User A invites User B to Organization
-	inviteOrgPayload := `{"email":"` + emailB + `","role":"editor"}`
-	reqInvOrg, _ := http.NewRequest("POST", server.URL+"/api/organizations/"+orgA.ID+"/members", strings.NewReader(inviteOrgPayload))
-	reqInvOrg.Header.Set("Authorization", "Bearer "+authA.Token)
-	reqInvOrg.Header.Set("Content-Type", "application/json")
-	respInvOrg, err := client.Do(reqInvOrg)
-	if err != nil || respInvOrg.StatusCode != http.StatusCreated {
-		t.Fatalf("Invite User B to org failed: status %d", respInvOrg.StatusCode)
-	}
-	var orgMemB models.OrgMember
-	parseResponse(respInvOrg, &orgMemB)
-
-	// 6. User B responds to invitation via unified /api/invitations/:id/accept
-	reqAccept, _ := http.NewRequest("POST", server.URL+"/api/invitations/"+orgMemB.ID+"/accept", nil)
-	reqAccept.Header.Set("Authorization", "Bearer "+authB.Token)
-	respAccept, err := client.Do(reqAccept)
-	if err != nil || respAccept.StatusCode != http.StatusOK {
-		t.Fatalf("Accept invitation via unified endpoint failed: status %d", respAccept.StatusCode)
-	}
-
-	// Verify accepted membership in MSSQL
-	var statusStr string
-	_ = sqlDB.QueryRow("SELECT invitation_status FROM OrganizationMembers WHERE id = @p1", orgMemB.ID).Scan(&statusStr)
-	if statusStr != string(models.StatusAccepted) {
-		t.Fatalf("Expected accepted status in MSSQL, got %s", statusStr)
-	}
-
-	// 7. User A shares project with User B as Editor
+	// 4. User A shares project with User B as Editor directly
 	sharePayload := `{"email":"` + emailB + `","role":"editor"}`
 	reqShare, _ := http.NewRequest("POST", server.URL+"/api/projects/"+projA.ID+"/share", strings.NewReader(sharePayload))
 	reqShare.Header.Set("Authorization", "Bearer "+authA.Token)
@@ -263,12 +210,19 @@ func TestMSSQL_CompleteMultiUserWorkflow(t *testing.T) {
 	var projMemB models.ProjectMember
 	parseResponse(respShare, &projMemB)
 
-	// User B accepts project invitation
+	// User B accepts project invitation via unified /api/invitations/:id/accept
 	reqAcceptProj, _ := http.NewRequest("POST", server.URL+"/api/invitations/"+projMemB.ID+"/accept", nil)
 	reqAcceptProj.Header.Set("Authorization", "Bearer "+authB.Token)
 	respAcceptProj, err := client.Do(reqAcceptProj)
 	if err != nil || respAcceptProj.StatusCode != http.StatusOK {
 		t.Fatalf("User B accept project invitation failed: status %d", respAcceptProj.StatusCode)
+	}
+
+	// Verify accepted membership in MSSQL
+	var statusStr string
+	_ = sqlDB.QueryRow("SELECT invitation_status FROM ProjectMembers WHERE id = @p1", projMemB.ID).Scan(&statusStr)
+	if statusStr != string(models.StatusAccepted) {
+		t.Fatalf("Expected accepted status in MSSQL ProjectMembers, got %s", statusStr)
 	}
 
 	// User B can now read and update the project

@@ -20,7 +20,7 @@ func NewMSSQLProjectRepository(db *sql.DB, authRepo AuthRepo) *MSSQLProjectRepos
 	return &MSSQLProjectRepository{db: db, authRepo: authRepo}
 }
 
-func (r *MSSQLProjectRepository) CreateProject(userID, orgID, ownerType, name, description string) (*models.UserProject, error) {
+func (r *MSSQLProjectRepository) CreateProject(userID, name, description string) (*models.UserProject, error) {
 	cleanName := strings.TrimSpace(name)
 	if cleanName == "" {
 		return nil, errors.New("project name is required")
@@ -32,14 +32,6 @@ func (r *MSSQLProjectRepository) CreateProject(userID, orgID, ownerType, name, d
 	}
 	projID := "proj_" + pid
 
-	if ownerType == "" {
-		if orgID != "" {
-			ownerType = "organization"
-		} else {
-			ownerType = "personal"
-		}
-	}
-
 	now := time.Now()
 	datasetIDsJSON := "[]"
 
@@ -49,16 +41,11 @@ func (r *MSSQLProjectRepository) CreateProject(userID, orgID, ownerType, name, d
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var orgIDParam interface{} = nil
-	if orgID != "" {
-		orgIDParam = orgID
-	}
-
 	insertProj := `
 		INSERT INTO Projects (id, user_id, org_id, owner_type, name, description, primary_dataset_id, dataset_ids, created_at, updated_at)
 		VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
 	`
-	_, err = tx.Exec(insertProj, projID, userID, orgIDParam, ownerType, cleanName, description, nil, datasetIDsJSON, now, now)
+	_, err = tx.Exec(insertProj, projID, userID, nil, "personal", cleanName, description, nil, datasetIDsJSON, now, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating project in database: %w", err)
 	}
@@ -95,8 +82,6 @@ func (r *MSSQLProjectRepository) CreateProject(userID, orgID, ownerType, name, d
 	return &models.UserProject{
 		ID:          projID,
 		UserID:      userID,
-		OrgID:       orgID,
-		OwnerType:   ownerType,
 		Name:        cleanName,
 		Description: description,
 		DatasetIDs:  []string{},
@@ -111,9 +96,9 @@ func (r *MSSQLProjectRepository) GetProject(projectID string) (*models.UserProje
 		FROM Projects WHERE id = @p1;
 	`
 	var p models.UserProject
-	var orgID, desc, primaryDS, datasetIDs sql.NullString
+	var orgID, ownerType, desc, primaryDS, datasetIDs sql.NullString
 	err := r.db.QueryRow(query, projectID).Scan(
-		&p.ID, &p.UserID, &orgID, &p.OwnerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.UserID, &orgID, &ownerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -122,9 +107,6 @@ func (r *MSSQLProjectRepository) GetProject(projectID string) (*models.UserProje
 		return nil, fmt.Errorf("failed fetching project: %w", err)
 	}
 
-	if orgID.Valid {
-		p.OrgID = orgID.String
-	}
 	if desc.Valid {
 		p.Description = desc.String
 	}
@@ -137,7 +119,6 @@ func (r *MSSQLProjectRepository) GetProject(projectID string) (*models.UserProje
 	if p.DatasetIDs == nil {
 		p.DatasetIDs = []string{}
 	}
-
 	return &p, nil
 }
 
@@ -196,11 +177,8 @@ func (r *MSSQLProjectRepository) ListUserProjects(userID string) ([]*models.User
 	var projects []*models.UserProject
 	for rows.Next() {
 		var p models.UserProject
-		var orgID, desc, primaryDS, datasetIDs sql.NullString
-		if err := rows.Scan(&p.ID, &p.UserID, &orgID, &p.OwnerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt); err == nil {
-			if orgID.Valid {
-				p.OrgID = orgID.String
-			}
+		var orgID, ownerType, desc, primaryDS, datasetIDs sql.NullString
+		if err := rows.Scan(&p.ID, &p.UserID, &orgID, &ownerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt); err == nil {
 			if desc.Valid {
 				p.Description = desc.String
 			}
@@ -215,6 +193,9 @@ func (r *MSSQLProjectRepository) ListUserProjects(userID string) ([]*models.User
 			}
 			projects = append(projects, &p)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
 	}
 	return projects, nil
 }
@@ -238,18 +219,15 @@ func (r *MSSQLProjectRepository) ListSharedProjects(userID string) ([]*models.Sh
 	var shared []*models.SharedProjectView
 	for rows.Next() {
 		var p models.UserProject
-		var orgID, desc, primaryDS, datasetIDs sql.NullString
+		var orgID, ownerType, desc, primaryDS, datasetIDs sql.NullString
 		var roleStr string
 		var sharedDate time.Time
 		var ownerName, ownerEmail sql.NullString
 
 		if err := rows.Scan(
-			&p.ID, &p.UserID, &orgID, &p.OwnerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt,
+			&p.ID, &p.UserID, &orgID, &ownerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt,
 			&roleStr, &sharedDate, &ownerName, &ownerEmail,
 		); err == nil {
-			if orgID.Valid {
-				p.OrgID = orgID.String
-			}
 			if desc.Valid {
 				p.Description = desc.String
 			}
@@ -281,47 +259,11 @@ func (r *MSSQLProjectRepository) ListSharedProjects(userID string) ([]*models.Sh
 			})
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
+	}
 
 	return shared, nil
-}
-
-func (r *MSSQLProjectRepository) ListOrgProjects(orgID string) ([]*models.UserProject, error) {
-	query := `
-		SELECT id, user_id, org_id, owner_type, name, description, primary_dataset_id, dataset_ids, created_at, updated_at
-		FROM Projects
-		WHERE org_id = @p1
-		ORDER BY updated_at DESC;
-	`
-	rows, err := r.db.Query(query, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed listing org projects: %w", err)
-	}
-	defer rows.Close()
-
-	var projects []*models.UserProject
-	for rows.Next() {
-		var p models.UserProject
-		var orgIDVal, desc, primaryDS, datasetIDs sql.NullString
-		if err := rows.Scan(&p.ID, &p.UserID, &orgIDVal, &p.OwnerType, &p.Name, &desc, &primaryDS, &datasetIDs, &p.CreatedAt, &p.UpdatedAt); err == nil {
-			if orgIDVal.Valid {
-				p.OrgID = orgIDVal.String
-			}
-			if desc.Valid {
-				p.Description = desc.String
-			}
-			if primaryDS.Valid {
-				p.PrimaryDatasetID = primaryDS.String
-			}
-			if datasetIDs.Valid && datasetIDs.String != "" {
-				_ = json.Unmarshal([]byte(datasetIDs.String), &p.DatasetIDs)
-			}
-			if p.DatasetIDs == nil {
-				p.DatasetIDs = []string{}
-			}
-			projects = append(projects, &p)
-		}
-	}
-	return projects, nil
 }
 
 func (r *MSSQLProjectRepository) CheckPermission(projectID, userID string, requiredRole models.ProjectRole) (*models.ProjectMember, error) {
@@ -451,6 +393,9 @@ func (r *MSSQLProjectRepository) ListMembers(projectID string) ([]*models.Projec
 			members = append(members, &m)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
+	}
 	return members, nil
 }
 
@@ -530,6 +475,9 @@ func (r *MSSQLProjectRepository) ListPendingInvitations(userEmail string) ([]*mo
 			}
 			invitations = append(invitations, &inv)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
 	}
 
 	return invitations, nil
@@ -624,6 +572,9 @@ func (r *MSSQLProjectRepository) GetActivities(projectID string) ([]*models.Proj
 			}
 			list = append(list, &a)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
 	}
 	return list, nil
 }

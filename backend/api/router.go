@@ -10,7 +10,6 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
 	"github.com/malikharman0823/veracity-maps/functions/health"
-	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -21,7 +20,6 @@ type Router struct {
 	repo       *repository.SessionRepository
 	authRepo   *repository.AuthRepository
 	projRepo   *repository.ProjectRepository
-	orgRepo    *repository.OrgRepository
 	middleware *Middleware
 	uploadH    *upload.Handler
 	datasetsH  *datasets.Handler
@@ -29,14 +27,12 @@ type Router struct {
 	exportH    *export.Handler
 	authH      *auth.Handler
 	projectsH  *projects.Handler
-	orgH       *organizations.Handler
 }
 
 func NewRouter(
 	repo *repository.SessionRepository,
 	authRepo *repository.AuthRepository,
 	projRepo *repository.ProjectRepository,
-	orgRepo *repository.OrgRepository,
 	mw *Middleware,
 	uh *upload.Handler,
 	dh *datasets.Handler,
@@ -44,13 +40,11 @@ func NewRouter(
 	eh *export.Handler,
 	ah *auth.Handler,
 	ph *projects.Handler,
-	oh *organizations.Handler,
 ) *Router {
 	return &Router{
 		repo:       repo,
 		authRepo:   authRepo,
 		projRepo:   projRepo,
-		orgRepo:    orgRepo,
 		middleware: mw,
 		uploadH:    uh,
 		datasetsH:  dh,
@@ -58,7 +52,6 @@ func NewRouter(
 		exportH:    eh,
 		authH:      ah,
 		projectsH:  ph,
-		orgH:       oh,
 	}
 }
 
@@ -220,134 +213,7 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 1c. Organizations (Team Management & Multi-Org Platform)
-	if path == "/api/organizations" || path == "/organizations" {
-		user := GetUser(r)
-		if user == nil {
-			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
-			return
-		}
-		if r.Method == http.MethodGet {
-			rt.orgH.List(w, r, user.ID)
-			return
-		}
-		if r.Method == http.MethodPost {
-			rt.orgH.Create(w, r, user)
-			return
-		}
-	}
-
-	if path == "/api/organizations/invitations" || path == "/organizations/invitations" {
-		user := GetUser(r)
-		if user == nil {
-			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
-			return
-		}
-		rt.orgH.ListInvitations(w, r, user)
-		return
-	}
-
-	if (strings.HasPrefix(path, "/api/organizations/invitations/") || strings.HasPrefix(path, "/organizations/invitations/")) && strings.HasSuffix(path, "/respond") {
-		user := GetUser(r)
-		if user == nil {
-			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
-			return
-		}
-		var remainder string
-		if strings.HasPrefix(path, "/api/organizations/invitations/") {
-			remainder = strings.TrimPrefix(path, "/api/organizations/invitations/")
-		} else {
-			remainder = strings.TrimPrefix(path, "/organizations/invitations/")
-		}
-		invitationID := strings.TrimSuffix(remainder, "/respond")
-		rt.orgH.RespondInvitation(w, r, invitationID, user)
-		return
-	}
-
-	if strings.HasPrefix(path, "/api/organizations/") || strings.HasPrefix(path, "/organizations/") {
-		user := GetUser(r)
-		if user == nil {
-			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
-			return
-		}
-		var remainder string
-		if strings.HasPrefix(path, "/api/organizations/") {
-			remainder = strings.TrimPrefix(path, "/api/organizations/")
-		} else {
-			remainder = strings.TrimPrefix(path, "/organizations/")
-		}
-		parts := strings.Split(remainder, "/")
-
-		if len(parts) == 1 {
-			orgID := parts[0]
-			if r.Method == http.MethodGet {
-				rt.orgH.Get(w, r, orgID, user)
-				return
-			}
-			if r.Method == http.MethodPatch || r.Method == http.MethodPut {
-				rt.orgH.Update(w, r, orgID, user)
-				return
-			}
-			if r.Method == http.MethodDelete {
-				rt.orgH.Delete(w, r, orgID, user)
-				return
-			}
-		}
-
-		if len(parts) == 2 {
-			orgID := parts[0]
-			sub := parts[1]
-
-			if sub == "members" {
-				if r.Method == http.MethodGet {
-					rt.orgH.ListMembers(w, r, orgID, user)
-					return
-				}
-				if r.Method == http.MethodPost {
-					rt.orgH.Invite(w, r, orgID, user)
-					return
-				}
-			}
-			if sub == "invite" && r.Method == http.MethodPost {
-				rt.orgH.Invite(w, r, orgID, user)
-				return
-			}
-			if sub == "activities" && r.Method == http.MethodGet {
-				rt.orgH.ListActivities(w, r, orgID, user)
-				return
-			}
-			if sub == "projects" {
-				if r.Method == http.MethodGet {
-					rt.orgH.ListProjects(w, r, orgID, user)
-					return
-				}
-				if r.Method == http.MethodPost {
-					rt.orgH.CreateProject(w, r, orgID, user)
-					return
-				}
-			}
-			if sub == "transfer-project" && r.Method == http.MethodPost {
-				rt.orgH.TransferProject(w, r, orgID, user)
-				return
-			}
-		}
-
-		if len(parts) == 3 && parts[1] == "members" {
-			orgID := parts[0]
-			memberID := parts[2]
-
-			if r.Method == http.MethodPatch || r.Method == http.MethodPut {
-				rt.orgH.UpdateMemberRole(w, r, orgID, memberID, user)
-				return
-			}
-			if r.Method == http.MethodDelete {
-				rt.orgH.RemoveMember(w, r, orgID, memberID, user)
-				return
-			}
-		}
-	}
-
-	// 1d. Unified Invitations Endpoint (/api/invitations)
+	// 1c. Unified Invitations Endpoint (/api/invitations)
 	if path == "/api/invitations" || path == "/invitations" {
 		user := GetUser(r)
 		if user == nil {
@@ -356,11 +222,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 		if r.Method == http.MethodGet {
 			projInvites := rt.projRepo.ListPendingInvitations(user.ID, user.Email, rt.authRepo)
-			orgInvites := rt.orgRepo.ListPendingInvitations(user)
 			models.WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"project_invitations":      projInvites,
-				"organization_invitations": orgInvites,
-				"total":                    len(projInvites) + len(orgInvites),
+				"project_invitations": projInvites,
+				"total":               len(projInvites),
 			})
 			return
 		}
@@ -384,16 +248,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			action := parts[1] // "accept" or "reject"
 			if r.Method == http.MethodPost {
 				accept := (action == "accept")
-				// Try project invitations first
 				err := rt.projRepo.RespondInvitation(invitationID, user.ID, user.Name, accept)
 				if err == nil {
 					models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "accepted": accept, "type": "project"})
-					return
-				}
-				// Try organization invitations
-				err = rt.orgRepo.RespondInvitation(invitationID, user, accept)
-				if err == nil {
-					models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "accepted": accept, "type": "organization"})
 					return
 				}
 				models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Invitation not found or already processed", nil, nil)

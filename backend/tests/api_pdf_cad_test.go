@@ -99,7 +99,7 @@ func helperCalcGeoreference(t *testing.T, serverURL, sessionID, datasetID string
 func TestPDFMultiPage_InspectionAndSelectiveImport(t *testing.T) {
 	ts, _, tempDir := createTestServer(t)
 	defer ts.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	// 1. Create Session
 	sessionID := helperCreateSession(t, ts.URL)
@@ -253,7 +253,7 @@ func TestPDFMultiPage_InspectionAndSelectiveImport(t *testing.T) {
 func TestCAD_DXFUploadAndConversion(t *testing.T) {
 	ts, _, tempDir := createTestServer(t)
 	defer ts.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	// 1. Create Session
 	sessionID := helperCreateSession(t, ts.URL)

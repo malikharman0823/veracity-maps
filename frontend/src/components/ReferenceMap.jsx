@@ -492,18 +492,18 @@ export default function ReferenceMap({
   }
 
   return (
-    <section className="relative flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-utility border border-hairline bg-white">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-2">
+    <section className="relative flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-utility border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-4 py-2 text-neutral-900 dark:text-white">
         <div>
-          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-ink">REFERENCE MAP</h2>
-          <p className="mt-0.5 text-[12px] text-muted">
+          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-neutral-900 dark:text-white">REFERENCE MAP</h2>
+          <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">
             {readOnly ? "Inspect saved geographic references" : "Search Google Maps Lat, Lng or click to pair"}
           </p>
         </div>
         <form className="flex items-center gap-1.5" onSubmit={submitSearch}>
           <div className="relative">
             <Input
-              className="w-52 rounded-full pl-3.5 pr-8 text-[12px] phone:w-64"
+              className="w-52 rounded-full pl-3.5 pr-8 text-[12px] phone:w-64 border-neutral-200 dark:border-[#2e2e2e] bg-neutral-100 dark:bg-[#171717] text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus-visible:ring-[#3ecf8e]"
               value={searchValue}
               placeholder="Lat, Lng (e.g. 28.6139, 77.2090)"
               aria-label="Search Google Maps latitude and longitude"
@@ -516,7 +516,7 @@ export default function ReferenceMap({
               <button
                 type="button"
                 aria-label="Clear coordinate search"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#7a7a7a] hover:text-[#1d1d1f]"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
                 onClick={() => {
                   setSearchValue("")
                   setSearchError(null)
@@ -530,7 +530,7 @@ export default function ReferenceMap({
             type="submit"
             variant="outline"
             size="sm"
-            className="h-8 shrink-0 rounded-full border-[#e0e0e0] px-3 text-[12px]"
+            className="h-8 shrink-0 rounded-full border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] px-3 text-[12px] cursor-pointer"
             aria-label="Go to coordinates"
           >
             <Search className="mr-1 size-3.5" />
@@ -552,8 +552,8 @@ export default function ReferenceMap({
       )}
 
       {targetPin && !searchError && (
-        <div className="absolute left-3 right-3 top-[62px] z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e0e0e0] bg-white/95 px-3 py-2 text-[12px] shadow-sm backdrop-blur-xs">
-          <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#1d1d1f]">
+        <div className="absolute left-3 right-3 top-[62px] z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e0e0e0] dark:border-[#2e2e2e] bg-white/95 dark:bg-[#202020]/95 px-3 py-2 text-[12px] shadow-sm backdrop-blur-xs text-neutral-900 dark:text-white">
+          <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#1d1d1f] dark:text-white">
             <MapPin className="size-3.5 shrink-0 text-[#ff3b30]" />
             <span>
               Lat <strong>{targetPin.latitude.toFixed(6)}</strong>, Lng{" "}
@@ -576,7 +576,7 @@ export default function ReferenceMap({
               <button
                 type="button"
                 title="Swap Latitude and Longitude"
-                className="inline-flex h-7 items-center gap-1 rounded-full border border-[#e0e0e0] bg-white px-2.5 text-[11px] text-[#555] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
+                className="inline-flex h-7 items-center gap-1 rounded-full border border-[#e0e0e0] dark:border-[#2e2e2e] bg-white dark:bg-[#171717] px-2.5 text-[11px] text-[#555] dark:text-neutral-300 hover:bg-[#f5f5f7] dark:hover:bg-[#282828] hover:text-[#1d1d1f] dark:hover:text-white cursor-pointer"
                 onClick={handleSwapPinAxes}
               >
                 <ArrowLeftRight className="size-3" />

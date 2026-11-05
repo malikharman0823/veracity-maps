@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -53,7 +52,7 @@ func uploadTestImage(t *testing.T, client *http.Client, serverURL, sessionID, fi
 func TestAPI_IconPointsCRUD(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -261,7 +260,7 @@ func TestAPI_IconPointsCRUD(t *testing.T) {
 func TestAPI_ReopenZipWithIconsDoesNotTreatIconAsRaster(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 

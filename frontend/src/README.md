@@ -12,6 +12,7 @@ This directory contains the primary JavaScript and CSS source code for the Verac
 - **Purpose**: Application entry point. Mounts the root React component tree into the `#root` DOM element using `ReactDOM.createRoot`. Imports `@fontsource-variable/inter` typography and `index.css`.
 
 ### 2. `App.jsx`
+- `/dashboard` opens the authenticated project dashboard. The former organization dashboard route has been removed.
 - **Purpose**: Defines application route mapping using `BrowserRouter` and `Routes`:
   - `/`: [`pages/HomePage`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/frontend/src/pages/README.md) (Workspace dataset listing and quick upload CTA).
   - `/upload`: [`pages/UploadPage`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/frontend/src/pages/README.md) (Interactive drag-and-drop file upload).
@@ -19,6 +20,7 @@ This directory contains the primary JavaScript and CSS source code for the Verac
   - `/workspace`: [`pages/WorkspacePage`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/frontend/src/pages/README.md) (Map viewport & multi-layer management).
 
 ### 3. `api.js`
+- Project sharing and invitation APIs provide collaboration; organization API exports have been removed. `listAllInvitations()` returns `{ project_invitations, total }`.
 - **Purpose**: Centralized Axios API client managing backend communication and session isolation.
 - **Key Exports & Functions**:
   - `SESSION_STORAGE_KEY = "veracity_maps_active_session_id"`: Key for persisting anonymous session tokens across page reloads.

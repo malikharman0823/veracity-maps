@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -18,7 +17,7 @@ import (
 func TestAPI_MultiFloorUploadAllFloorsParsed(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -141,7 +140,7 @@ func TestAPI_MultiFloorUploadAllFloorsParsed(t *testing.T) {
 func TestAPI_SingleGeoreferencePropagatesToEntireBuilding(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -318,7 +317,7 @@ func TestAPI_SingleGeoreferencePropagatesToEntireBuilding(t *testing.T) {
 func TestAPI_MultiFloorSampleWithBuildingIDAndDatasetManifest(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 
@@ -498,7 +497,7 @@ func TestAPI_MultiFloorSampleWithBuildingIDAndDatasetManifest(t *testing.T) {
 func TestAPI_ConsolidatePseudoBuildingsAndPropagateGeoreference(t *testing.T) {
 	server, repo, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 
 	client := server.Client()
 

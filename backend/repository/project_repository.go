@@ -194,8 +194,8 @@ func (r *ProjectRepository) logActivityLocked(projectID, userID, userName, actio
 	_ = r.saveActivitiesLocked(projectID)
 }
 
-// Create creates and persists a new project owned by userID (optionally in an org).
-func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEmail, orgID string) (*models.UserProject, error) {
+// Create creates and persists a new project owned by userID.
+func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEmail string) (*models.UserProject, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -206,16 +206,9 @@ func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEm
 	projectID := "proj_" + pidHex
 	now := time.Now()
 
-	ownerType := "personal"
-	if orgID != "" {
-		ownerType = "organization"
-	}
-
 	p := &models.UserProject{
 		ID:          projectID,
 		UserID:      userID,
-		OrgID:       orgID,
-		OwnerType:   ownerType,
 		Name:        name,
 		Description: description,
 		DatasetIDs:  make([]string, 0),
@@ -252,9 +245,6 @@ func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEm
 
 	if r.db != nil {
 		var orgIDParam sql.NullString
-		if orgID != "" {
-			orgIDParam = sql.NullString{String: orgID, Valid: true}
-		}
 		var descParam sql.NullString
 		if p.Description != "" {
 			descParam = sql.NullString{String: p.Description, Valid: true}
@@ -267,7 +257,7 @@ func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEm
 		if _, err := r.db.Exec(`
 			INSERT INTO Projects (id, user_id, org_id, owner_type, name, description, primary_dataset_id, dataset_ids, created_at, updated_at)
 			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
-		`, p.ID, p.UserID, orgIDParam, p.OwnerType, p.Name, descParam, primaryDSParam, string(datasetBytes), p.CreatedAt, p.UpdatedAt); err != nil {
+		`, p.ID, p.UserID, orgIDParam, "personal", p.Name, descParam, primaryDSParam, string(datasetBytes), p.CreatedAt, p.UpdatedAt); err != nil {
 			log.Printf("[MSSQL ERROR] Projects INSERT failed: %v", err)
 		}
 
@@ -874,50 +864,4 @@ func (r *ProjectRepository) getUserRoleLocked(projectID, userID string) (models.
 // GetProjectDir returns absolute storage directory for a project.
 func (r *ProjectRepository) GetProjectDir(projectID string) string {
 	return filepath.Join(r.projectsDir, projectID)
-}
-
-// ListByOrg returns all projects belonging to an organization.
-func (r *ProjectRepository) ListByOrg(orgID string) []*models.UserProject {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var result []*models.UserProject
-	for _, p := range r.projects {
-		if p.OrgID == orgID {
-			result = append(result, p)
-		}
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].UpdatedAt.After(result[j].UpdatedAt)
-	})
-
-	return result
-}
-
-// TransferToOrg transfers a personal project to an organization.
-func (r *ProjectRepository) TransferToOrg(projectID, userID, orgID string, operatorName string) (*models.UserProject, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	p, exists := r.projects[projectID]
-	if !exists {
-		return nil, ErrProjectNotFound
-	}
-
-	if p.UserID != userID {
-		return nil, ErrForbidden
-	}
-
-	p.OrgID = orgID
-	p.OwnerType = "organization"
-	p.UpdatedAt = time.Now()
-
-	if err := r.saveProjectLocked(p); err != nil {
-		return nil, err
-	}
-
-	r.logActivityLocked(projectID, userID, operatorName, "project_transferred", fmt.Sprintf("Transferred project to organization %s", orgID))
-
-	return p, nil
 }

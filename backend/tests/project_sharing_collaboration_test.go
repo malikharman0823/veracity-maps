@@ -13,7 +13,6 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
-	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -46,10 +45,6 @@ func setupCollaborationTestServer(t *testing.T, tempDir string) (*httptest.Serve
 	if err != nil {
 		t.Fatalf("failed creating project repo: %v", err)
 	}
-	orgRepo, err := repository.NewOrgRepository(tempDir)
-	if err != nil {
-		t.Fatalf("failed creating org repo: %v", err)
-	}
 
 	mw := api.NewMiddleware(sessionRepo, authRepo)
 
@@ -63,9 +58,8 @@ func setupCollaborationTestServer(t *testing.T, tempDir string) (*httptest.Serve
 	eHandler := export.NewHandler(expService, sessionRepo)
 	aHandler := auth.NewHandler(authRepo)
 	pHandler := projects.NewHandler(projRepo, sessionRepo, authRepo)
-	oHandler := organizations.NewHandler(orgRepo, projRepo, authRepo)
 
-	router := api.NewRouter(sessionRepo, authRepo, projRepo, orgRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler, oHandler)
+	router := api.NewRouter(sessionRepo, authRepo, projRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler)
 	server := httptest.NewServer(router.BuildHandler())
 
 	return server, authRepo, projRepo

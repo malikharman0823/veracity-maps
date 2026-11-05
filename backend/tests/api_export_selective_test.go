@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/functions/export"
@@ -18,7 +17,7 @@ import (
 func TestSelectiveExport_HierarchyAndOptions(t *testing.T) {
 	server, repo, tempDir := createTestServer(t)
 	defer server.Close()
-	defer os.RemoveAll(tempDir)
+	defer cleanupTestDir(t, tempDir)
 	client := server.Client()
 
 	sess := repo.CreateSession()

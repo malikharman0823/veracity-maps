@@ -21,7 +21,6 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
-	"github.com/malikharman0823/veracity-maps/functions/organizations"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -55,10 +54,6 @@ func setupZoomPointsTestEnv(t *testing.T) (*repository.SessionRepository, *stora
 	if err != nil {
 		t.Fatalf("failed creating project repo: %v", err)
 	}
-	orgRepo, err := repository.NewOrgRepository(tempDir)
-	if err != nil {
-		t.Fatalf("failed creating org repo: %v", err)
-	}
 	mw := api.NewMiddleware(repo, authRepo)
 
 	dsService := services.NewDatasetService(cfg, repo, sm)
@@ -71,9 +66,8 @@ func setupZoomPointsTestEnv(t *testing.T) (*repository.SessionRepository, *stora
 	eHandler := export.NewHandler(expService, repo)
 	aHandler := auth.NewHandler(authRepo)
 	pHandler := projects.NewHandler(projRepo, repo, authRepo)
-	oHandler := organizations.NewHandler(orgRepo, projRepo, authRepo)
 
-	router := api.NewRouter(repo, authRepo, projRepo, orgRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler, oHandler)
+	router := api.NewRouter(repo, authRepo, projRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler)
 	handler := router.BuildHandler()
 
 	sess := repo.CreateSession()
