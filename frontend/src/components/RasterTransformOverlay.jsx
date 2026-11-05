@@ -724,7 +724,7 @@ export default function RasterTransformOverlay({
     <aside className="workspace-transform-toolbar" aria-label="Raster Transformation Controls">
       <div className="workspace-transform-header">
         <div className="workspace-transform-title">
-          <Sparkles className="size-4 text-[#0066cc]" />
+          <Sparkles className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
           <span>Transform: {datasetName}</span>
         </div>
         <button

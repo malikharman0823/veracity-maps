@@ -244,11 +244,11 @@ export default function FloorTraversalOverlay({
       role="region"
       aria-label="Floor Traversal Overlay"
     >
-      <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-900/10 p-3 w-56 flex flex-col gap-2.5 text-slate-800 transition-all select-none">
+      <div className="pointer-events-auto bg-white/95 dark:bg-[#202020]/95 backdrop-blur-md border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] shadow-xl shadow-black/20 p-3 w-56 flex flex-col gap-2.5 text-neutral-900 dark:text-white transition-all select-none">
         {/* Header: Building Identity & Switcher */}
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-[#2e2e2e]">
           <div className="flex items-center gap-1.5 min-w-0">
-            <div className="size-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <div className="size-6 rounded-[6px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center shrink-0">
               <Building2 className="size-3.5" />
             </div>
             {buildingNames.length > 1 ? (
@@ -261,30 +261,30 @@ export default function FloorTraversalOverlay({
                     onSelectFloor(targetList[0].floor_level ?? 0, e.target.value)
                   }
                 }}
-                className="text-xs font-semibold text-slate-800 bg-transparent truncate border-none focus:outline-hidden cursor-pointer"
+                className="text-xs font-semibold text-neutral-900 dark:text-white bg-transparent truncate border-none focus:outline-hidden cursor-pointer"
                 title="Switch Building"
               >
                 {buildingNames.map((name) => (
-                  <option key={name} value={name}>
+                  <option key={name} value={name} className="bg-white dark:bg-[#202020] text-neutral-900 dark:text-white">
                     {name}
                   </option>
                 ))}
               </select>
             ) : (
-              <span className="text-xs font-semibold text-slate-800 truncate" title={activeBuildingName}>
+              <span className="text-xs font-semibold text-neutral-900 dark:text-white truncate" title={activeBuildingName}>
                 {activeBuildingName || "Building"}
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-1">
-            <span className="text-[10px] font-medium text-slate-400">
+            <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
               {currentFloors.length} Fl
             </span>
             <button
               type="button"
               onClick={() => setIsCollapsed((v) => !v)}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              className="p-1 rounded-[6px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors cursor-pointer"
               title={isCollapsed ? "Expand floor controls" : "Collapse floor controls"}
             >
               {isCollapsed ? <Maximize2 className="size-3" /> : <Minimize2 className="size-3" />}
@@ -293,15 +293,15 @@ export default function FloorTraversalOverlay({
         </div>
 
         {/* Traversal Climbing Step Controls */}
-        <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200/60">
+        <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-[#171717] p-1 rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e]">
           <button
             type="button"
             onClick={handleClimbUp}
             disabled={!canClimbUp}
-            className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-all ${
+            className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer ${
               canClimbUp
-                ? "bg-white text-slate-800 shadow-xs hover:bg-blue-50 hover:text-blue-600 active:scale-98"
-                : "text-slate-300 cursor-not-allowed"
+                ? "bg-white dark:bg-[#282828] text-neutral-800 dark:text-neutral-200 shadow-xs hover:bg-[#3ecf8e]/10 hover:text-[#24b47e] dark:hover:text-[#3ecf8e] active:scale-98"
+                : "text-neutral-300 dark:text-neutral-600 cursor-not-allowed"
             }`}
             title="Climb Up one floor (Arrow Up ↑)"
           >
@@ -310,7 +310,7 @@ export default function FloorTraversalOverlay({
           </button>
 
           <div className="px-1.5 text-center">
-            <span className="text-[11px] font-bold text-blue-600 font-mono">
+            <span className="text-[11px] font-bold text-[#24b47e] dark:text-[#3ecf8e] font-mono">
               {formatBadge(activeFloorLevel)}
             </span>
           </div>
@@ -319,10 +319,10 @@ export default function FloorTraversalOverlay({
             type="button"
             onClick={handleClimbDown}
             disabled={!canClimbDown}
-            className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-all ${
+            className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer ${
               canClimbDown
-                ? "bg-white text-slate-800 shadow-xs hover:bg-blue-50 hover:text-blue-600 active:scale-98"
-                : "text-slate-300 cursor-not-allowed"
+                ? "bg-white dark:bg-[#282828] text-neutral-800 dark:text-neutral-200 shadow-xs hover:bg-[#3ecf8e]/10 hover:text-[#24b47e] dark:hover:text-[#3ecf8e] active:scale-98"
+                : "text-neutral-300 dark:text-neutral-600 cursor-not-allowed"
             }`}
             title="Climb Down one floor (Arrow Down ↓)"
           >
@@ -355,7 +355,7 @@ export default function FloorTraversalOverlay({
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left text-xs transition-all cursor-pointer ${
                     isActive
                       ? "bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs"
-                      : "text-slate-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-slate-900 dark:hover:text-white"
+                      : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-neutral-900 dark:hover:text-white"
                   }`}
                   title={`Click to select ${name} (Level ${level})`}
                 >
@@ -376,14 +376,14 @@ export default function FloorTraversalOverlay({
                           )
                         }
                       }}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer size-3.5"
+                      className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#24b47e] focus:ring-[#3ecf8e] cursor-pointer size-3.5"
                       title={isFloorVisible ? "Visible on map (click to hide)" : "Hidden on map (click to show)"}
                     />
                     <span
-                      className={`inline-flex items-center justify-center min-w-5 h-4.5 px-1 rounded-md text-[10px] font-bold font-mono ${
+                      className={`inline-flex items-center justify-center min-w-5 h-4.5 px-1 rounded-[4px] text-[10px] font-bold font-mono ${
                         isActive
-                          ? "bg-white/20 text-white"
-                          : "bg-slate-200 text-slate-700"
+                          ? "bg-black/15 text-[#171717]"
+                          : "bg-neutral-200 dark:bg-[#2e2e2e] text-neutral-700 dark:text-neutral-300"
                       }`}
                     >
                       {badge}
@@ -396,8 +396,8 @@ export default function FloorTraversalOverlay({
                       <span
                         className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${
                           isActive
-                            ? "bg-blue-700/60 text-blue-100"
-                            : "bg-slate-200/80 text-slate-600"
+                            ? "bg-black/20 text-[#171717]"
+                            : "bg-neutral-200 dark:bg-[#282828] text-neutral-600 dark:text-neutral-400"
                         }`}
                         title={`${pointsCount} icon points on this floor`}
                       >
@@ -407,7 +407,7 @@ export default function FloorTraversalOverlay({
                     {isGeoref && (
                       <CheckCircle2
                         className={`size-3 ${
-                          isActive ? "text-emerald-300" : "text-emerald-500"
+                          isActive ? "text-[#171717]" : "text-[#3ecf8e]"
                         }`}
                         title="Georeferenced footprint active"
                       />
@@ -419,11 +419,10 @@ export default function FloorTraversalOverlay({
           </div>
         )}
 
-
         {/* Active Floor Raster Quick Controls */}
-        <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+        <div className="pt-2 border-t border-neutral-200 dark:border-[#2e2e2e] flex flex-col gap-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[11px] font-medium text-slate-500">
+            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
               Raster Overlay
             </span>
             <div className="flex items-center gap-1.5">
@@ -431,10 +430,10 @@ export default function FloorTraversalOverlay({
                 <button
                   type="button"
                   onClick={onToggleIsolateActiveFloor}
-                  className={`p-1 rounded-md text-xs transition-colors ${
+                  className={`p-1 rounded-[6px] text-xs transition-colors cursor-pointer ${
                     isolateActiveFloor
-                      ? "bg-amber-100 text-amber-800"
-                      : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      ? "bg-amber-500/20 text-amber-500"
+                      : "text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828]"
                   }`}
                   title={isolateActiveFloor ? "Mode: Solo Active Floor (click to show all visible layers)" : "Mode: All Checked Layers (click to solo active floor)"}
                 >
@@ -445,10 +444,10 @@ export default function FloorTraversalOverlay({
               <button
                 type="button"
                 onClick={() => setShowOpacitySlider((v) => !v)}
-                className={`p-1 rounded-md text-xs transition-colors ${
+                className={`p-1 rounded-[6px] text-xs transition-colors cursor-pointer ${
                   showOpacitySlider
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                    ? "bg-[#3ecf8e]/20 text-[#24b47e] dark:text-[#3ecf8e]"
+                    : "text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828]"
                 }`}
                 title="Adjust raster opacity"
               >
@@ -459,7 +458,7 @@ export default function FloorTraversalOverlay({
                 <button
                   type="button"
                   onClick={() => onOpenBackgroundRemoval(activeFloorMember)}
-                  className="p-1 rounded-md text-xs text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  className="p-1 rounded-[6px] text-xs text-neutral-400 hover:text-[#24b47e] dark:hover:text-[#3ecf8e] hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors cursor-pointer"
                   title="Background removal & transparency settings (⚙)"
                 >
                   <Settings className="size-3" />
@@ -469,10 +468,10 @@ export default function FloorTraversalOverlay({
               <button
                 type="button"
                 onClick={toggleRasterVisibility}
-                className={`p-1 rounded-md text-xs transition-colors ${
+                className={`p-1 rounded-[6px] text-xs transition-colors cursor-pointer ${
                   isRasterVisible
-                    ? "text-blue-600 hover:bg-blue-50"
-                    : "text-slate-400 hover:bg-slate-100"
+                    ? "text-[#24b47e] dark:text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
+                    : "text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#282828]"
                 }`}
                 title={isRasterVisible ? "Hide floor plan image" : "Show floor plan image"}
               >
@@ -480,7 +479,6 @@ export default function FloorTraversalOverlay({
               </button>
             </div>
           </div>
-
 
           {/* Opacity slider popup */}
           {showOpacitySlider && (
@@ -492,10 +490,10 @@ export default function FloorTraversalOverlay({
                 step="0.05"
                 value={activeOpacity}
                 onChange={handleOpacityChange}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                className="w-full h-1.5 bg-neutral-200 dark:bg-[#2e2e2e] rounded-lg appearance-none cursor-pointer accent-[#3ecf8e]"
                 title={`Opacity: ${Math.round(activeOpacity * 100)}%`}
               />
-              <span className="text-[10px] font-mono font-medium text-slate-500 min-w-[28px] text-right">
+              <span className="text-[10px] font-mono font-medium text-neutral-500 dark:text-neutral-400 min-w-[28px] text-right">
                 {Math.round(activeOpacity * 100)}%
               </span>
             </div>
@@ -503,8 +501,8 @@ export default function FloorTraversalOverlay({
         </div>
 
         {/* Keyboard Traversal Hint */}
-        <div className="text-[9px] text-slate-400 text-center font-medium pt-0.5">
-          Tip: Press <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[8px] text-slate-600 border border-slate-200">↑</kbd> or <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[8px] text-slate-600 border border-slate-200">↓</kbd> to climb floors
+        <div className="text-[9px] text-neutral-400 dark:text-neutral-500 text-center font-medium pt-0.5">
+          Tip: Press <kbd className="px-1 py-0.5 bg-neutral-100 dark:bg-[#171717] rounded-[4px] text-[8px] text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-[#2e2e2e]">↑</kbd> or <kbd className="px-1 py-0.5 bg-neutral-100 dark:bg-[#171717] rounded-[4px] text-[8px] text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-[#2e2e2e]">↓</kbd> to climb floors
         </div>
       </div>
     </div>

@@ -34,20 +34,19 @@ export default function UploadStatus({
 }) {
   if (state === "success") {
     return (
-      <div className="relative bg-[#ffffff] border border-[#e0e0e0] rounded-[18px] p-8 sm:p-12 flex flex-col items-center justify-center text-center shadow-xs">
-        <div className="size-14 rounded-2xl bg-[#34c759]/10 border border-[#34c759]/20 flex items-center justify-center text-[#34c759] mb-4">
+      <div className="relative bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] p-8 sm:p-12 flex flex-col items-center justify-center text-center shadow-xs">
+        <div className="size-14 rounded-[12px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e] mb-4">
           <CheckCircle2 className="size-7" />
         </div>
-        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Upload complete</h3>
-        <p className="text-xs text-[#7a7a7a] max-w-sm mb-6 font-mono truncate">
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">Upload complete</h3>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-sm mb-6 font-mono truncate">
           {result?.filename || file?.name || "Uploaded dataset"}
         </p>
         <Button
           type="button"
-          variant="pill"
           size="default"
           onClick={onOpen}
-          className="bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-normal"
+          className="bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold rounded-[6px] shadow-xs cursor-pointer"
         >
           <span>Continue</span>
           <ArrowRight className="size-3.5 ml-1.5" />
@@ -58,14 +57,14 @@ export default function UploadStatus({
 
   if (state === "error") {
     return (
-      <div className="relative bg-[#ffffff] border border-[#ff3b30]/30 rounded-[18px] p-8 sm:p-12 flex flex-col items-center justify-center text-center shadow-xs">
-        <div className="size-14 rounded-2xl bg-[#ff3b30]/10 border border-[#ff3b30]/20 flex items-center justify-center text-[#ff3b30] mb-4">
+      <div className="relative bg-white dark:bg-[#202020] border border-red-500/30 rounded-[12px] p-8 sm:p-12 flex flex-col items-center justify-center text-center shadow-xs">
+        <div className="size-14 rounded-[12px] bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 mb-4">
           <AlertCircle className="size-7" />
         </div>
-        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Upload failed</h3>
-        <p className="text-xs text-[#ff3b30] mt-1 max-w-sm font-semibold">{error?.message}</p>
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">Upload failed</h3>
+        <p className="text-xs text-red-500 mt-1 max-w-sm font-semibold">{error?.message}</p>
         {error?.details && (
-          <p className="text-xs text-[#7a7a7a] mt-1 max-w-sm mb-6">{error.details}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mb-6">{error.details}</p>
         )}
         <div className="flex gap-2.5 mt-4">
           <Button
@@ -73,7 +72,7 @@ export default function UploadStatus({
             variant="outline"
             size="sm"
             onClick={onRetry}
-            className="rounded-full border-[#e0e0e0] text-xs"
+            className="rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 text-xs"
           >
             <RefreshCw className="size-3.5 mr-1.5" />
             <span>Try again</span>
@@ -83,7 +82,7 @@ export default function UploadStatus({
             variant="ghost"
             size="sm"
             onClick={onRemove}
-            className="rounded-full text-[#ff3b30] hover:bg-[#ff3b30]/10 text-xs"
+            className="rounded-[6px] text-red-500 hover:bg-red-500/10 text-xs"
           >
             Cancel
           </Button>
@@ -100,14 +99,14 @@ export default function UploadStatus({
   const formattedSize = file?.size != null ? fileSize(file.size) : (result?.file_size != null ? fileSize(result.file_size) : "")
 
   return (
-    <div className="relative bg-[#ffffff] border border-[#e0e0e0] rounded-[18px] p-6 sm:p-8 flex flex-col justify-between min-h-[320px] shadow-xs">
+    <div className="relative bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] p-6 sm:p-8 flex flex-col justify-between min-h-[320px] shadow-xs">
       <div>
         <div className="flex items-center justify-between mb-4">
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-mono border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f]">
+          <span className="inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-mono border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-100 dark:bg-[#171717] text-neutral-800 dark:text-neutral-200">
             {state === "uploading" ? "UPLOADING CHUNKS" : "READY TO INGEST"}
           </span>
           {formattedSize ? (
-            <span className="text-xs text-[#7a7a7a] font-mono">{formattedSize}</span>
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono">{formattedSize}</span>
           ) : null}
         </div>
 
@@ -116,9 +115,9 @@ export default function UploadStatus({
           <Attachment
             state={state === "uploading" ? "uploading" : "done"}
             size="default"
-            className="w-full border border-[#e0e0e0] bg-[#fafafc] rounded-2xl p-3 flex items-center gap-3"
+            className="w-full border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] rounded-[10px] p-3 flex items-center gap-3"
           >
-            <AttachmentMedia className="size-11 rounded-xl bg-[#ffffff] border border-[#e0e0e0] text-[#0066cc]">
+            <AttachmentMedia className="size-11 rounded-[8px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-[#24b47e] dark:text-[#3ecf8e]">
               {state === "uploading" ? (
                 <Loader2 className="size-5 animate-spin" />
               ) : (
@@ -126,10 +125,10 @@ export default function UploadStatus({
               )}
             </AttachmentMedia>
             <AttachmentContent className="min-w-0 flex-1">
-              <AttachmentTitle className="text-xs font-semibold text-[#1d1d1f] truncate">
+              <AttachmentTitle className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
                 {fileName}
               </AttachmentTitle>
-              <AttachmentDescription className="text-[11px] text-[#7a7a7a]">
+              <AttachmentDescription className="text-[11px] text-neutral-500 dark:text-neutral-400">
                 {formattedSize ? `${formattedSize} • ` : ""}Ready for spatial ingestion
               </AttachmentDescription>
             </AttachmentContent>
@@ -139,7 +138,7 @@ export default function UploadStatus({
                 variant="ghost"
                 size="icon"
                 onClick={onRemove}
-                className="size-8 rounded-full text-[#7a7a7a] hover:text-[#ff3b30]"
+                className="size-8 rounded-[6px] text-neutral-400 hover:text-red-500"
                 title="Remove file"
               >
                 <X className="size-4" />
@@ -152,27 +151,26 @@ export default function UploadStatus({
       {state === "uploading" ? (
         <div className="mt-8 space-y-2.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[#7a7a7a] flex items-center gap-1.5">
-              <Loader2 className="size-3.5 animate-spin text-[#0066cc]" />
+            <span className="text-neutral-500 dark:text-neutral-400 flex items-center gap-1.5">
+              <Loader2 className="size-3.5 animate-spin text-[#3ecf8e]" />
               Processing spatial payload…
             </span>
-            <span className="text-[#1d1d1f] font-mono font-semibold">{progress}%</span>
+            <span className="text-neutral-900 dark:text-white font-mono font-semibold">{progress}%</span>
           </div>
-          <div className="h-2 bg-[#f5f5f7] rounded-full overflow-hidden border border-[#e0e0e0]">
+          <div className="h-2 bg-neutral-100 dark:bg-[#171717] rounded-full overflow-hidden border border-neutral-200 dark:border-[#2e2e2e]">
             <div
-              className="h-full bg-[#0066cc] transition-[width] duration-300 rounded-full"
+              className="h-full bg-[#3ecf8e] transition-[width] duration-300 rounded-full"
               style={{ width: `${progress}%` }}
             />
           </div>
         </div>
       ) : (
-        <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-[#e0e0e0] pt-6">
+        <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-neutral-200 dark:border-[#2e2e2e] pt-6">
           <Button
             type="button"
-            variant="pill"
             size="sm"
             onClick={onUpload}
-            className="bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-normal"
+            className="bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs rounded-[6px] shadow-xs cursor-pointer"
           >
             <Upload className="size-3.5 mr-1.5" />
             <span>Start Upload</span>
@@ -182,7 +180,7 @@ export default function UploadStatus({
             variant="outline"
             size="sm"
             onClick={onReplace}
-            className="rounded-full border-[#e0e0e0] text-xs"
+            className="rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 text-xs"
           >
             Replace file
           </Button>
@@ -191,7 +189,7 @@ export default function UploadStatus({
             variant="ghost"
             size="sm"
             onClick={onRemove}
-            className="rounded-full text-[#ff3b30] hover:bg-[#ff3b30]/10 text-xs ml-auto"
+            className="rounded-[6px] text-red-500 hover:bg-red-500/10 text-xs ml-auto"
           >
             Cancel
           </Button>

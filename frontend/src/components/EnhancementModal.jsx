@@ -213,7 +213,7 @@ export default function EnhancementModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="enhancement-modal-title"
@@ -221,18 +221,18 @@ export default function EnhancementModal({
         if (e.target === e.currentTarget && !processing && !tiling) onClose()
       }}
     >
-      <div className="bg-white text-[#1d1d1f] w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl border border-[#e0e0e0] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-[#202020] text-neutral-900 dark:text-white w-full max-w-5xl max-h-[92vh] rounded-[12px] shadow-2xl border border-neutral-200 dark:border-[#2e2e2e] flex flex-col overflow-hidden transition-colors">
         {/* Header */}
-        <header className="px-6 py-4 border-b border-[#e0e0e0] bg-[#fafafc] flex items-center justify-between gap-4">
+        <header className="px-6 py-4 border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="size-10 rounded-xl bg-[#0066cc]/10 border border-[#0066cc]/20 flex items-center justify-center text-[#0066cc] shrink-0">
+            <div className="size-10 rounded-[8px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e] shrink-0">
               <Sparkles className="size-5" />
             </div>
             <div className="min-w-0">
-              <h2 id="enhancement-modal-title" className="text-base font-semibold text-[#1d1d1f] truncate">
+              <h2 id="enhancement-modal-title" className="text-base font-semibold text-neutral-900 dark:text-white truncate">
                 Inspection, OpenCV Enhancement & AI Upscaling
               </h2>
-              <p className="text-xs text-[#7a7a7a] truncate">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
                 {datasetName || inspection?.filename || datasetId} • Non-destructive pipeline (original file preserved)
               </p>
             </div>
@@ -621,14 +621,14 @@ export default function EnhancementModal({
         </div>
 
         {/* Footer */}
-        <footer className="px-6 py-4 border-t border-[#e0e0e0] bg-[#fafafc] flex flex-wrap items-center justify-between gap-2">
+        <footer className="px-6 py-4 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] flex flex-wrap items-center justify-between gap-2">
           <div>
             {hasEnhancedImage && !isStandaloneMbtiles && (
               <button
                 type="button"
                 onClick={handleResetOriginal}
                 disabled={processing || tiling}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#e0e0e0] bg-white px-3.5 py-2 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-3.5 py-2 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] disabled:opacity-50 cursor-pointer"
               >
                 <RotateCcw className="size-3.5" />
                 <span>Reset to Original</span>
@@ -641,7 +641,7 @@ export default function EnhancementModal({
               type="button"
               onClick={onClose}
               disabled={processing || tiling}
-              className="rounded-full border border-[#e0e0e0] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+              className="rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-4 py-2 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] disabled:opacity-50 cursor-pointer"
             >
               Close
             </button>
@@ -650,7 +650,7 @@ export default function EnhancementModal({
                 type="button"
                 onClick={handleApplyEnhancement}
                 disabled={processing || tiling}
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#0066cc] px-5 py-2 text-xs font-medium text-white hover:bg-[#0055b3] disabled:opacity-50 shadow-xs"
+                className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-5 py-2 text-xs font-medium text-[#171717] disabled:opacity-50 shadow-xs cursor-pointer"
               >
                 {processing ? (
                   <>

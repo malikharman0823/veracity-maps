@@ -106,37 +106,37 @@ export default function ZipImportReview({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-5xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-[#202020] rounded-[12px] shadow-2xl border border-neutral-200 dark:border-[#2e2e2e] w-full max-w-5xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-neutral-900 dark:text-white"
         role="dialog"
         aria-modal="true"
         aria-label="Multi-Dataset ZIP Inspection & Import"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50/80 dark:bg-[#171717]/80">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+            <div className="p-2.5 bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] rounded-[8px] border border-[#3ecf8e]/30">
               <Archive className="size-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-gray-900">
+                <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
                   Review & Import Archive Datasets
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono bg-blue-100 text-blue-700 font-medium">
+                <span className="px-2 py-0.5 rounded-[4px] text-[11px] font-mono bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/20 font-medium">
                   {rawDatasets.length} Discovered
                 </span>
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Source ZIP: <span className="font-mono text-gray-700">{archiveName}</span>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                Source ZIP: <span className="font-mono text-neutral-800 dark:text-neutral-200">{archiveName}</span>
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 rounded-lg transition-colors"
+            className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-[#282828] rounded-[6px] transition-colors cursor-pointer"
             aria-label="Close review dialog"
           >
             <X className="size-5" />
@@ -146,35 +146,35 @@ export default function ZipImportReview({
         {/* Import Results View */}
         {importResult ? (
           <div className="p-8 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="size-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs">
+            <div className="size-14 rounded-full bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center shadow-xs border border-[#3ecf8e]/30">
               <CheckCircle2 className="size-8" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
                 Import Completed Successfully
               </h3>
-              <p className="text-xs text-gray-500 max-w-md">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md">
                 Successfully imported <strong>{importResult.imported_count}</strong> dataset(s) into your session.
                 {importResult.failed_count > 0 && (
-                  <span className="text-amber-600 ml-1">
+                  <span className="text-amber-500 ml-1">
                     ({importResult.failed_count} failed)
                   </span>
                 )}
               </p>
             </div>
 
-            <div className="w-full max-w-lg bg-gray-50 rounded-xl border border-gray-200 p-4 divide-y divide-gray-100 text-left max-h-60 overflow-y-auto text-xs">
+            <div className="w-full max-w-lg bg-neutral-50 dark:bg-[#171717] rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e] p-4 divide-y divide-neutral-200 dark:divide-[#2e2e2e] text-left max-h-60 overflow-y-auto text-xs">
               {importResult.results?.map((res, i) => (
                 <div key={i} className="py-2 first:pt-0 last:pb-0 flex items-center justify-between">
                   <div className="flex items-center gap-2 truncate pr-2">
-                    <FileImage className="size-4 text-gray-400 shrink-0" />
-                    <span className="font-medium text-gray-800 truncate">{res.name}</span>
+                    <FileImage className="size-4 text-neutral-400 shrink-0" />
+                    <span className="font-medium text-neutral-800 dark:text-neutral-200 truncate">{res.name}</span>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
+                    className={`px-2 py-0.5 rounded-[4px] text-[10px] font-medium shrink-0 ${
                       res.status === "success" || res.status === "imported"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-red-100 text-red-800"
+                        ? "bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30"
+                        : "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30"
                     }`}
                   >
                     {res.status === "success" || res.status === "imported" ? "Imported" : "Failed"}
@@ -197,25 +197,25 @@ export default function ZipImportReview({
         ) : (
           <>
             {/* Action Bar */}
-            <div className="px-6 py-3 border-b border-gray-100 bg-white flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="px-6 py-3 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => toggleAll(true)}
-                  className="px-2.5 py-1 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md font-medium transition-colors"
+                  className="px-2.5 py-1 text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-[#282828] hover:bg-neutral-200 dark:hover:bg-[#323232] rounded-[6px] font-medium transition-colors cursor-pointer border border-neutral-200 dark:border-[#2e2e2e]"
                 >
                   Select All
                 </button>
                 <button
                   type="button"
                   onClick={() => toggleAll(false)}
-                  className="px-2.5 py-1 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md font-medium transition-colors"
+                  className="px-2.5 py-1 text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-[#282828] hover:bg-neutral-200 dark:hover:bg-[#323232] rounded-[6px] font-medium transition-colors cursor-pointer border border-neutral-200 dark:border-[#2e2e2e]"
                 >
                   Deselect All
                 </button>
-                <span className="text-gray-400">|</span>
-                <span className="text-gray-600">
-                  Selected: <strong className="text-gray-900">{selectedCount}</strong> of {selections.length}
+                <span className="text-neutral-400">|</span>
+                <span className="text-neutral-600 dark:text-neutral-400">
+                  Selected: <strong className="text-neutral-900 dark:text-white">{selectedCount}</strong> of {selections.length}
                 </span>
               </div>
 
@@ -227,20 +227,20 @@ export default function ZipImportReview({
                       value={customBuildingInput}
                       onChange={(e) => setCustomBuildingInput(e.target.value)}
                       placeholder="Building name…"
-                      className="px-2 py-1 bg-gray-50 border border-gray-300 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="px-2 py-1 bg-white dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white rounded-[6px] text-xs focus:outline-none focus:border-[#3ecf8e]"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={handleAddBuildingSubmit}
-                      className="px-2 py-1 bg-[#3ecf8e] text-[#171717] rounded-[4px] font-semibold text-xs hover:bg-[#24b47e] cursor-pointer"
+                      className="px-2.5 py-1 bg-[#3ecf8e] text-[#171717] rounded-[6px] font-semibold text-xs hover:bg-[#24b47e] cursor-pointer"
                     >
                       Assign
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowAddBuilding(false)}
-                      className="p-1 text-gray-400 hover:text-gray-600"
+                      className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
                     >
                       <X className="size-3.5" />
                     </button>
@@ -249,7 +249,7 @@ export default function ZipImportReview({
                   <button
                     type="button"
                     onClick={() => setShowAddBuilding(true)}
-                    className="px-2.5 py-1 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md font-medium transition-colors flex items-center gap-1"
+                    className="px-2.5 py-1 text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 rounded-[6px] font-medium transition-colors flex items-center gap-1 border border-[#3ecf8e]/30 cursor-pointer"
                   >
                     <Plus className="size-3.5" />
                     <span>New Building</span>
@@ -259,7 +259,7 @@ export default function ZipImportReview({
             </div>
 
             {error && (
-              <div className="mx-6 mt-3 px-3.5 py-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+              <div className="mx-6 mt-3 px-3.5 py-2.5 bg-red-500/10 border border-red-500/30 rounded-[8px] text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
                 <AlertTriangle className="size-4 shrink-0 text-red-500" />
                 <span>{error}</span>
               </div>
@@ -267,16 +267,16 @@ export default function ZipImportReview({
 
             {/* Datasets Table */}
             <div className="flex-1 overflow-y-auto p-6 min-h-[300px]">
-              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
-                <table className="w-full text-left text-xs divide-y divide-gray-200">
-                  <thead className="bg-gray-50/80 text-gray-600 font-semibold uppercase text-[10px] tracking-wider">
+              <div className="border border-neutral-200 dark:border-[#2e2e2e] rounded-[8px] overflow-hidden shadow-2xs">
+                <table className="w-full text-left text-xs divide-y divide-neutral-200 dark:divide-[#2e2e2e]">
+                  <thead className="bg-neutral-50 dark:bg-[#171717] text-neutral-600 dark:text-neutral-400 font-semibold uppercase text-[10px] tracking-wider">
                     <tr>
                       <th className="py-2.5 pl-4 pr-2 w-10 text-center">
                         <input
                           type="checkbox"
                           checked={selectedCount === selections.length && selections.length > 0}
                           onChange={(e) => toggleAll(e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 size-3.5"
+                          className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#3ecf8e] focus:ring-[#3ecf8e] size-3.5 accent-[#3ecf8e] cursor-pointer"
                         />
                       </th>
                       <th className="py-2.5 px-3">Dataset Name</th>
@@ -287,12 +287,12 @@ export default function ZipImportReview({
                       <th className="py-2.5 px-3">Floor Plan</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
+                  <tbody className="divide-y divide-neutral-200 dark:divide-[#2e2e2e] bg-white dark:bg-[#202020]">
                     {selections.map((row, idx) => (
                       <tr
                         key={row.entry_path}
-                        className={`transition-colors hover:bg-gray-50/70 ${
-                          row.selected ? "bg-blue-50/20" : "opacity-60"
+                        className={`transition-colors hover:bg-neutral-50 dark:hover:bg-[#282828] ${
+                          row.selected ? "bg-[#3ecf8e]/5" : "opacity-60"
                         }`}
                       >
                         <td className="py-3 pl-4 pr-2 text-center">
@@ -300,7 +300,7 @@ export default function ZipImportReview({
                             type="checkbox"
                             checked={row.selected}
                             onChange={(e) => updateRow(idx, { selected: e.target.checked })}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 size-3.5 cursor-pointer"
+                            className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#3ecf8e] focus:ring-[#3ecf8e] size-3.5 accent-[#3ecf8e] cursor-pointer"
                           />
                         </td>
 
@@ -310,22 +310,22 @@ export default function ZipImportReview({
                             type="text"
                             value={row.name}
                             onChange={(e) => updateRow(idx, { name: e.target.value })}
-                            className="w-full px-2 py-1 bg-white border border-gray-200 rounded-md font-medium text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-1 bg-white dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] rounded-[6px] font-medium text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e]"
                           />
                         </td>
 
                         {/* Archive Entry Path */}
-                        <td className="py-3 px-3 text-gray-500 font-mono text-[11px] truncate max-w-[180px]" title={row.entry_path}>
+                        <td className="py-3 px-3 text-neutral-500 dark:text-neutral-400 font-mono text-[11px] truncate max-w-[180px]" title={row.entry_path}>
                           {row.entry_path}
                         </td>
 
                         {/* Format & Dimensions */}
-                        <td className="py-3 px-3 text-gray-600">
-                          <span className="font-semibold uppercase text-gray-800">
+                        <td className="py-3 px-3 text-neutral-600 dark:text-neutral-300">
+                          <span className="font-semibold uppercase text-neutral-800 dark:text-neutral-200">
                             {row.format}
                           </span>
                           {row.width > 0 && row.height > 0 && (
-                            <span className="text-gray-400 ml-1 text-[11px]">
+                            <span className="text-neutral-400 dark:text-neutral-500 ml-1 text-[11px]">
                               {row.width}×{row.height}
                             </span>
                           )}
@@ -334,17 +334,17 @@ export default function ZipImportReview({
                         {/* Georeference status */}
                         <td className="py-3 px-3">
                           {row.is_georeferenced ? (
-                            <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[10px] font-semibold w-fit">
+                            <div className="flex items-center gap-1.5 text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 px-2 py-0.5 rounded-[4px] border border-[#3ecf8e]/30 text-[10px] font-semibold w-fit">
                               <Check className="size-3" />
                               <span>Georeferenced</span>
                             </div>
                           ) : (
-                            <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                            <span className="text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-[#171717] px-2 py-0.5 rounded-[4px] border border-neutral-200 dark:border-[#2e2e2e] text-[10px] font-medium">
                               Not referenced
                             </span>
                           )}
                           {row.sidecars?.length > 0 && (
-                            <div className="text-[10px] text-gray-400 mt-0.5">
+                            <div className="text-[10px] text-neutral-400 mt-0.5">
                               Sidecar: {row.sidecars.join(", ")}
                             </div>
                           )}
@@ -353,11 +353,11 @@ export default function ZipImportReview({
                         {/* Building Assignment */}
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-1.5">
-                            <Building className="size-3.5 text-gray-400 shrink-0" />
+                            <Building className="size-3.5 text-neutral-400 shrink-0" />
                             <select
                               value={row.building_name}
                               onChange={(e) => updateRow(idx, { building_name: e.target.value })}
-                              className="px-2 py-1 bg-white border border-gray-200 rounded-md text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="px-2 py-1 bg-white dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] rounded-[6px] text-xs text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-[#3ecf8e]"
                             >
                               {existingBuildings.map((bld) => (
                                 <option key={bld} value={bld}>
@@ -374,7 +374,7 @@ export default function ZipImportReview({
                         {/* Floor Assignment */}
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-1.5">
-                            <Layers className="size-3.5 text-gray-400 shrink-0" />
+                            <Layers className="size-3.5 text-neutral-400 shrink-0" />
                             <select
                               value={row.floor_level}
                               onChange={(e) => {
@@ -389,7 +389,7 @@ export default function ZipImportReview({
                                     : `Floor ${lvl}`
                                 updateRow(idx, { floor_level: lvl, floor_label: label })
                               }}
-                              className="px-2 py-1 bg-white border border-gray-200 rounded-md text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="px-2 py-1 bg-white dark:bg-[#171717] border border-neutral-300 dark:border-[#2e2e2e] rounded-[6px] text-xs text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-[#3ecf8e]"
                             >
                               <option value={-2}>Basement 2 (-2)</option>
                               <option value={-1}>Basement 1 (-1)</option>
@@ -409,8 +409,8 @@ export default function ZipImportReview({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/70">
-              <span className="text-xs text-gray-500">
+            <div className="flex items-center justify-between px-6 py-4 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50/80 dark:bg-[#171717]/80">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
                 Each imported dataset becomes an independent layer in the session workspace.
               </span>
               <div className="flex items-center gap-2">
@@ -418,7 +418,7 @@ export default function ZipImportReview({
                   type="button"
                   onClick={onClose}
                   disabled={importing}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200/60 rounded-xl transition-colors border border-gray-200 disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-[#282828] rounded-[6px] transition-colors border border-neutral-200 dark:border-[#2e2e2e] disabled:opacity-50 cursor-pointer"
                 >
                   Cancel
                 </button>

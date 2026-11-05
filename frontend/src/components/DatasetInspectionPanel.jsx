@@ -19,16 +19,16 @@ function DisclosureSection({ title, children, defaultOpen = false, forceOpen = f
   }, [forceOpen])
 
   return (
-    <section className="border-b border-hairline last:border-b-0">
+    <section className="border-b border-neutral-200 dark:border-[#2e2e2e] last:border-b-0">
       <button
         type="button"
-        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-left hover:bg-pearl transition-colors"
+        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors cursor-pointer"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="text-[11px] font-semibold tracking-[0.08em] text-muted">{title}</span>
-        <span className="flex items-center gap-2 text-[12px] text-muted">
-          {badge && <span className="px-1.5 py-0.5 rounded bg-[#e0e2e5] text-[10px] text-ink">{badge}</span>}
+        <span className="text-[11px] font-semibold tracking-[0.08em] text-neutral-500 dark:text-neutral-400">{title}</span>
+        <span className="flex items-center gap-2 text-[12px] text-neutral-500 dark:text-neutral-400">
+          {badge && <span className="px-1.5 py-0.5 rounded-[4px] bg-neutral-200 dark:bg-[#282828] text-[10px] text-neutral-800 dark:text-neutral-200">{badge}</span>}
           <ChevronIcon open={open} />
         </span>
       </button>
@@ -81,7 +81,7 @@ function LegendSymbol({ item }) {
   return (
     <span
       aria-hidden="true"
-      className={`h-4 w-4 shrink-0 ${type === "point" ? "rounded-full" : "rounded-sm"}`}
+      className={`h-4 w-4 shrink-0 ${type === "point" ? "rounded-full" : "rounded-[3px]"}`}
       style={{ backgroundColor: color, opacity }}
     />
   )
@@ -92,9 +92,9 @@ function MetadataRows({ rows }) {
     <dl className="grid gap-y-2 text-xs">
       {rows.map(([label, value]) => (
         value ? (
-          <div key={label} className="flex justify-between items-start gap-3 py-1 border-b border-hairline last:border-0">
-            <dt className="text-muted shrink-0">{label}</dt>
-            <dd className="min-w-0 break-words text-right text-ink font-mono text-[11px]">{value}</dd>
+          <div key={label} className="flex justify-between items-start gap-3 py-1 border-b border-neutral-100 dark:border-[#2e2e2e]/50 last:border-0">
+            <dt className="text-neutral-500 dark:text-neutral-400 shrink-0">{label}</dt>
+            <dd className="min-w-0 break-words text-right text-neutral-900 dark:text-white font-mono text-[11px]">{value}</dd>
           </div>
         ) : null
       ))}
@@ -104,18 +104,18 @@ function MetadataRows({ rows }) {
 
 function LayerToggle({ checked, disabled, label, detail, onChange }) {
   return (
-    <label className={`flex items-center justify-between p-2 rounded-md bg-white border border-[#e0e0e0] hover:border-[#0066cc]/40 transition-colors cursor-pointer group mb-1.5 ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}>
+    <label className={`flex items-center justify-between p-2 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e]/40 transition-colors cursor-pointer group mb-1.5 ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}>
       <div className="flex items-center gap-2.5 min-w-0 flex-1">
         <input
-          className="w-3.5 h-3.5 rounded border-[#c0c0c0] bg-white accent-[#0066cc] text-[#0066cc] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+          className="w-3.5 h-3.5 rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] accent-[#3ecf8e] text-[#3ecf8e] focus:ring-0 focus:ring-offset-0 cursor-pointer"
           type="checkbox"
           checked={checked}
           disabled={disabled}
           onChange={(event) => onChange(event.target.checked)}
         />
         <div className="flex flex-col min-w-0 flex-1">
-           <span className="text-xs text-[#1d1d1f] group-hover:text-[#0066cc] transition-colors truncate">{label}</span>
-           {detail && <span className="text-[10px] text-[#7a7a7a] truncate">{detail}</span>}
+           <span className="text-xs text-neutral-800 dark:text-neutral-200 group-hover:text-[#3ecf8e] transition-colors truncate">{label}</span>
+           {detail && <span className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{detail}</span>}
         </div>
       </div>
       <Eye className="size-3.5 text-[#7a7a7a]" />
@@ -194,16 +194,16 @@ export default function DatasetInspectionPanel({
   if (!panelOpen) return null
 
   return (
-    <aside className="w-80 h-full bg-white border-l border-hairline flex flex-col z-30 select-none shrink-0" aria-label="Dataset map information">
+    <aside className="w-80 h-full bg-white dark:bg-[#202020] border-l border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white flex flex-col z-30 select-none shrink-0" aria-label="Dataset map information">
       {/* Sidebar Header */}
-      <div className="p-3.5 border-b border-hairline flex items-start justify-between gap-2 shrink-0">
+      <div className="p-3.5 border-b border-neutral-200 dark:border-[#2e2e2e] flex items-start justify-between gap-2 shrink-0">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-ink truncate" title={datasetLayerName || dataset.filename}>{datasetLayerName || dataset.filename}</h2>
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-white truncate" title={datasetLayerName || dataset.filename}>{datasetLayerName || dataset.filename}</h2>
           </div>
-          <p className="text-xs font-mono text-muted truncate">{dataset.filename}</p>
+          <p className="text-xs font-mono text-neutral-500 dark:text-neutral-400 truncate">{dataset.filename}</p>
         </div>
-        <button className="size-6 rounded flex items-center justify-center text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors shrink-0" onClick={onClose} title="Close Panel">
+        <button className="size-6 rounded-[4px] flex items-center justify-center text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors shrink-0 cursor-pointer" onClick={onClose} title="Close Panel">
           <X className="size-4" />
         </button>
       </div>
@@ -217,14 +217,14 @@ export default function DatasetInspectionPanel({
             <LayerToggle checked={layerVisibility.iconPoints} label="Icon Points" detail={`${iconPoints.length} annotations`} onChange={(visible) => onLayerVisibilityChange("iconPoints", visible)} />
           </div>
           
-          <div className="pt-4 border-t border-hairline mt-3 space-y-2">
+          <div className="pt-4 border-t border-neutral-200 dark:border-[#2e2e2e] mt-3 space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="dataset-opacity" className="text-muted font-medium">Layer Opacity</label>
-              <span className="font-mono text-ink text-[11px]">{Math.round(opacity * 100)}%</span>
+              <label htmlFor="dataset-opacity" className="text-neutral-500 dark:text-neutral-400 font-medium">Layer Opacity</label>
+              <span className="font-mono text-neutral-900 dark:text-white text-[11px]">{Math.round(opacity * 100)}%</span>
             </div>
             <input
               id="dataset-opacity"
-              className="w-full h-1.5 bg-[#d0d0d0] rounded-lg appearance-none cursor-pointer accent-[#606060]"
+              className="w-full h-1.5 bg-neutral-200 dark:bg-[#2e2e2e] rounded-lg appearance-none cursor-pointer accent-[#3ecf8e]"
               type="range"
               min="0"
               max="100"
@@ -234,10 +234,10 @@ export default function DatasetInspectionPanel({
             />
           </div>
 
-          <div className="pt-3 border-t border-hairline mt-3">
+          <div className="pt-3 border-t border-neutral-200 dark:border-[#2e2e2e] mt-3">
              <button
               type="button"
-              className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded border border-hairline bg-white hover:bg-pearl text-ink text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-800 dark:text-neutral-200 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               disabled={!datasetLayerAvailable}
               onClick={() => {
                 window.dispatchEvent(new CustomEvent("map-fit-dataset"))
@@ -250,7 +250,7 @@ export default function DatasetInspectionPanel({
         </DisclosureSection>
 
         <DisclosureSection title="METADATA" defaultOpen>
-          <div className="rounded-md border border-hairline bg-white p-2 text-xs">
+          <div className="rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] p-2 text-xs">
             <MetadataRows rows={metadataRows} />
           </div>
         </DisclosureSection>
@@ -263,7 +263,7 @@ export default function DatasetInspectionPanel({
 
         {georeference && (
           <DisclosureSection title="GEOREFERENCING" defaultOpen>
-            <div className="rounded-md border border-hairline bg-white p-2 text-xs">
+            <div className="rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] p-2 text-xs">
               <MetadataRows rows={[
                 ["Status", statusText(georeference.status)],
                 ["Transform", statusText(georeference.transformation)],
@@ -280,10 +280,10 @@ export default function DatasetInspectionPanel({
             <div>
               {legend ? (
                 <>
-                  {legend.title && <p className="mb-2 text-[11px] text-muted font-medium">{legend.title}</p>}
+                  {legend.title && <p className="mb-2 text-[11px] text-neutral-500 dark:text-neutral-400 font-medium">{legend.title}</p>}
                   <ul className="space-y-1.5">
                     {legend.items.map((item, index) => (
-                      <li key={`${item.label || "legend"}-${index}`} className="flex items-center justify-between py-1 px-2 rounded bg-white border border-hairline text-xs text-ink">
+                      <li key={`${item.label || "legend"}-${index}`} className="flex items-center justify-between py-1 px-2 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-xs text-neutral-900 dark:text-white">
                         <div className="flex items-center gap-2">
                            <LegendSymbol item={item} />
                            <span className="min-w-0 break-words">{item.label || `Value ${item.value ?? index}`}</span>
@@ -293,16 +293,16 @@ export default function DatasetInspectionPanel({
                   </ul>
                 </>
               ) : (
-                <p className="text-[11px] leading-[1.4] text-muted">Legend not specified by dataset.</p>
+                <p className="text-[11px] leading-[1.4] text-neutral-500 dark:text-neutral-400">Legend not specified by dataset.</p>
               )}
             </div>
           </div>
         </DisclosureSection>
 
         <DisclosureSection title="CONTROL POINTS" badge={points.length || null} forceOpen={Boolean(selectedPoint)}>
-          {controlPointsError && <p className="mb-3 text-[11px] text-red-600">{controlPointsError}</p>}
+          {controlPointsError && <p className="mb-3 text-[11px] text-red-600 dark:text-red-400">{controlPointsError}</p>}
           {points.length === 0 ? (
-            <p className="text-[11px] text-muted">No stored control points.</p>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">No stored control points.</p>
           ) : (
             <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
               {points.map((point, index) => {
@@ -311,12 +311,12 @@ export default function DatasetInspectionPanel({
                   <button
                     key={point.id}
                     type="button"
-                    className={`w-full flex items-center justify-between p-2 rounded-md border transition-colors text-left ${selected ? "bg-[#e0e2e5] border-[#c0c0c0]" : "bg-white border-hairline hover:border-[#c0c0c0]"}`}
+                    className={`w-full flex items-center justify-between p-2 rounded-[6px] border transition-colors text-left cursor-pointer ${selected ? "bg-[#3ecf8e]/10 border-[#3ecf8e]/40" : "bg-white dark:bg-[#171717] border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-[#3a3a3a]"}`}
                     onClick={() => onSelectPoint(point.id)}
                   >
                     <div className="flex items-center gap-2">
-                       <span className={`w-2 h-2 rounded-full ${selected ? "bg-blue-400" : "bg-[#c0c0c0]"}`}></span>
-                       <span className="text-[11px] font-mono text-ink">{controlPointLabel(index)}</span>
+                       <span className={`w-2 h-2 rounded-full ${selected ? "bg-[#3ecf8e]" : "bg-neutral-400"}`}></span>
+                       <span className="text-[11px] font-mono text-neutral-900 dark:text-white">{controlPointLabel(index)}</span>
                     </div>
                   </button>
                 )
@@ -324,8 +324,8 @@ export default function DatasetInspectionPanel({
             </div>
           )}
           {selectedPoint && (
-            <div className="mt-3 pt-3 border-t border-hairline">
-              <div className="text-[11px] font-semibold text-ink mb-2">{controlPointLabel(selectedIndex)} Details</div>
+            <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
+              <div className="text-[11px] font-semibold text-neutral-900 dark:text-white mb-2">{controlPointLabel(selectedIndex)} Details</div>
               <MetadataRows rows={[
                 ["Lat", numberText(selectedPoint.latitude, 6)],
                 ["Lng", numberText(selectedPoint.longitude, 6)],
@@ -333,13 +333,13 @@ export default function DatasetInspectionPanel({
                 ["Img Y", numberText(selectedPoint.image_y, 2)],
               ]} />
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <button type="button" className="col-start-2 px-2 py-1 text-xs rounded border border-red-200 hover:bg-red-50 text-red-600 transition-colors" onClick={() => onDeleteControlPoint(selectedPoint.id)}>Delete</button>
+                <button type="button" className="col-start-2 px-2 py-1 text-xs rounded-[6px] border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 transition-colors cursor-pointer" onClick={() => onDeleteControlPoint(selectedPoint.id)}>Delete</button>
               </div>
             </div>
           )}
           {datasetLayerAvailable && (
-            <div className="mt-3 pt-3 border-t border-[#e0e0e0]">
-              <button type="button" className={`w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-full border border-dashed transition-colors text-xs font-medium ${placingControlPoint ? "bg-[#f5f5f7] border-[#0066cc] text-[#0066cc]" : "bg-transparent border-[#e0e0e0] hover:border-[#0066cc] text-[#7a7a7a] hover:text-[#0066cc]"}`} onClick={onStartControlPoint}>
+            <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
+              <button type="button" className={`w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[6px] border border-dashed transition-colors text-xs font-medium cursor-pointer ${placingControlPoint ? "bg-[#3ecf8e]/10 border-[#3ecf8e] text-[#24b47e] dark:text-[#3ecf8e]" : "bg-transparent border-neutral-300 dark:border-[#2e2e2e] hover:border-[#3ecf8e] text-neutral-600 dark:text-neutral-400 hover:text-[#3ecf8e]"}`} onClick={onStartControlPoint}>
                 <Crosshair className="size-3.5" />
                 <span>{placingControlPoint ? "Click map to reverse-calc..." : "Add Control Point (Map)"}</span>
               </button>
@@ -348,20 +348,20 @@ export default function DatasetInspectionPanel({
         </DisclosureSection>
 
         <DisclosureSection title="ICON ANNOTATIONS" badge={iconPoints.length || null} forceOpen={Boolean(selectedIconPoint)}>
-          {iconPointsError && <p className="mb-3 text-[11px] text-red-600">{iconPointsError}</p>}
+          {iconPointsError && <p className="mb-3 text-[11px] text-red-600 dark:text-red-400">{iconPointsError}</p>}
           {iconPoints.length === 0 ? (
-            <p className="text-[11px] text-muted mb-2">No annotations added.</p>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-2">No annotations added.</p>
           ) : (
             <div className="space-y-1 max-h-48 overflow-y-auto pr-1 mb-3">
               {iconPoints.map((point, index) => {
                 const selected = point.id === selectedIconPointId
                 return (
-                  <button key={point.id} type="button" className={`w-full flex flex-col p-2 rounded-md border transition-colors text-left ${selected ? "bg-[#e0e2e5] border-[#c0c0c0]" : "bg-white border-hairline hover:border-[#c0c0c0]"}`} onClick={() => onSelectIconPoint(point.id)}>
+                  <button key={point.id} type="button" className={`w-full flex flex-col p-2 rounded-[6px] border transition-colors text-left cursor-pointer ${selected ? "bg-[#3ecf8e]/10 border-[#3ecf8e]/40" : "bg-white dark:bg-[#171717] border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-[#3a3a3a]"}`} onClick={() => onSelectIconPoint(point.id)}>
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${selected ? "bg-red-500" : "bg-[#c0c0c0]"}`}></span>
-                      <span className="text-[11px] font-mono text-ink">IP-{String(index + 1).padStart(2, "0")}</span>
+                      <span className={`w-2 h-2 rounded-full ${selected ? "bg-red-500" : "bg-neutral-400"}`}></span>
+                      <span className="text-[11px] font-mono text-neutral-900 dark:text-white">IP-{String(index + 1).padStart(2, "0")}</span>
                     </div>
-                    <span className="mt-1 block text-[10px] text-muted truncate">{point.description || `${numberText(point.latitude)}, ${numberText(point.longitude)}`}</span>
+                    <span className="mt-1 block text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{point.description || `${numberText(point.latitude)}, ${numberText(point.longitude)}`}</span>
                   </button>
                 )
               })}
@@ -369,14 +369,14 @@ export default function DatasetInspectionPanel({
           )}
           
           {selectedIconPoint && (
-            <div className="mt-2 pt-3 border-t border-hairline">
+            <div className="mt-2 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
               <MetadataRows rows={[
                 ["Icon", selectedIconPoint.icon_id || selectedIconPoint.icon_key || "-"],
                 ["Desc", selectedIconPoint.description || "-"],
               ]} />
               
               {editingIconPoint ? (
-                <div className="mt-3 pt-3 border-t border-hairline">
+                <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
                   <IconPointForm
                     coordinate={selectedIconPoint}
                     initialDescription={selectedIconPoint.description}
@@ -393,16 +393,16 @@ export default function DatasetInspectionPanel({
                 </div>
               ) : (
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button type="button" className="px-2 py-1 text-xs rounded border border-hairline hover:bg-pearl text-ink transition-colors" onClick={() => setEditingIconPoint(true)}>Edit</button>
-                  <button type="button" className="px-2 py-1 text-xs rounded border border-red-200 hover:bg-red-50 text-red-600 transition-colors" onClick={() => onDeleteIconPoint(selectedIconPoint.id)}>Delete</button>
+                  <button type="button" className="px-2 py-1 text-xs rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer" onClick={() => setEditingIconPoint(true)}>Edit</button>
+                  <button type="button" className="px-2 py-1 text-xs rounded-[6px] border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 transition-colors cursor-pointer" onClick={() => onDeleteIconPoint(selectedIconPoint.id)}>Delete</button>
                 </div>
               )}
             </div>
           )}
           
-          <div className="mt-3 pt-3 border-t border-[#e0e0e0]">
+          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
             {!iconPointDraft && (
-              <button type="button" className={`w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-full border border-dashed transition-colors text-xs font-medium ${placingIconPoint ? "bg-[#f5f5f7] border-[#0066cc] text-[#0066cc]" : "bg-transparent border-[#e0e0e0] hover:border-[#0066cc] text-[#7a7a7a] hover:text-[#0066cc]"}`} onClick={onStartIconPoint}>
+              <button type="button" className={`w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[6px] border border-dashed transition-colors text-xs font-medium cursor-pointer ${placingIconPoint ? "bg-[#3ecf8e]/10 border-[#3ecf8e] text-[#24b47e] dark:text-[#3ecf8e]" : "bg-transparent border-neutral-300 dark:border-[#2e2e2e] hover:border-[#3ecf8e] text-neutral-600 dark:text-neutral-400 hover:text-[#3ecf8e]"}`} onClick={onStartIconPoint}>
                 <MapPinPlus className="size-3.5" />
                 <span>{placingIconPoint ? "Click map to place..." : "Add New Annotation"}</span>
               </button>

@@ -50,36 +50,36 @@ export default function FeatureInfo({ feature }) {
   return (
     <section className="space-y-4" aria-label="Feature information">
       <div>
-        <p className="text-[11px] font-semibold tracking-wider uppercase text-[#7a7a7a]">FEATURE INFORMATION</p>
+        <p className="text-[11px] font-semibold tracking-wider uppercase text-neutral-500 dark:text-neutral-400">FEATURE INFORMATION</p>
       </div>
       <dl className="grid gap-y-2 text-xs">
         {feature.geometry?.type && (
-          <div className="flex justify-between items-start gap-3 py-1 border-b border-[#f0f0f0] last:border-0">
-            <dt className="text-[#7a7a7a] shrink-0">Geometry</dt>
-            <dd className="min-w-0 break-words text-right text-[#1d1d1f] font-mono text-[11px]">{feature.geometry.type}</dd>
+          <div className="flex justify-between items-start gap-3 py-1 border-b border-neutral-200 dark:border-[#2e2e2e] last:border-0">
+            <dt className="text-neutral-500 dark:text-neutral-400 shrink-0">Geometry</dt>
+            <dd className="min-w-0 break-words text-right text-neutral-900 dark:text-white font-mono text-[11px]">{feature.geometry.type}</dd>
           </div>
         )}
         {representativeCoordinate && (
           <>
-            <div className="flex justify-between items-start gap-3 py-1 border-b border-[#f0f0f0] last:border-0">
-              <dt className="text-[#7a7a7a] shrink-0">Latitude</dt>
-              <dd className="min-w-0 break-words text-right text-[#1d1d1f] font-mono text-[11px]">{representativeCoordinate.latitude.toFixed(6)}</dd>
+            <div className="flex justify-between items-start gap-3 py-1 border-b border-neutral-200 dark:border-[#2e2e2e] last:border-0">
+              <dt className="text-neutral-500 dark:text-neutral-400 shrink-0">Latitude</dt>
+              <dd className="min-w-0 break-words text-right text-neutral-900 dark:text-white font-mono text-[11px]">{representativeCoordinate.latitude.toFixed(6)}</dd>
             </div>
-            <div className="flex justify-between items-start gap-3 py-1 border-b border-[#f0f0f0] last:border-0">
-              <dt className="text-[#7a7a7a] shrink-0">Longitude</dt>
-              <dd className="min-w-0 break-words text-right text-[#1d1d1f] font-mono text-[11px]">{representativeCoordinate.longitude.toFixed(6)}</dd>
+            <div className="flex justify-between items-start gap-3 py-1 border-b border-neutral-200 dark:border-[#2e2e2e] last:border-0">
+              <dt className="text-neutral-500 dark:text-neutral-400 shrink-0">Longitude</dt>
+              <dd className="min-w-0 break-words text-right text-neutral-900 dark:text-white font-mono text-[11px]">{representativeCoordinate.longitude.toFixed(6)}</dd>
             </div>
           </>
         )}
         {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between items-start gap-3 py-1 border-b border-[#f0f0f0] last:border-0">
-            <dt className="text-[#7a7a7a] shrink-0">{label}</dt>
-            <dd className="min-w-0 break-words text-right text-[#1d1d1f] font-mono text-[11px]">{value}</dd>
+          <div key={label} className="flex justify-between items-start gap-3 py-1 border-b border-neutral-200 dark:border-[#2e2e2e] last:border-0">
+            <dt className="text-neutral-500 dark:text-neutral-400 shrink-0">{label}</dt>
+            <dd className="min-w-0 break-words text-right text-neutral-900 dark:text-white font-mono text-[11px]">{value}</dd>
           </div>
         ))}
       </dl>
       {rows.length === 0 && !feature.geometry?.type && (
-        <p className="text-[11px] text-[#7a7a7a] mt-2">This feature has no displayable attributes.</p>
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-2">This feature has no displayable attributes.</p>
       )}
     </section>
   )

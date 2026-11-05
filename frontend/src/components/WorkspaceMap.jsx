@@ -1300,15 +1300,15 @@ export default function WorkspaceMap({
 
       {/* Floating Map Tools: Icon Placement & Floor View Controls */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-        <div className="bg-white/95 backdrop-blur-xs rounded-xl shadow-lg border border-gray-200 p-1.5 flex items-center gap-1.5">
+        <div className="bg-white/95 dark:bg-[#202020]/95 backdrop-blur-xs rounded-[8px] shadow-lg border border-neutral-200 dark:border-[#2e2e2e] p-1.5 flex items-center gap-1.5 text-neutral-800 dark:text-neutral-200">
           {/* Icon Picker Trigger */}
           <button
             type="button"
             onClick={() => setShowIconPicker(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs font-medium text-gray-800 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-neutral-100 dark:bg-[#171717] hover:bg-neutral-200 dark:hover:bg-[#282828] border border-neutral-200 dark:border-[#2e2e2e] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer"
             title="Choose icon asset"
           >
-            <div className="size-5 rounded bg-white border border-gray-200 flex items-center justify-center p-0.5">
+            <div className="size-5 rounded-[4px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center p-0.5">
               <img
                 src={getIconUrl(selectedIconId)}
                 alt={selectedIconId}
@@ -1336,10 +1336,10 @@ export default function WorkspaceMap({
           <button
             type="button"
             onClick={() => setIconPointsVisible((v) => !v)}
-            className={`p-1.5 rounded-lg border text-xs transition-colors ${
+            className={`p-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] text-xs transition-colors cursor-pointer ${
               iconPointsVisible
-                ? "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100"
-                : "text-gray-400 bg-gray-100 border-gray-200"
+                ? "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-[#171717] hover:bg-neutral-200 dark:hover:bg-[#282828]"
+                : "text-neutral-400 dark:text-neutral-500 bg-neutral-50 dark:bg-[#1c1c1c]"
             }`}
             title={iconPointsVisible ? "Hide icon points" : "Show icon points"}
           >
@@ -1351,10 +1351,10 @@ export default function WorkspaceMap({
             <button
               type="button"
               onClick={() => setShowAllFloorPoints((v) => !v)}
-              className={`px-2 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+              className={`px-2 py-1 rounded-[6px] border text-[11px] font-medium transition-colors cursor-pointer ${
                 showAllFloorPoints
-                  ? "bg-purple-50 border-purple-300 text-purple-700 font-semibold"
-                  : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                  ? "bg-[#3ecf8e]/20 border-[#3ecf8e]/40 text-[#24b47e] dark:text-[#3ecf8e] font-semibold"
+                  : "bg-neutral-100 dark:bg-[#171717] border-neutral-200 dark:border-[#2e2e2e] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-[#282828]"
               }`}
               title="Show points from all floors"
             >

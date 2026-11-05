@@ -183,7 +183,7 @@ export default function AnnotationReviewPanel({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="annotation-review-title"
@@ -191,18 +191,18 @@ export default function AnnotationReviewPanel({
         if (e.target === e.currentTarget && !runningOcr) onClose()
       }}
     >
-      <div className="bg-white text-[#1d1d1f] w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl border border-[#e0e0e0] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-[#202020] text-neutral-900 dark:text-white w-full max-w-4xl max-h-[90vh] rounded-[12px] shadow-2xl border border-neutral-200 dark:border-[#2e2e2e] flex flex-col overflow-hidden transition-colors">
         {/* Header */}
-        <header className="px-6 py-4 border-b border-[#e0e0e0] bg-[#fafafc] flex items-center justify-between gap-4">
+        <header className="px-6 py-4 border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="size-10 rounded-xl bg-[#0066cc]/10 border border-[#0066cc]/20 flex items-center justify-center text-[#0066cc] shrink-0">
+            <div className="size-10 rounded-[8px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e] shrink-0">
               <ScanText className="size-5" />
             </div>
             <div className="min-w-0">
-              <h2 id="annotation-review-title" className="text-base font-semibold text-[#1d1d1f] truncate">
+              <h2 id="annotation-review-title" className="text-base font-semibold text-neutral-900 dark:text-white truncate">
                 Vector & PaddleOCR Label Overlays
               </h2>
-              <p className="text-xs text-[#7a7a7a] truncate">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
                 {datasetName || datasetId} • {annotations.length} extracted labels (rendered as crisp MapLibre symbol layers)
               </p>
             </div>
@@ -212,7 +212,7 @@ export default function AnnotationReviewPanel({
             type="button"
             onClick={onClose}
             disabled={runningOcr}
-            className="size-8 rounded-full flex items-center justify-center text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#e8e8ed]"
+            className="size-8 rounded-[6px] flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-[#282828] cursor-pointer"
             aria-label="Close label review panel"
           >
             <X className="size-4" />
@@ -220,7 +220,7 @@ export default function AnnotationReviewPanel({
         </header>
 
         {/* Controls Bar */}
-        <div className="px-6 py-3 border-b border-[#e8e8ed] bg-white flex flex-wrap items-center justify-between gap-3">
+        <div className="px-6 py-3 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
             <div className="relative flex-1 min-w-[160px] max-w-xs">
               <Search className="size-3.5 text-[#7a7a7a] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -431,7 +431,7 @@ export default function AnnotationReviewPanel({
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleSaveText(ann)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-[#0066cc] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#0055b3]"
+                          className="inline-flex items-center gap-1 rounded-[6px] bg-[#3ecf8e] px-3 py-1.5 text-xs font-semibold text-[#171717] hover:bg-[#24b47e]"
                         >
                           {isBusy ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
                           <span>Save</span>
@@ -446,11 +446,11 @@ export default function AnnotationReviewPanel({
         </div>
 
         {/* Footer */}
-        <footer className="px-6 py-3.5 border-t border-[#e0e0e0] bg-[#fafafc] flex items-center justify-end">
+        <footer className="px-6 py-3.5 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] flex items-center justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-[#1d1d1f] px-5 py-1.5 text-xs font-medium text-white hover:bg-[#333336]"
+            className="rounded-[6px] bg-[#3ecf8e] px-5 py-1.5 text-xs font-semibold text-[#171717] hover:bg-[#24b47e]"
           >
             Done
           </button>

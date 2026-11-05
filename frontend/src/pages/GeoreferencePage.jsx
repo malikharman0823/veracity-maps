@@ -90,7 +90,7 @@ function titleText(value) {
 }
 
 function SavedConfiguration({ configuration }) {
-  if (!configuration) return <p className="text-[13px] text-muted">No saved configuration.</p>
+  if (!configuration) return <p className="text-[13px] text-neutral-500 dark:text-neutral-400">No saved configuration.</p>
   const rows = [
     ["Status", titleText(configuration.status)],
     ["Transformation", titleText(configuration.transformation)],
@@ -103,8 +103,8 @@ function SavedConfiguration({ configuration }) {
     <dl className="grid gap-2 text-[12px]">
       {rows.map(([label, value]) => (
         <div key={label} className="grid grid-cols-[100px_1fr] gap-3">
-          <dt className="text-muted">{label}</dt>
-          <dd className="text-right text-ink">{value}</dd>
+          <dt className="text-neutral-500 dark:text-neutral-400">{label}</dt>
+          <dd className="text-right text-neutral-900 dark:text-white font-mono text-[11px]">{value}</dd>
         </div>
       ))}
     </dl>
@@ -582,22 +582,22 @@ export default function GeoreferencePage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-44px)] bg-parchment p-3 phone:p-5">
+    <main className="min-h-[calc(100vh-44px)] bg-[#ffffff] dark:bg-[#1c1c1c] text-[#171717] dark:text-[#ffffff] p-3 phone:p-5 transition-colors">
       <div className="mx-auto flex max-w-canvas flex-col gap-3">
-        <header className="flex min-h-[72px] flex-wrap items-center gap-2.5 rounded-[18px] border border-[#e0e0e0] bg-[#ffffff] px-4 py-3 sm:px-6 shadow-xs">
+        <header className="flex min-h-[72px] flex-wrap items-center gap-2.5 rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-4 py-3 sm:px-6 shadow-xs text-neutral-900 dark:text-white">
           <Link
-            className="inline-flex items-center gap-1.5 text-xs text-[#7a7a7a] hover:text-[#0066cc] font-medium transition-colors shrink-0 mr-2 group"
+            className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white font-medium transition-colors shrink-0 mr-2 group"
             to={returnTo}
           >
             <ArrowLeft className="size-3.5 group-hover:-translate-x-0.5 transition-transform" />
             <span className="hidden sm:inline">Back to workspace</span>
             <span className="sm:hidden">Back</span>
           </Link>
-          <h1 className="min-w-[160px] flex-1 text-xl sm:text-2xl font-semibold tracking-tight text-[#1d1d1f]">
+          <h1 className="min-w-[160px] flex-1 text-xl sm:text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white">
             Visual Georeferencer
           </h1>
-          <div className="min-w-[150px] text-right text-xs text-[#7a7a7a]">
-            <p className="font-semibold text-[#1d1d1f]">
+          <div className="min-w-[150px] text-right text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="font-semibold text-neutral-900 dark:text-white">
               {points.length} {points.length === 1 ? "point" : "points"} · {transformLabel}
             </p>
             <p className="mt-0.5 text-[11px]">Suggested: {recommendation(imageSize)}</p>
@@ -607,7 +607,7 @@ export default function GeoreferencePage() {
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0 rounded-full border-[#e0e0e0] text-xs"
+              className="shrink-0 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer"
               disabled={!savedConfig.reusable || busy}
               onClick={handleReuse}
             >
@@ -619,7 +619,7 @@ export default function GeoreferencePage() {
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0 rounded-full border-[#e0e0e0] text-xs"
+              className="shrink-0 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer"
               disabled={editing || busy}
               onClick={() => {
                 setMode("edit")
@@ -633,8 +633,10 @@ export default function GeoreferencePage() {
             type="button"
             variant="outline"
             size="sm"
-            className={`shrink-0 rounded-full border-[#e0e0e0] text-xs ${
-              directPanelOpen ? "border-[#0066cc] bg-[#eaf3ff] text-[#0052a3]" : ""
+            className={`shrink-0 rounded-[6px] border text-xs cursor-pointer transition-colors ${
+              directPanelOpen
+                ? "border-[#3ecf8e] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e]"
+                : "border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828]"
             }`}
             disabled={busy}
             onClick={() => {
@@ -643,14 +645,14 @@ export default function GeoreferencePage() {
               setDirectError(null)
             }}
           >
-            <MapPin className="mr-1 size-3.5 text-[#0066cc]" />
+            <MapPin className={`mr-1 size-3.5 ${directPanelOpen ? "text-[#24b47e] dark:text-[#3ecf8e]" : "text-neutral-400"}`} />
             Place by Lat, Lng
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="shrink-0 rounded-full border-[#e0e0e0] text-xs"
+            className="shrink-0 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer"
             disabled={!editing || busy || Boolean(draft)}
             onClick={() => {
               setControlPointPlacement(true)
@@ -663,7 +665,7 @@ export default function GeoreferencePage() {
             type="button"
             variant="outline"
             size="sm"
-            className="shrink-0 rounded-full border-[#e0e0e0] text-xs"
+            className="shrink-0 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer"
             disabled={!canCalculate}
             onClick={handleCalculate}
           >
@@ -671,9 +673,8 @@ export default function GeoreferencePage() {
           </Button>
           <Button
             type="button"
-            variant="pill"
             size="sm"
-            className="shrink-0 bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-normal"
+            className="shrink-0 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs shadow-xs cursor-pointer"
             disabled={!canSave}
             onClick={handleSave}
           >
@@ -685,31 +686,31 @@ export default function GeoreferencePage() {
         {directPanelOpen && (
           <section
             aria-label="Place map directly by Google Maps coordinates"
-            className="rounded-[18px] border border-[#cfe2ff] bg-[#f8fbff] p-4 shadow-xs"
+            className="rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] p-4 shadow-xs text-neutral-900 dark:text-white"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="text-[13px] font-semibold tracking-[0.04em] text-[#1d1d1f]">
+                <h2 className="text-[13px] font-semibold tracking-[0.04em] text-neutral-900 dark:text-white">
                   PLACE BY GOOGLE MAPS COORDINATES (LAT, LNG)
                 </h2>
-                <p className="mt-0.5 text-[12px] text-[#555]">
+                <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">
                   Paste coordinates directly from Google Maps (decimal{" "}
-                  <code className="rounded bg-white px-1 py-0.5 text-[11px]">28.6139, 77.2090</code>, DMS{" "}
-                  <code className="rounded bg-white px-1 py-0.5 text-[11px]">28°36&apos;50.2&quot;N 77°12&apos;32.5&quot;E</code>, full Plus Code, or Google Maps URL).
+                  <code className="rounded-[4px] bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] px-1 py-0.5 text-[11px]">28.6139, 77.2090</code>, DMS{" "}
+                  <code className="rounded-[4px] bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] px-1 py-0.5 text-[11px]">28°36&apos;50.2&quot;N 77°12&apos;32.5&quot;E</code>, full Plus Code, or Google Maps URL).
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="inline-flex rounded-full border border-[#d6e4f7] bg-white p-0.5 text-[12px]">
+                <div className="inline-flex rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-100 dark:bg-[#171717] p-0.5 text-[12px]">
                   <button
                     type="button"
                     onClick={() => {
                       setDirectMode("center")
                       setDirectError(null)
                     }}
-                    className={`rounded-full px-3 py-1 transition-colors ${
+                    className={`rounded-[4px] px-3 py-1 transition-colors cursor-pointer ${
                       directMode === "center"
-                        ? "bg-[#0066cc] font-medium text-white"
-                        : "text-[#555] hover:text-[#1d1d1f]"
+                        ? "bg-[#3ecf8e] font-semibold text-[#171717] shadow-xs"
+                        : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                     }`}
                   >
                     Center Lat, Lng + Width
@@ -720,10 +721,10 @@ export default function GeoreferencePage() {
                       setDirectMode("corners")
                       setDirectError(null)
                     }}
-                    className={`rounded-full px-3 py-1 transition-colors ${
+                    className={`rounded-[4px] px-3 py-1 transition-colors cursor-pointer ${
                       directMode === "corners"
-                        ? "bg-[#0066cc] font-medium text-white"
-                        : "text-[#555] hover:text-[#1d1d1f]"
+                        ? "bg-[#3ecf8e] font-semibold text-[#171717] shadow-xs"
+                        : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                     }`}
                   >
                     Two Corners (NW &amp; SE)
@@ -732,7 +733,7 @@ export default function GeoreferencePage() {
                 <button
                   type="button"
                   aria-label="Close direct coordinate panel"
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[#7a7a7a] hover:bg-white hover:text-[#1d1d1f]"
+                  className="inline-flex size-7 items-center justify-center rounded-[6px] text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-neutral-900 dark:hover:text-white cursor-pointer"
                   onClick={() => setDirectPanelOpen(false)}
                 >
                   <X className="size-4" />
@@ -743,24 +744,24 @@ export default function GeoreferencePage() {
             <form className="mt-3 grid gap-3" onSubmit={handleDirectCoordinateSubmit}>
               {directMode === "center" ? (
                 <div className="grid gap-3 tablet:grid-cols-[minmax(0,1.8fr)_minmax(140px,0.7fr)_minmax(130px,0.6fr)_auto] tablet:items-end">
-                  <label className="flex flex-col gap-1 text-[12px] font-medium text-[#1d1d1f]">
+                  <label className="flex flex-col gap-1 text-[12px] font-medium text-neutral-700 dark:text-neutral-300">
                     <span>Center Latitude, Longitude (Google Maps)</span>
                     <Input
                       value={directCenterInput}
                       placeholder="e.g. 28.613939, 77.209021"
                       aria-label="Center Google Maps latitude and longitude"
-                      className="h-9 rounded-lg bg-white text-[13px]"
+                      className="h-9 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-[13px] focus:border-[#3ecf8e]"
                       onChange={(event) => {
                         setDirectCenterInput(event.target.value)
                         if (directError) setDirectError(null)
                       }}
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-[12px] font-medium text-[#1d1d1f]">
+                  <label className="flex flex-col gap-1 text-[12px] font-medium text-neutral-700 dark:text-neutral-300">
                     <span>
                       Ground Width (m)
                       {aspectMatchedHeightMeters ? (
-                        <span className="ml-1 font-normal text-[#7a7a7a]">
+                        <span className="ml-1 font-normal text-neutral-500 dark:text-neutral-400">
                           · H ≈ {aspectMatchedHeightMeters}m
                         </span>
                       ) : null}
@@ -771,51 +772,51 @@ export default function GeoreferencePage() {
                       step="any"
                       value={directWidthMeters}
                       aria-label="Map ground width in meters"
-                      className="h-9 rounded-lg bg-white text-[13px]"
+                      className="h-9 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-[13px] focus:border-[#3ecf8e]"
                       onChange={(event) => setDirectWidthMeters(event.target.value)}
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-[12px] font-medium text-[#1d1d1f]">
+                  <label className="flex flex-col gap-1 text-[12px] font-medium text-neutral-700 dark:text-neutral-300">
                     <span>Rotation (° CW)</span>
                     <Input
                       type="number"
                       step="any"
                       value={directRotationDeg}
                       aria-label="Map clockwise rotation in degrees"
-                      className="h-9 rounded-lg bg-white text-[13px]"
+                      className="h-9 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-[13px] focus:border-[#3ecf8e]"
                       onChange={(event) => setDirectRotationDeg(event.target.value)}
                     />
                   </label>
                   <Button
                     type="submit"
                     disabled={busy}
-                    className="h-9 rounded-full bg-[#0066cc] px-5 text-xs font-medium text-white hover:bg-[#0071e3]"
+                    className="h-9 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-5 text-xs font-semibold text-[#171717] shadow-xs cursor-pointer"
                   >
                     {applyingDirect ? "Positioning…" : "Apply & Preview"}
                   </Button>
                 </div>
               ) : (
                 <div className="grid gap-3 tablet:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] tablet:items-end">
-                  <label className="flex flex-col gap-1 text-[12px] font-medium text-[#1d1d1f]">
+                  <label className="flex flex-col gap-1 text-[12px] font-medium text-neutral-700 dark:text-neutral-300">
                     <span>Top-Left (North-West) Lat, Lng</span>
                     <Input
                       value={directTopLeftInput}
                       placeholder="e.g. 28.614500, 77.208200"
                       aria-label="Top-left Google Maps latitude and longitude"
-                      className="h-9 rounded-lg bg-white text-[13px]"
+                      className="h-9 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-[13px] focus:border-[#3ecf8e]"
                       onChange={(event) => {
                         setDirectTopLeftInput(event.target.value)
                         if (directError) setDirectError(null)
                       }}
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-[12px] font-medium text-[#1d1d1f]">
+                  <label className="flex flex-col gap-1 text-[12px] font-medium text-neutral-700 dark:text-neutral-300">
                     <span>Bottom-Right (South-East) Lat, Lng</span>
                     <Input
                       value={directBottomRightInput}
                       placeholder="e.g. 28.613300, 77.209800"
                       aria-label="Bottom-right Google Maps latitude and longitude"
-                      className="h-9 rounded-lg bg-white text-[13px]"
+                      className="h-9 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-[13px] focus:border-[#3ecf8e]"
                       onChange={(event) => {
                         setDirectBottomRightInput(event.target.value)
                         if (directError) setDirectError(null)
@@ -825,14 +826,14 @@ export default function GeoreferencePage() {
                   <Button
                     type="submit"
                     disabled={busy}
-                    className="h-9 rounded-full bg-[#0066cc] px-5 text-xs font-medium text-white hover:bg-[#0071e3]"
+                    className="h-9 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-5 text-xs font-semibold text-[#171717] shadow-xs cursor-pointer"
                   >
                     {applyingDirect ? "Positioning…" : "Apply & Preview"}
                   </Button>
                 </div>
               )}
               {directError && (
-                <p role="alert" className="text-[12px] font-medium text-[#b42318]">
+                <p role="alert" className="text-[12px] font-medium text-red-500">
                   {directError}
                 </p>
               )}
@@ -840,11 +841,11 @@ export default function GeoreferencePage() {
           </section>
         )}
 
-        {savedConfig?.reuse_warning && <div className="rounded-utility border border-[#ebc36a] bg-[#fff8e6] px-4 py-3 text-[13px] text-ink" role="alert">{savedConfig.reuse_warning}</div>}
+        {savedConfig?.reuse_warning && <div className="rounded-[8px] border border-[#ebc36a] bg-[#fff8e6] dark:bg-amber-950/20 px-4 py-3 text-[13px] text-neutral-800 dark:text-neutral-200" role="alert">{savedConfig.reuse_warning}</div>}
         {(error || notice || draft) && (
-          <div className={`rounded-utility border px-4 py-3 text-[14px] ${error ? "border-[#e9b4b4] bg-[#fff6f6]" : "border-hairline bg-white"}`} role={error ? "alert" : "status"}>
-            <p className="font-medium text-ink">{error?.message || (draft ? "Point pending map reference" : notice)}</p>
-            <p className="mt-1 text-[12px] text-muted">
+          <div className={`rounded-[8px] border px-4 py-3 text-[14px] ${error ? "border-red-300 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400" : "border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white"}`} role={error ? "alert" : "status"}>
+            <p className="font-medium">{error?.message || (draft ? "Point pending map reference" : notice)}</p>
+            <p className="mt-1 text-[12px] text-neutral-500 dark:text-neutral-400">
               {error?.details ||
                 (draft
                   ? `Source pixel (${Math.round(draft.image_x)}, ${Math.round(draft.image_y)}) selected. Click the matching spot on the Reference Map or paste Google Maps Lat, Lng below:`
@@ -859,14 +860,14 @@ export default function GeoreferencePage() {
                   value={draftBannerCoord}
                   placeholder="Paste Google Maps Lat, Lng (e.g. 28.6139, 77.2090)"
                   aria-label="Google Maps latitude and longitude for pending point"
-                  className="h-9 max-w-sm flex-1 rounded-full px-3.5 text-[12px]"
+                  className="h-9 max-w-sm flex-1 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white px-3.5 text-[12px] focus:border-[#3ecf8e]"
                   onChange={(event) => setDraftBannerCoord(event.target.value)}
                 />
                 <Button
                   type="submit"
                   size="sm"
                   disabled={busy}
-                  className="h-9 rounded-full bg-[#0066cc] px-4 text-xs font-normal text-white hover:bg-[#0071e3]"
+                  className="h-9 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-4 text-xs font-semibold text-[#171717] shadow-xs cursor-pointer"
                 >
                   Pair Point
                 </Button>
@@ -874,7 +875,7 @@ export default function GeoreferencePage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-9 rounded-full px-4 text-xs"
+                  className="h-9 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] px-4 text-xs cursor-pointer"
                   onClick={cancelControlPoint}
                 >
                   Cancel pending point
@@ -930,11 +931,28 @@ export default function GeoreferencePage() {
             readOnly={!editing}
             busy={busy}
           />
-          <aside className="flex flex-col gap-5 rounded-utility border border-hairline bg-white p-4">
-            <div><p className="mb-3 text-[12px] font-semibold tracking-[0.08em] text-ink">SAVED CONFIGURATION</p><SavedConfiguration configuration={savedConfig} /></div>
-            <div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" onClick={handleUndo} disabled={!editing || (!points.length && !draft)}>Undo</Button><Button type="button" variant="outline" onClick={() => selectedId && handleDelete(selectedId)} disabled={!editing || !selectedId}>Delete</Button><Button type="button" variant="outline" onClick={handleReset} disabled={!editing || (!points.length && !draft)}>Reset</Button></div>
-            <div className="border-t border-hairline pt-4"><div className="flex items-center justify-between gap-4"><label className="flex min-h-11 items-center gap-3 text-[14px] text-ink"><input type="checkbox" className="h-5 w-5 accent-primary" checked={overlayEnabled} disabled={!previewCoordinates} onChange={(event) => setOverlayEnabled(event.target.checked)} />Preview overlay</label><span className="text-[12px] text-muted">{previewCoordinates ? "Ready" : "Calculate first"}</span></div><div className="mt-3 flex items-center gap-3"><label htmlFor="georeference-opacity" className="shrink-0 text-[14px] text-muted">Opacity</label><input id="georeference-opacity" className="h-11 min-w-0 flex-1" type="range" min="0" max="100" disabled={!overlayEnabled || !previewCoordinates} value={Math.round(overlayOpacity * 100)} onChange={(event) => setOverlayOpacity(Number(event.target.value) / 100)} /><output className="w-9 text-right text-[13px] tabular-nums">{Math.round(overlayOpacity * 100)}%</output></div></div>
-            <p className="text-[12px] leading-5 text-muted">Google Maps convention: Lat, Lng (WGS84). Source convention: x = image_x, y = -image_y. Two points use conformal similarity; three to ten use affine.</p>
+          <aside className="flex flex-col gap-5 rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white p-4">
+            <div><p className="mb-3 text-[12px] font-semibold tracking-[0.08em] text-neutral-500 dark:text-neutral-400">SAVED CONFIGURATION</p><SavedConfiguration configuration={savedConfig} /></div>
+            <div className="grid grid-cols-3 gap-2">
+              <Button type="button" variant="outline" className="rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer" onClick={handleUndo} disabled={!editing || (!points.length && !draft)}>Undo</Button>
+              <Button type="button" variant="outline" className="rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer" onClick={() => selectedId && handleDelete(selectedId)} disabled={!editing || !selectedId}>Delete</Button>
+              <Button type="button" variant="outline" className="rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs cursor-pointer" onClick={handleReset} disabled={!editing || (!points.length && !draft)}>Reset</Button>
+            </div>
+            <div className="border-t border-neutral-200 dark:border-[#2e2e2e] pt-4">
+              <div className="flex items-center justify-between gap-4">
+                <label className="flex min-h-11 items-center gap-3 text-[14px] text-neutral-900 dark:text-white cursor-pointer">
+                  <input type="checkbox" className="h-5 w-5 rounded-[4px] accent-[#3ecf8e]" checked={overlayEnabled} disabled={!previewCoordinates} onChange={(event) => setOverlayEnabled(event.target.checked)} />
+                  Preview overlay
+                </label>
+                <span className="text-[12px] text-neutral-500 dark:text-neutral-400">{previewCoordinates ? "Ready" : "Calculate first"}</span>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <label htmlFor="georeference-opacity" className="shrink-0 text-[14px] text-neutral-500 dark:text-neutral-400">Opacity</label>
+                <input id="georeference-opacity" className="h-1.5 min-w-0 flex-1 bg-neutral-200 dark:bg-[#2e2e2e] rounded-lg appearance-none cursor-pointer accent-[#3ecf8e]" type="range" min="0" max="100" disabled={!overlayEnabled || !previewCoordinates} value={Math.round(overlayOpacity * 100)} onChange={(event) => setOverlayOpacity(Number(event.target.value) / 100)} />
+                <output className="w-9 text-right text-[13px] tabular-nums font-mono text-neutral-900 dark:text-white">{Math.round(overlayOpacity * 100)}%</output>
+              </div>
+            </div>
+            <p className="text-[12px] leading-5 text-neutral-500 dark:text-neutral-400">Google Maps convention: Lat, Lng (WGS84). Source convention: x = image_x, y = -image_y. Two points use conformal similarity; three to ten use affine.</p>
           </aside>
         </section>
       </div>

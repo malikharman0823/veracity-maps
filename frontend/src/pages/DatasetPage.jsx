@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
+import ThemeToggle from "../components/ThemeToggle"
 import {
   createIconPoint,
   datasetTileUrl,
@@ -481,29 +482,29 @@ export default function DatasetPage() {
   const datasetLayerName = displayName(savedMapLayer?.name || dataset.filename)
 
   return (
-    <div className="bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased h-screen overflow-hidden flex flex-col">
+    <div className="bg-[#ffffff] dark:bg-[#1c1c1c] text-[#171717] dark:text-[#ffffff] font-sans antialiased h-screen overflow-hidden flex flex-col transition-colors">
       {/* Top App Navigation */}
-      <header className="shrink-0 h-14 bg-[#ffffff]/90 backdrop-blur-md border-b border-[#e0e0e0] z-50 flex items-center justify-between px-3 sm:px-6">
+      <header className="shrink-0 h-14 bg-white/90 dark:bg-[#1c1c1c]/90 backdrop-blur-md border-b border-neutral-200 dark:border-[#2e2e2e] z-50 flex items-center justify-between px-3 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           <Link to="/" className="flex items-center gap-2 group shrink-0">
-            <div className="size-7 rounded-lg bg-[#0066cc] text-white flex items-center justify-center font-bold shadow-xs transition-transform group-hover:scale-105">
+            <div className="size-7 rounded-[6px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center font-bold shadow-xs transition-transform group-hover:scale-105">
               <Layers className="size-4" />
             </div>
-            <span className="text-xs font-semibold tracking-tight text-[#1d1d1f] hidden sm:inline">
+            <span className="text-xs font-semibold tracking-tight text-neutral-900 dark:text-white hidden sm:inline">
               Veracity Maps Studio
             </span>
           </Link>
-          <div className="h-4 w-px bg-[#e0e0e0] hidden sm:block"></div>
+          <div className="h-4 w-px bg-neutral-200 dark:bg-[#2e2e2e] hidden sm:block"></div>
           {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1.5 text-xs text-[#7a7a7a] min-w-0">
-            <Link className="hover:text-[#0066cc] transition-colors shrink-0" to="/">
+          <nav className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 min-w-0">
+            <Link className="hover:text-[#3ecf8e] transition-colors shrink-0" to="/">
               Datasets
             </Link>
-            <ChevronRight className="size-3 text-[#7a7a7a] shrink-0" />
-            <span className="text-[#1d1d1f] font-semibold truncate max-w-[120px] sm:max-w-[240px]">
+            <ChevronRight className="size-3 text-neutral-400 shrink-0" />
+            <span className="text-neutral-900 dark:text-white font-semibold truncate max-w-[120px] sm:max-w-[240px]">
               {displayName(dataset.filename)}
             </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#f5f5f7] border border-[#e0e0e0] text-[#7a7a7a] shrink-0 ml-1">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-[4px] bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-600 dark:text-neutral-400 shrink-0 ml-1">
               {metadata.crs || "Unknown"}
             </span>
           </nav>
@@ -511,12 +512,12 @@ export default function DatasetPage() {
 
         {/* Right Header Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <ThemeToggle />
           <Button
-            variant="pill"
             size="sm"
             onClick={handleSaveProject}
             disabled={saving}
-            className="h-8 bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-normal"
+            className="h-8 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs shadow-xs cursor-pointer"
           >
             {saving ? (
               <Loader2 className="size-3.5 mr-1 animate-spin" />
@@ -533,12 +534,12 @@ export default function DatasetPage() {
             size="sm"
             disabled={exportState === "exporting" || saving}
             onClick={handleExport}
-            className="h-8 rounded-full border-[#e0e0e0] text-xs text-[#1d1d1f] bg-[#ffffff] hover:bg-[#fafafc]"
+            className="h-8 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] text-xs text-neutral-800 dark:text-neutral-200 bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
           >
             {exportState === "exporting" ? (
-              <Loader2 className="size-3.5 mr-1 animate-spin text-[#0066cc]" />
+              <Loader2 className="size-3.5 mr-1 animate-spin text-[#3ecf8e]" />
             ) : (
-              <Download className="size-3.5 mr-1 text-[#7a7a7a]" />
+              <Download className="size-3.5 mr-1 text-neutral-500 dark:text-neutral-400" />
             )}
             <span className="hidden sm:inline">
               {exportState === "exporting" ? "Exporting…" : "Export"}
@@ -551,10 +552,10 @@ export default function DatasetPage() {
               asChild
               variant="outline"
               size="sm"
-              className="h-8 rounded-full border-[#e0e0e0] text-xs text-[#1d1d1f] bg-[#ffffff] hover:bg-[#fafafc]"
+              className="h-8 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] text-xs text-neutral-800 dark:text-neutral-200 bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
             >
               <Link to={`/datasets/${id}/georeference`}>
-                <Compass className="size-3.5 mr-1 text-[#0066cc]" />
+                <Compass className="size-3.5 mr-1 text-[#24b47e] dark:text-[#3ecf8e]" />
                 <span className="hidden sm:inline">
                   {dataset.georeference ? "Edit Georef" : "Georeference"}
                 </span>
@@ -568,7 +569,7 @@ export default function DatasetPage() {
             size="icon"
             onClick={() => setShowDeleteDialog(true)}
             disabled={deleting}
-            className="size-8 rounded-full text-[#7a7a7a] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10"
+            className="size-8 rounded-[6px] text-neutral-500 dark:text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer"
             title="Delete dataset"
           >
             <Trash2 className="size-4" />
@@ -582,12 +583,12 @@ export default function DatasetPage() {
         <div
           role={exportState === "error" ? "alert" : "status"}
           aria-live="polite"
-          className={`absolute right-4 top-14 z-[60] max-w-sm rounded-md border px-4 py-3 text-xs shadow-xl ${exportState === "error" ? "border-red-200 bg-red-50 text-red-600" : "border-hairline bg-white/95 text-ink"}`}
+          className={`absolute right-4 top-14 z-[60] max-w-sm rounded-[6px] border px-4 py-3 text-xs shadow-xl ${exportState === "error" ? "border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400" : "border-neutral-200 dark:border-[#2e2e2e] bg-white/95 dark:bg-[#202020]/95 text-neutral-900 dark:text-white"}`}
         >
           <p className="font-semibold">{exportStatus.message}</p>
-          {exportStatus.details && <p className="mt-1 text-muted">{exportStatus.details}</p>}
+          {exportStatus.details && <p className="mt-1 text-neutral-500 dark:text-neutral-400">{exportStatus.details}</p>}
           {exportState !== "exporting" && (
-            <button type="button" className="mt-2 text-ink underline" onClick={() => { setExportState("idle"); setExportStatus(null) }}>Dismiss</button>
+            <button type="button" className="mt-2 text-neutral-900 dark:text-white underline cursor-pointer" onClick={() => { setExportState("idle"); setExportStatus(null) }}>Dismiss</button>
           )}
         </div>
       )}
@@ -647,18 +648,18 @@ export default function DatasetPage() {
           {!panelOpen && (
             <button
               type="button"
-              className="absolute right-4 top-4 z-10 w-9 h-9 rounded-full bg-white border border-hairline flex items-center justify-center text-ink shadow-sm hover:bg-pearl"
+              className="absolute right-4 top-4 z-10 w-9 h-9 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-neutral-800 dark:text-neutral-200 shadow-sm hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
               onClick={() => setPanelOpen(true)}
               title="Open inspector"
             >
-              <Menu className="size-4 text-ink" />
+              <Menu className="size-4" />
             </button>
           )}
 
           {(pbfLoading || pbfError || controlPointsError || iconPointsError) && (
-            <div className="absolute bottom-4 left-4 z-10 max-w-xs rounded-md border border-hairline bg-white/90 backdrop-blur px-4 py-3 text-xs text-ink shadow-sm">
+            <div className="absolute bottom-4 left-4 z-10 max-w-xs rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white/90 dark:bg-[#202020]/90 backdrop-blur px-4 py-3 text-xs text-neutral-900 dark:text-white shadow-sm">
               {pbfLoading && <p>Preparing the vector map preview…</p>}
-              {pbfError && <p className="text-red-600">{pbfError.message}</p>}
+              {pbfError && <p className="text-red-500">{pbfError.message}</p>}
               {controlPointsError && <p className={pbfLoading || pbfError ? "mt-1" : ""}>Control points unavailable.</p>}
               {iconPointsError && <p className="mt-1">{iconPointsError}</p>}
             </div>

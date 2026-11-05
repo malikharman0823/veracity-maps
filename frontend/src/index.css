@@ -1868,3 +1868,239 @@ input[type="range"] {
   gap: 6px;
 }
 
+/* ==========================================================================
+   Supabase Dark Mode Tokens for Workspace Studio UI
+   ========================================================================== */
+.dark .workspace-layer-panel {
+  background: #202020;
+  color: #ffffff;
+}
+
+.dark .workspace-panel-header {
+  border-bottom: 1px solid #2e2e2e;
+  color: #ffffff;
+}
+
+.dark .workspace-panel-header h2 {
+  color: #ffffff;
+}
+
+.dark .workspace-layer-parent:hover,
+.dark .workspace-layer-parent.is-selected {
+  background: #282828;
+}
+
+.dark .workspace-layer-title {
+  color: #ffffff;
+}
+
+.dark .workspace-layer-title small {
+  color: #9a9a9a;
+}
+
+.dark .workspace-layer-popover,
+.dark .workspace-columns-popover {
+  background: #202020;
+  border-color: #2e2e2e;
+  color: #ffffff;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.dark .workspace-layer-popover label {
+  color: #9a9a9a;
+}
+
+.dark .workspace-danger-action {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.dark .workspace-sublayers {
+  border-left-color: #2e2e2e;
+}
+
+.dark .workspace-sublayer {
+  color: #9a9a9a;
+}
+
+.dark .workspace-sublayer:hover {
+  background: #282828;
+  color: #ffffff;
+}
+
+.dark .workspace-sublayer.is-selected {
+  background: #282828;
+  color: #3ecf8e;
+}
+
+.dark .workspace-building-container {
+  background: #1c1c1c;
+  border-color: #2e2e2e;
+}
+
+.dark .workspace-building-header {
+  background: #202020;
+  border-bottom: 1px solid #2e2e2e;
+}
+
+.dark .workspace-building-title {
+  color: #ffffff;
+}
+
+.dark .workspace-building-badge {
+  background: rgba(62, 207, 142, 0.15);
+  color: #3ecf8e;
+}
+
+.dark .workspace-floor-item {
+  color: #ffffff;
+}
+
+.dark .workspace-floor-item:hover {
+  background: #282828;
+}
+
+.dark .workspace-floor-item.is-active {
+  background: #282828;
+  border-color: #3ecf8e;
+}
+
+.dark .workspace-floor-badge.badge-basement {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.dark .workspace-floor-badge.badge-ground {
+  background: rgba(62, 207, 142, 0.2);
+  color: #3ecf8e;
+}
+
+.dark .workspace-floor-badge.badge-upper {
+  background: #2e2e2e;
+  color: #d4d4d4;
+}
+
+.dark .workspace-floor-name {
+  color: #ffffff;
+}
+
+/* Transform Floating Toolbar Dark Mode */
+.dark .workspace-transform-toolbar {
+  background: rgba(32, 32, 32, 0.95);
+  border: 1px solid #2e2e2e;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  color: #ffffff;
+}
+
+.dark .workspace-transform-title {
+  color: #ffffff;
+}
+
+.dark .workspace-transform-modes {
+  background: #171717;
+  border: 1px solid #2e2e2e;
+}
+
+.dark .workspace-transform-mode-btn {
+  color: #9a9a9a;
+}
+
+.dark .workspace-transform-mode-btn:hover {
+  color: #ffffff;
+}
+
+.dark .workspace-transform-mode-btn.is-active {
+  background: #282828;
+  color: #3ecf8e;
+}
+
+.dark .workspace-transform-lock-label {
+  color: #9a9a9a;
+}
+
+.dark .workspace-transform-badge {
+  background: #282828;
+  color: #d4d4d4;
+}
+
+.dark .workspace-transform-actions {
+  border-top: 1px solid #2e2e2e;
+}
+
+/* Floating Bottom Dock Dark Mode */
+.dark .workspace-bottom-dock-inner {
+  background: rgba(32, 32, 32, 0.94);
+  border: 1px solid #2e2e2e;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+}
+
+.dark .workspace-dock-item {
+  color: #9a9a9a;
+}
+
+.dark .workspace-dock-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .workspace-dock-item.is-active {
+  background: #3ecf8e;
+  color: #171717;
+}
+
+.dark .workspace-dock-item.is-active .workspace-dock-badge {
+  background: rgba(0, 0, 0, 0.2);
+  color: #171717;
+}
+
+.dark .workspace-dock-action {
+  color: #3ecf8e;
+}
+
+.dark .workspace-dock-badge {
+  background: #282828;
+  color: #9a9a9a;
+}
+
+.dark .workspace-dock-divider {
+  background: #2e2e2e;
+}
+
+/* Workspace Dialogs Dark Mode */
+.dark .workspace-dialog {
+  background: #202020;
+  border: 1px solid #2e2e2e;
+  color: #ffffff;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.dark .workspace-dialog h2 {
+  color: #ffffff;
+}
+
+.dark .workspace-dialog > p {
+  color: #9a9a9a;
+}
+
+.dark .workspace-dialog-icon {
+  background: rgba(62, 207, 142, 0.15);
+  color: #3ecf8e;
+}
+
+.dark .workspace-dialog-progress,
+.dark .workspace-dialog-error {
+  background: #171717;
+  color: #9a9a9a;
+  border: 1px solid #2e2e2e;
+}
+
+.dark .workspace-dialog-error {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.dark .workspace-dialog-progress strong {
+  color: #ffffff;
+}
+

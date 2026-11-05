@@ -49,7 +49,7 @@ export default function EndSessionDialog({ trigger, onEnded, className = "" }) {
             <Button
               variant="outline"
               size="sm"
-              className={`h-8 border-[#e0e0e0] bg-white text-[#7a7a7a] hover:text-[#dc2626] hover:border-[#dc2626]/40 hover:bg-red-50/50 text-xs font-normal gap-1.5 transition-colors ${className}`}
+              className={`h-8 border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-600 dark:text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-50/20 text-xs font-normal gap-1.5 transition-colors rounded-[6px] cursor-pointer ${className}`}
               title="End session and clear workspace data"
             >
               <Trash2 className="size-3.5" />
@@ -58,17 +58,17 @@ export default function EndSessionDialog({ trigger, onEnded, className = "" }) {
           )
         }
       />
-      <AlertDialogContent className="max-w-md bg-white border border-[#e0e0e0] shadow-xl p-5 rounded-2xl">
+      <AlertDialogContent className="max-w-md bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] shadow-xl p-5 rounded-[12px] text-neutral-900 dark:text-white">
         <AlertDialogHeader className="space-y-2">
-          <div className="flex items-center gap-3 text-red-600">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100/80">
-              <AlertTriangle className="size-5 text-red-600" />
+          <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100/80 dark:bg-red-950/40">
+              <AlertTriangle className="size-5 text-red-600 dark:text-red-400" />
             </div>
-            <AlertDialogTitle className="text-base font-semibold text-[#1d1d1f]">
+            <AlertDialogTitle className="text-base font-semibold text-neutral-900 dark:text-white">
               End Session & Clear Workspace?
             </AlertDialogTitle>
           </div>
-          <AlertDialogDescription className="text-xs text-[#7a7a7a] leading-relaxed pt-1">
+          <AlertDialogDescription className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed pt-1">
             This workspace uses temporary session storage. Ending the session will immediately
             and permanently remove all uploaded datasets, raster imagery, georeferencing
             ground control points, layer configurations, and pending exports.
@@ -77,10 +77,10 @@ export default function EndSessionDialog({ trigger, onEnded, className = "" }) {
             A new empty workspace session will be started. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="mt-4 flex sm:flex-row justify-end gap-2 border-t border-[#f0f0f0] pt-4">
+        <AlertDialogFooter className="mt-4 flex sm:flex-row justify-end gap-2 border-t border-neutral-200 dark:border-[#2e2e2e] pt-4">
           <AlertDialogCancel
             disabled={ending}
-            className="h-8 rounded-lg text-xs font-medium border-[#e0e0e0] text-[#1d1d1f] hover:bg-[#f5f5f7]"
+            className="h-8 rounded-[6px] text-xs font-medium border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
           >
             Keep Session
           </AlertDialogCancel>
@@ -90,7 +90,7 @@ export default function EndSessionDialog({ trigger, onEnded, className = "" }) {
               handleConfirmEnd()
             }}
             disabled={ending}
-            className="h-8 rounded-lg text-xs font-medium bg-[#dc2626] hover:bg-[#b91c1c] text-white flex items-center gap-1.5"
+            className="h-8 rounded-[6px] text-xs font-semibold bg-[#dc2626] hover:bg-[#b91c1c] text-white flex items-center gap-1.5 cursor-pointer"
           >
             {ending ? (
               <>

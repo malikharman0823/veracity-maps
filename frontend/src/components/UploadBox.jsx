@@ -26,10 +26,10 @@ export default function UploadBox({ disabled, onSelect }) {
   return (
     <div
       onClick={!disabled ? chooseFile : undefined}
-      className={`relative group bg-[#ffffff] border-2 border-dashed transition-all duration-200 rounded-[18px] p-8 sm:p-12 flex flex-col items-center justify-center text-center cursor-pointer shadow-xs ${
+      className={`relative group bg-white dark:bg-[#202020] border-2 border-dashed transition-all duration-200 rounded-[12px] p-8 sm:p-12 flex flex-col items-center justify-center text-center cursor-pointer shadow-xs ${
         dragging
-          ? "border-[#0066cc] bg-[#f5f5f7]"
-          : "border-[#e0e0e0] hover:border-[#0066cc]/60 hover:bg-[#fafafc]"
+          ? "border-[#3ecf8e] bg-[#3ecf8e]/5"
+          : "border-neutral-300 dark:border-[#2e2e2e] hover:border-[#3ecf8e]/60 hover:bg-neutral-50 dark:hover:bg-[#252525]"
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault()
@@ -41,14 +41,14 @@ export default function UploadBox({ disabled, onSelect }) {
       }}
       onDrop={handleDrop}
     >
-      <div className="size-14 rounded-2xl bg-[#f5f5f7] border border-[#e0e0e0] flex items-center justify-center text-[#0066cc] mb-4 group-hover:scale-105 transition-transform">
+      <div className="size-14 rounded-[12px] bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e] mb-4 group-hover:scale-105 transition-transform">
         <UploadCloud className="size-7" />
       </div>
 
-      <h3 className="text-base font-semibold text-[#1d1d1f] mb-1">
+      <h3 className="text-base font-semibold text-neutral-900 dark:text-white mb-1">
         Drop a dataset file here or click to browse
       </h3>
-      <p className="text-xs text-[#7a7a7a] max-w-md mb-6">
+      <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md mb-6">
         Supports PNG, JPG/JPEG, TIFF/GeoTIFF (.tif, .tiff), PDF, CAD (.dxf, .dwg, .svf), standalone MBTiles (.mbtiles), and Veracity Maps project packages (.zip).
       </p>
 
@@ -56,9 +56,8 @@ export default function UploadBox({ disabled, onSelect }) {
         <Button
           type="button"
           disabled={disabled}
-          variant="pill"
           size="sm"
-          className="bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-normal"
+          className="bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs rounded-[6px] shadow-xs cursor-pointer"
         >
           <FileArchive className="size-3.5 mr-1.5" />
           <span>Choose file</span>

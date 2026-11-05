@@ -90,24 +90,24 @@ export default function ImportPdfModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="import-pdf-title"
     >
-      <div className="bg-[#ffffff] text-[#1d1d1f] w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl border border-[#e0e0e0] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-[#202020] text-neutral-900 dark:text-white w-full max-w-4xl max-h-[90vh] rounded-[12px] shadow-2xl border border-neutral-200 dark:border-[#2e2e2e] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 transition-colors">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#e0e0e0] flex items-center justify-between bg-[#fafafc]">
+        <div className="px-6 py-4 border-b border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-between bg-neutral-50 dark:bg-[#171717]">
           <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-[#0066cc]/10 border border-[#0066cc]/20 flex items-center justify-center text-[#0066cc]">
+            <div className="size-10 rounded-[8px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 flex items-center justify-center text-[#24b47e] dark:text-[#3ecf8e]">
               <FileText className="size-5" />
             </div>
             <div>
-              <h2 id="import-pdf-title" className="text-lg font-semibold text-[#1d1d1f] tracking-tight">
+              <h2 id="import-pdf-title" className="text-lg font-semibold text-neutral-900 dark:text-white tracking-tight">
                 Import PDF
               </h2>
-              <p className="text-xs text-[#7a7a7a] flex items-center gap-2 mt-0.5">
-                <span className="font-medium text-[#1d1d1f]">{filename}</span>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 flex items-center gap-2 mt-0.5">
+                <span className="font-medium text-neutral-900 dark:text-white">{filename}</span>
                 <span>•</span>
                 <span>{pageCount} {pageCount === 1 ? "page" : "pages"} detected</span>
               </p>
@@ -117,7 +117,7 @@ export default function ImportPdfModal({
             type="button"
             onClick={onClose}
             disabled={importing}
-            className="size-8 rounded-full flex items-center justify-center text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#e8e8ed] transition-colors disabled:opacity-50"
+            className="size-8 rounded-[6px] flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-[#282828] transition-colors disabled:opacity-50 cursor-pointer"
             aria-label="Close dialog"
           >
             <X className="size-4" />
@@ -127,7 +127,7 @@ export default function ImportPdfModal({
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {error && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5">
+            <div className="p-3.5 rounded-[8px] bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-start gap-2.5">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <div>
                 <strong>Import failed:</strong>{" "}
@@ -138,15 +138,15 @@ export default function ImportPdfModal({
             </div>
           )}
 
-          {/* Page Selection Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[#f0f0f0]">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-[#1d1d1f]">
-                Select Pages to Display:
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-[#f0f4ff] text-[#0066cc] font-medium border border-[#0066cc]/20">
-                {selectedCount} of {pageCount} selected
-              </span>
+          {/* Page Selection Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-200 dark:border-[#2e2e2e]">
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                Select Pages to Import ({selectedCount} of {pageCount} selected)
+              </h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Each selected page will be rasterized as a map floor layer.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -155,9 +155,8 @@ export default function ImportPdfModal({
                 size="sm"
                 onClick={selectAll}
                 disabled={importing}
-                className="h-7 text-xs px-2.5 rounded-lg border-[#e0e0e0] text-[#1d1d1f] hover:bg-[#fafafc]"
+                className="h-7 text-xs border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px] cursor-pointer"
               >
-                <CheckSquare className="size-3.5 mr-1 text-[#0066cc]" />
                 Select All
               </Button>
               <Button
@@ -166,51 +165,51 @@ export default function ImportPdfModal({
                 size="sm"
                 onClick={deselectAll}
                 disabled={importing}
-                className="h-7 text-xs px-2.5 rounded-lg border-[#e0e0e0] text-[#7a7a7a] hover:bg-[#fafafc]"
+                className="h-7 text-xs border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px] cursor-pointer"
               >
-                <Square className="size-3.5 mr-1" />
                 Deselect All
               </Button>
             </div>
           </div>
 
-          {/* Page Thumbnail Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-72 overflow-y-auto p-1 border border-[#e0e0e0] rounded-xl bg-[#fafafc]">
+          {/* Page Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {pages.map((page) => {
               const isSelected = selectedPages.includes(page.page_number)
               return (
                 <div
                   key={page.page_number}
                   onClick={() => !importing && togglePage(page.page_number)}
-                  className={`group relative rounded-xl border-2 transition-all p-2 flex flex-col cursor-pointer bg-[#ffffff] select-none ${
+                  className={`group relative rounded-[8px] border-2 p-2.5 transition-all cursor-pointer flex flex-col ${
                     isSelected
-                      ? "border-[#0066cc] ring-2 ring-[#0066cc]/20 shadow-xs"
-                      : "border-[#e0e0e0] opacity-60 hover:opacity-100 hover:border-[#b0b0b0]"
+                      ? "border-[#3ecf8e] bg-[#3ecf8e]/5 shadow-xs"
+                      : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-[#3a3a3a] bg-neutral-50 dark:bg-[#171717] opacity-60"
                   }`}
                 >
-                  <div className="relative aspect-[3/4] bg-[#f5f5f7] rounded-lg overflow-hidden flex items-center justify-center border border-[#e8e8ed]">
+                  {/* Thumbnail */}
+                  <div className="aspect-4/3 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] overflow-hidden flex items-center justify-center relative">
                     <img
                       src={pdfThumbnailUrl(documentId, page.page_number)}
                       alt={`Page ${page.page_number}`}
-                      className="w-full h-full object-contain pointer-events-none transition-opacity duration-200"
-                      loading="eager"
+                      className="size-full object-contain"
+                      loading="lazy"
                       onError={(e) => {
-                        e.currentTarget.style.display = "none"
-                        const fallback = e.currentTarget.parentElement?.querySelector(".pdf-fallback-icon")
+                        e.target.style.display = "none"
+                        const fallback = e.target.parentElement.querySelector(".pdf-fallback-icon")
                         if (fallback) fallback.style.display = "flex"
                       }}
                     />
-                    <div className="pdf-fallback-icon hidden flex-col items-center justify-center p-3 text-center text-[#7a7a7a]">
-                      <FileText className="size-8 text-[#0066cc]/60 mb-1" />
-                      <span className="text-[11px] font-medium text-[#1d1d1f]">Page {page.page_number}</span>
-                      <span className="text-[10px] text-[#7a7a7a]">{page.width} × {page.height} px</span>
+                    <div className="pdf-fallback-icon hidden flex-col items-center justify-center p-3 text-center text-neutral-500 dark:text-neutral-400">
+                      <FileText className="size-8 text-[#3ecf8e]/60 mb-1" />
+                      <span className="text-[11px] font-medium text-neutral-900 dark:text-white">Page {page.page_number}</span>
+                      <span className="text-[10px] text-neutral-500 dark:text-neutral-400">{page.width} × {page.height} px</span>
                     </div>
                     <div className="absolute top-2 left-2 z-10">
                       <div
-                        className={`size-5 rounded flex items-center justify-center transition-colors shadow-xs ${
+                        className={`size-5 rounded-[4px] flex items-center justify-center transition-colors shadow-xs ${
                           isSelected
-                            ? "bg-[#0066cc] text-white"
-                            : "bg-white/80 border border-[#b0b0b0] text-transparent"
+                            ? "bg-[#3ecf8e] text-[#171717] font-bold"
+                            : "bg-white/80 dark:bg-black/80 border border-neutral-300 dark:border-[#2e2e2e] text-transparent"
                         }`}
                       >
                         ✓
@@ -218,8 +217,8 @@ export default function ImportPdfModal({
                     </div>
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#7a7a7a]">
-                    <span className="font-semibold text-[#1d1d1f]">
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <span className="font-semibold text-neutral-900 dark:text-white">
                       Page {page.page_number}
                     </span>
                     <span>
@@ -228,33 +227,33 @@ export default function ImportPdfModal({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1">
                     {page.processing_path === "vector" && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                         Vector PDF
                       </span>
                     )}
                     {page.processing_path === "hybrid" && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        Hybrid Vector+Raster
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/20">
+                        Hybrid
                       </span>
                     )}
                     {page.processing_path === "raster" && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                         Scanned PDF
                       </span>
                     )}
                     {page.recommended_dpi > 0 && (
-                      <span className="text-[10px] font-mono text-[#7a7a7a]">
+                      <span className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
                         {page.recommended_dpi} DPI
                       </span>
                     )}
                   </div>
                   {(page.vector_path_count > 0 || page.text_span_count > 0) && (
-                    <div className="mt-0.5 text-[10px] text-[#555558] truncate">
+                    <div className="mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
                       {page.vector_path_count || 0} paths • {page.text_span_count || 0} text spans
                     </div>
                   )}
                   {page.rotation > 0 && (
-                    <div className="text-[10px] text-[#0066cc] flex items-center gap-1 mt-0.5">
+                    <div className="text-[10px] text-[#24b47e] dark:text-[#3ecf8e] flex items-center gap-1 mt-0.5">
                       <RotateCw className="size-2.5" />
                       <span>{page.rotation}° rotation</span>
                     </div>
@@ -266,16 +265,16 @@ export default function ImportPdfModal({
 
           {/* Georeferencing Mode Selection */}
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-[#1d1d1f] uppercase tracking-wider text-[#7a7a7a]">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Georeferencing Mode
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Option A: Shared */}
               <label
-                className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col gap-1.5 ${
+                className={`p-4 rounded-[8px] border-2 transition-all cursor-pointer flex flex-col gap-1.5 ${
                   georefMode === "shared"
-                    ? "border-[#0066cc] bg-[#f0f4ff]/40 ring-2 ring-[#0066cc]/10"
-                    : "border-[#e0e0e0] hover:border-[#b0b0b0] bg-[#ffffff]"
+                    ? "border-[#3ecf8e] bg-[#3ecf8e]/10 ring-2 ring-[#3ecf8e]/20"
+                    : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-[#3a3a3a] bg-white dark:bg-[#202020]"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -286,27 +285,27 @@ export default function ImportPdfModal({
                       value="shared"
                       checked={georefMode === "shared"}
                       onChange={() => setGeorefMode("shared")}
-                      className="text-[#0066cc] focus:ring-[#0066cc]"
+                      className="text-[#24b47e] focus:ring-[#3ecf8e]"
                     />
-                    <span className="text-sm font-semibold text-[#1d1d1f]">
+                    <span className="text-sm font-semibold text-neutral-900 dark:text-white">
                       Georeference together (one-time)
                     </span>
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#248a3d] font-semibold border border-[#34c759]/20">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-[4px] bg-[#3ecf8e]/20 text-[#24b47e] dark:text-[#3ecf8e] font-semibold border border-[#3ecf8e]/30">
                     Recommended
                   </span>
                 </div>
-                <p className="text-xs text-[#7a7a7a] pl-5">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 pl-5">
                   Align selected pages using one shared building coordinate system. Editing shared control points aligns all floor pages simultaneously.
                 </p>
               </label>
 
               {/* Option B: Independent */}
               <label
-                className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col gap-1.5 ${
+                className={`p-4 rounded-[8px] border-2 transition-all cursor-pointer flex flex-col gap-1.5 ${
                   georefMode === "independent"
-                    ? "border-[#0066cc] bg-[#f0f4ff]/40 ring-2 ring-[#0066cc]/10"
-                    : "border-[#e0e0e0] hover:border-[#b0b0b0] bg-[#ffffff]"
+                    ? "border-[#3ecf8e] bg-[#3ecf8e]/10 ring-2 ring-[#3ecf8e]/20"
+                    : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-[#3a3a3a] bg-white dark:bg-[#202020]"
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -316,13 +315,13 @@ export default function ImportPdfModal({
                     value="independent"
                     checked={georefMode === "independent"}
                     onChange={() => setGeorefMode("independent")}
-                    className="text-[#0066cc] focus:ring-[#0066cc]"
+                    className="text-[#24b47e] focus:ring-[#3ecf8e]"
                   />
-                  <span className="text-sm font-semibold text-[#1d1d1f]">
+                  <span className="text-sm font-semibold text-neutral-900 dark:text-white">
                     Georeference separately
                   </span>
                 </div>
-                <p className="text-xs text-[#7a7a7a] pl-5">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 pl-5">
                   Align each selected page independently. Each page maintains its own individual control points, rotation, and bounding coordinates.
                 </p>
               </label>
@@ -330,10 +329,10 @@ export default function ImportPdfModal({
           </div>
 
           {/* Building and Multi-Floor Assignment */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-[#fafafc] border border-[#e0e0e0]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
             <div>
-              <label className="text-xs font-medium text-[#1d1d1f] flex items-center gap-1.5 mb-1.5">
-                <Building className="size-3.5 text-[#7a7a7a]" />
+              <label className="text-xs font-medium text-neutral-900 dark:text-white flex items-center gap-1.5 mb-1.5">
+                <Building className="size-3.5 text-neutral-500 dark:text-neutral-400" />
                 Building Name
               </label>
               <input
@@ -342,16 +341,16 @@ export default function ImportPdfModal({
                 onChange={(e) => setBuildingName(e.target.value)}
                 disabled={importing}
                 placeholder="e.g. Building A"
-                className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc] focus:ring-1 focus:ring-[#0066cc]"
+                className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white focus:outline-hidden focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e]"
               />
-              <p className="text-[11px] text-[#7a7a7a] mt-1">
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
                 Pages will be grouped under this building structure.
               </p>
             </div>
 
             <div>
-              <label className="text-xs font-medium text-[#1d1d1f] flex items-center gap-1.5 mb-1.5">
-                <Layers className="size-3.5 text-[#7a7a7a]" />
+              <label className="text-xs font-medium text-neutral-900 dark:text-white flex items-center gap-1.5 mb-1.5">
+                <Layers className="size-3.5 text-neutral-500 dark:text-neutral-400" />
                 Starting Floor Level
               </label>
               <input
@@ -360,29 +359,29 @@ export default function ImportPdfModal({
                 onChange={(e) => setStartingFloor(e.target.value)}
                 disabled={importing}
                 placeholder="0"
-                className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc] focus:ring-1 focus:ring-[#0066cc]"
+                className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white focus:outline-hidden focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e]"
               />
-              <p className="text-[11px] text-[#7a7a7a] mt-1">
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
                 Floor 0 = Ground Floor. Subsequent pages increment floor levels.
               </p>
             </div>
           </div>
 
           {/* Vector Extraction, Adaptive DPI, OpenCV Enhancement & OCR Options */}
-          <div className="p-4 rounded-xl bg-[#fafafc] border border-[#e0e0e0] space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7a7a7a]">
+          <div className="p-4 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               PDF Processing & Vector Extraction
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                <label className="text-xs font-medium text-neutral-900 dark:text-white block mb-1">
                   Rendering Resolution (DPI)
                 </label>
                 <select
                   value={dpi}
                   onChange={(e) => setDpi(Number(e.target.value))}
                   disabled={importing}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc]"
+                  className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white focus:outline-hidden focus:border-[#3ecf8e]"
                 >
                   <option value={0}>Adaptive Recommended DPI (Auto)</option>
                   <option value={200}>200 DPI (Standard Plan)</option>
@@ -391,14 +390,14 @@ export default function ImportPdfModal({
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                <label className="text-xs font-medium text-neutral-900 dark:text-white block mb-1">
                   OpenCV Raster Enhancement
                 </label>
                 <select
                   value={enhancePreset}
                   onChange={(e) => setEnhancePreset(e.target.value)}
                   disabled={importing}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:outline-none focus:border-[#0066cc]"
+                  className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white focus:outline-hidden focus:border-[#3ecf8e]"
                 >
                   <option value="">Automatic per Page Type (Recommended)</option>
                   <option value="text_clarity">Text & Label Clarity (CLAHE + Edge Sharpen)</option>
@@ -411,24 +410,24 @@ export default function ImportPdfModal({
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-1">
-              <label className="inline-flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+              <label className="inline-flex items-center gap-2 text-xs text-neutral-800 dark:text-neutral-200 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={extractVectors}
                   onChange={(e) => setExtractVectors(e.target.checked)}
                   disabled={importing}
-                  className="rounded border-[#b0b0b0] text-[#0066cc] focus:ring-[#0066cc]"
+                  className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#24b47e] focus:ring-[#3ecf8e]"
                 />
                 <span>Extract vector paths & positioned text labels (Path A)</span>
               </label>
 
-              <label className="inline-flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+              <label className="inline-flex items-center gap-2 text-xs text-neutral-800 dark:text-neutral-200 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={runOcr}
                   onChange={(e) => setRunOcr(e.target.checked)}
                   disabled={importing}
-                  className="rounded border-[#b0b0b0] text-[#0066cc] focus:ring-[#0066cc]"
+                  className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#24b47e] focus:ring-[#3ecf8e]"
                 />
                 <span>Run PaddleOCR label detection on scanned pages (Path B)</span>
               </label>
@@ -437,13 +436,13 @@ export default function ImportPdfModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-[#e0e0e0] bg-[#fafafc] flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] flex items-center justify-between">
           <Button
             type="button"
             variant="outline"
             onClick={onClose}
             disabled={importing}
-            className="rounded-full text-xs border-[#e0e0e0] text-[#1d1d1f] hover:bg-[#ffffff]"
+            className="rounded-[6px] text-xs border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] cursor-pointer"
           >
             Cancel
           </Button>
@@ -452,7 +451,7 @@ export default function ImportPdfModal({
             type="button"
             onClick={handleContinue}
             disabled={importing || selectedCount === 0}
-            className="rounded-full text-xs bg-[#0066cc] hover:bg-[#0055b3] text-white px-5 shadow-xs"
+            className="rounded-[6px] text-xs bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-medium px-5 shadow-xs cursor-pointer"
           >
             {importing ? (
               <>

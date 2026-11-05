@@ -81,22 +81,22 @@ export default function IconPicker({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
       <div
-        className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-[#202020] rounded-[12px] shadow-2xl border border-neutral-200 dark:border-[#2e2e2e] w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-neutral-900 dark:text-white"
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50/80 dark:bg-[#171717]/80">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+            <div className="p-1.5 bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] rounded-[6px] border border-[#3ecf8e]/30">
               <Grid className="size-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-              <p className="text-xs text-gray-500">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">{title}</h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {icons.length} geographic icons available
               </p>
             </div>
@@ -104,7 +104,7 @@ export default function IconPicker({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px] transition-colors cursor-pointer"
             aria-label="Close icon picker"
           >
             <X className="size-4" />
@@ -112,22 +112,22 @@ export default function IconPicker({
         </div>
 
         {/* Search & Category Filter */}
-        <div className="p-4 border-b border-gray-100 space-y-3 bg-white">
+        <div className="p-4 border-b border-neutral-200 dark:border-[#2e2e2e] space-y-3 bg-white dark:bg-[#202020]">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search icons by name or tag…"
-              className="w-full pl-9 pr-8 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-gray-800 placeholder:text-gray-400"
+              className="w-full pl-9 pr-8 py-2 text-xs bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] rounded-[6px] focus:outline-none focus:border-[#3ecf8e] transition-all text-neutral-900 dark:text-white placeholder:text-neutral-400"
               autoFocus
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-0.5 cursor-pointer"
               >
                 <X className="size-3.5" />
               </button>
@@ -139,10 +139,10 @@ export default function IconPicker({
             <button
               type="button"
               onClick={() => setSelectedCategory("All")}
-              className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`px-3 py-1 rounded-[6px] text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                 selectedCategory === "All"
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  ? "bg-[#3ecf8e] text-[#171717]"
+                  : "bg-neutral-100 dark:bg-[#282828] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-[#323232]"
               }`}
             >
               All ({icons.length})
@@ -154,10 +154,10 @@ export default function IconPicker({
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                  className={`px-3 py-1 rounded-[6px] text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                     selectedCategory === cat
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      ? "bg-[#3ecf8e] text-[#171717]"
+                      : "bg-neutral-100 dark:bg-[#282828] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-[#323232]"
                   }`}
                 >
                   {cat} ({count})
@@ -169,8 +169,8 @@ export default function IconPicker({
 
         {/* Recently Used Bar */}
         {recentIcons.length > 0 && !searchQuery && selectedCategory === "All" && (
-          <div className="px-4 py-2 bg-gray-50/70 border-b border-gray-100 flex items-center gap-2">
-            <div className="flex items-center gap-1 text-[11px] font-medium text-gray-500 shrink-0">
+          <div className="px-4 py-2 bg-neutral-50/80 dark:bg-[#171717]/80 border-b border-neutral-200 dark:border-[#2e2e2e] flex items-center gap-2">
+            <div className="flex items-center gap-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 shrink-0">
               <Clock className="size-3" />
               <span>Recent:</span>
             </div>
@@ -183,10 +183,10 @@ export default function IconPicker({
                     type="button"
                     onClick={() => handleChooseIcon(rec)}
                     title={rec.name}
-                    className={`p-1 rounded-md border flex items-center justify-center transition-all ${
+                    className={`p-1 rounded-[6px] border flex items-center justify-center transition-all cursor-pointer ${
                       isSelected
-                        ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
-                        : "border-gray-200 bg-white hover:border-gray-400"
+                        ? "border-[#3ecf8e] bg-[#3ecf8e]/10 ring-1 ring-[#3ecf8e]"
+                        : "border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:border-neutral-400 dark:hover:border-neutral-500"
                     }`}
                   >
                     <img
@@ -205,12 +205,12 @@ export default function IconPicker({
         {/* Icons Grid Gallery */}
         <div className="flex-1 overflow-y-auto p-4 min-h-[260px]">
           {loading ? (
-            <div className="h-48 flex items-center justify-center text-xs text-gray-400">
+            <div className="h-48 flex items-center justify-center text-xs text-neutral-400">
               Loading icon catalog…
             </div>
           ) : filteredIcons.length === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-center text-gray-400 gap-1">
-              <p className="text-xs font-medium text-gray-600">No icons found</p>
+            <div className="h-48 flex flex-col items-center justify-center text-center text-neutral-400 gap-1">
+              <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">No icons found</p>
               <p className="text-[11px]">Try adjusting your search or category filter.</p>
             </div>
           ) : (
@@ -223,14 +223,14 @@ export default function IconPicker({
                     type="button"
                     onClick={() => handleChooseIcon(icon)}
                     title={`${icon.name} (${icon.category})`}
-                    className={`group relative flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all ${
+                    className={`group relative flex flex-col items-center justify-center p-2 rounded-[8px] border text-center transition-all cursor-pointer ${
                       isSelected
-                        ? "border-blue-600 bg-blue-50/70 shadow-xs ring-2 ring-blue-600/20"
-                        : "border-gray-100 hover:border-gray-300 hover:bg-gray-50/80 bg-white"
+                        ? "border-[#3ecf8e] bg-[#3ecf8e]/10 shadow-xs ring-1 ring-[#3ecf8e]"
+                        : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-neutral-500 hover:bg-neutral-50 dark:hover:bg-[#282828] bg-white dark:bg-[#171717]"
                     }`}
                   >
-                    {/* Checkerboard transparency preview container */}
-                    <div className="size-11 rounded-lg flex items-center justify-center p-1 relative overflow-hidden bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:6px_6px]">
+                    {/* Icon container */}
+                    <div className="size-11 rounded-[6px] flex items-center justify-center p-1 relative overflow-hidden bg-neutral-100/50 dark:bg-[#202020]">
                       <img
                         src={getIconUrl(icon.id)}
                         alt={icon.name}
@@ -238,7 +238,7 @@ export default function IconPicker({
                         loading="lazy"
                       />
                     </div>
-                    <span className="mt-1 text-[10px] text-gray-700 font-medium truncate w-full text-center group-hover:text-gray-900">
+                    <span className="mt-1 text-[10px] text-neutral-700 dark:text-neutral-300 font-medium truncate w-full text-center group-hover:text-neutral-900 dark:group-hover:text-white">
                       {icon.name}
                     </span>
                     {isSelected && (
@@ -254,11 +254,11 @@ export default function IconPicker({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/70">
-          <div className="text-xs text-gray-500">
+        <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50/80 dark:bg-[#171717]/80">
+          <div className="text-xs text-neutral-500 dark:text-neutral-400">
             {selectedIconId ? (
               <span className="flex items-center gap-1.5">
-                Selected: <strong className="text-gray-900">{selectedIconId}</strong>
+                Selected: <strong className="text-neutral-900 dark:text-white">{selectedIconId}</strong>
               </span>
             ) : (
               <span>Click an icon to select it</span>
@@ -268,7 +268,7 @@ export default function IconPicker({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200/60 rounded-lg transition-colors border border-gray-200"
+              className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-[#282828] rounded-[6px] transition-colors border border-neutral-200 dark:border-[#2e2e2e] cursor-pointer"
             >
               Done
             </button>

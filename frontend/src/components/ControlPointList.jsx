@@ -111,10 +111,10 @@ function EditableCoordinateField({
             event.currentTarget.blur()
           }
         }}
-        className={`h-9 min-w-0 w-full rounded-lg border px-2 py-1.5 text-right text-[12px] tabular-nums text-ink outline-none transition-colors ${
+        className={`h-9 min-w-0 w-full rounded-[6px] border px-2 py-1.5 text-right text-[12px] tabular-nums text-neutral-900 dark:text-white outline-none transition-colors ${
           invalid
-            ? "border-[#e03126] bg-[#fff6f6]"
-            : "border-hairline bg-white hover:border-[#c8c8cc] focus:border-[#0066cc]"
+            ? "border-[#e03126] bg-[#fff6f6] dark:bg-red-950/20"
+            : "border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] hover:border-neutral-300 dark:hover:border-[#3a3a3a] focus:border-[#3ecf8e]"
         }`}
       />
     </label>
@@ -155,21 +155,21 @@ export default function ControlPointList({
   }
 
   return (
-    <section className="overflow-hidden rounded-utility border border-hairline bg-white">
-      <header className="flex min-h-14 items-center justify-between border-b border-hairline px-5">
+    <section className="overflow-hidden rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-900 dark:text-white">
+      <header className="flex min-h-14 items-center justify-between border-b border-neutral-200 dark:border-[#2e2e2e] px-5">
         <div>
-          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-ink">CONTROL POINTS</h2>
-          <p className="mt-0.5 text-[12px] text-muted">
+          <h2 className="text-[13px] font-semibold tracking-[0.08em] text-neutral-900 dark:text-white">CONTROL POINTS</h2>
+          <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">
             {readOnly
               ? "Inspect paired pixel and Google Maps Lat, Lng coordinates"
               : "Click or paste Google Maps Lat, Lng directly into any point"}
           </p>
         </div>
-        <span className="text-[13px] tabular-nums text-muted">{points.length} / 10</span>
+        <span className="text-[13px] tabular-nums text-neutral-500 dark:text-neutral-400">{points.length} / 10</span>
       </header>
-      <div className="divide-y divide-hairline">
+      <div className="divide-y divide-neutral-200 dark:divide-[#2e2e2e]">
         {points.length === 0 && !draft && (
-          <p className="px-5 py-6 text-[14px] text-muted">
+          <p className="px-5 py-6 text-[14px] text-neutral-500 dark:text-neutral-400">
             Click <strong>Place by Lat, Lng</strong> above to position by Google Maps coordinates, or click{" "}
             <strong>Add Control Point</strong> to pair points visually.
           </p>
@@ -237,7 +237,7 @@ export default function ControlPointList({
             <Button
               type="button"
               variant="ghost"
-              className="min-h-10 rounded-full px-3 text-[13px] text-muted hover:bg-[#f5f5f7] hover:text-ink"
+              className="min-h-10 rounded-[6px] px-3 text-[13px] text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#282828] hover:text-neutral-900 dark:hover:text-white cursor-pointer"
               disabled={readOnly}
               onClick={(event) => {
                 event.stopPropagation()
@@ -249,11 +249,11 @@ export default function ControlPointList({
           </article>
         ))}
         {draft && (
-          <article className="flex flex-col gap-2.5 bg-[#fff8e6] px-4 py-3 text-[13px]">
+          <article className="flex flex-col gap-2.5 bg-[#3ecf8e]/10 border-t border-[#3ecf8e]/30 px-4 py-3 text-[13px]">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="font-semibold tabular-nums text-ink">#{points.length + 1}</span>
-                <span className="text-muted">
+                <span className="font-semibold tabular-nums text-neutral-900 dark:text-white">#{points.length + 1}</span>
+                <span className="text-neutral-600 dark:text-neutral-400">
                   Source pixel ({Math.round(draft.image_x)}, {Math.round(draft.image_y)}) · Click Reference Map or enter Google Maps Lat, Lng:
                 </span>
               </div>
@@ -264,7 +264,7 @@ export default function ControlPointList({
                   value={draftCoordInput}
                   placeholder="Paste Google Maps Lat, Lng (e.g. 28.6139, 77.2090)"
                   aria-label="Enter Google Maps latitude and longitude for pending control point"
-                  className="h-9 min-w-[240px] flex-1 rounded-full bg-white px-3.5 text-[12px]"
+                  className="h-9 min-w-[240px] flex-1 rounded-[6px] bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white px-3.5 text-[12px] focus:border-[#3ecf8e]"
                   onChange={(event) => {
                     setDraftCoordInput(event.target.value)
                     if (draftError) setDraftError(null)
@@ -274,7 +274,7 @@ export default function ControlPointList({
                   type="submit"
                   size="sm"
                   disabled={busy}
-                  className="h-9 rounded-full bg-[#0066cc] px-4 text-xs font-normal text-white hover:bg-[#0071e3]"
+                  className="h-9 rounded-[6px] bg-[#3ecf8e] px-4 text-xs font-semibold text-[#171717] hover:bg-[#24b47e] cursor-pointer"
                 >
                   Pair Point
                 </Button>
