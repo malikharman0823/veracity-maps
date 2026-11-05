@@ -13,6 +13,11 @@ The `repository` package provides the thread-safe, in-memory data store for anon
 Collaboration uses project members, invitations, and owner/editor/viewer permissions.
 Organization repositories and project-transfer methods have been removed. Existing SQL schema
 compatibility columns remain in place; session storage and lifecycle remain the GIS boundary.
+Migration 002 adds nullable `Projects.owner_user_id`, backfilled only for valid
+personal owners (`owner_type='personal'`, no organization, and an existing user).
+Current repositories continue using their compatibility fields until the later
+repository cutover. `MigrateJSONToMSSQL` is deprecated offline tooling and is never
+called at server startup.
 
 ## File: `session_repository.go`
 

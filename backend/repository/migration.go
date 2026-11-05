@@ -15,6 +15,8 @@ import (
 // MigrateJSONToMSSQL inspects storage/users and storage/projects
 // and safely copies records into MSSQL Server 2022 if they are not already present.
 // It also creates a timestamped backup directory of the JSON files.
+// Deprecated: legacy offline tooling only. Server startup never imports JSON;
+// user-owned ownership and token cutover require the separately verified migration path.
 func MigrateJSONToMSSQL(storageDir string, db *sql.DB) error {
 	if db == nil {
 		return nil

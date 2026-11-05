@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,9 +19,28 @@ type Config struct {
 	SessionIdleTimeout time.Duration
 	SessionMaxLifetime time.Duration
 	MSSQLConnStr       string
+	Environment        string
+	ResendAPIKey       string
+	ResendFrom         string
+	AppPublicURL       string
+	WorkspaceTTL       time.Duration
+}
+
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.MSSQLConnStr) == "" && c.Environment != "test" {
+		return errors.New("MSSQL_CONNECTION_STRING is required outside tests")
+	}
+	if c.WorkspaceTTL <= 0 {
+		return errors.New("WORKSPACE_TTL must be positive")
+	}
+	return nil
 }
 
 func LoadConfig() *Config {
+	workspaceTTL, err := time.ParseDuration(getEnv("WORKSPACE_TTL", "24h"))
+	if err != nil {
+		workspaceTTL = 0 // Validate rejects malformed durations before startup.
+	}
 	port := getEnv("PORT", "8000")
 	host := getEnv("HOST", "0.0.0.0")
 
@@ -66,6 +87,11 @@ func LoadConfig() *Config {
 		SessionIdleTimeout: 24 * time.Hour,
 		SessionMaxLifetime: 7 * 24 * time.Hour,
 		MSSQLConnStr:       mssqlConn,
+		Environment:        getEnv("APP_ENV", "development"),
+		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
+		ResendFrom:         os.Getenv("RESEND_FROM_EMAIL"),
+		AppPublicURL:       os.Getenv("APP_PUBLIC_URL"),
+		WorkspaceTTL:       workspaceTTL,
 	}
 }
 

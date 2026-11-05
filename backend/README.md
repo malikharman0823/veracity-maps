@@ -51,6 +51,25 @@ The **Veracity Maps Backend** is a modular, zero-dependency Go web service built
 
 ## 3. Running & Verifying Backend
 
+Startup validates configuration, connects and pings MSSQL with a context deadline,
+and applies migrations before creating the HTTP server. Connection or migration
+failure terminates startup; there is no startup JSON import or connection-failure
+fallback. Set `MSSQL_CONNECTION_STRING` securely; `.env.example` describes the
+configuration (the executable reads process environment variables).
+
+`db.InitDB(ctx, connStr)` opens the connection pool and calls `PingContext`.
+`db.RunMigrations(ctx, database, dir)` reads sorted `.sql` files, skips filenames
+already in `dbo.SchemaMigrations`, and executes each new file and its ledger insert
+in one transaction. Standalone `GO` lines separate batches within that transaction.
+Run the executable from `backend/` so the `migrations/` directory is available.
+
+Migration 002 adds user profile, personal ownership, permission JSON, map, upload,
+activity, draft and verification-token structures. Existing organization tables,
+project compatibility columns, and raw-token columns remain during the additive
+rollout. Legacy raw tokens are never copied into hash columns. Authentication and
+invitation repository cutovers must remove raw-token dependencies and invalidate
+legacy tokens before the eventual destructive schema cleanup.
+
 From the `backend/` directory:
 ```powershell
 # Format check

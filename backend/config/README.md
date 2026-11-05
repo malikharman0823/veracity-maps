@@ -22,7 +22,9 @@ Reads configuration settings from the process environment (with fallback default
   - `SessionIdleTimeout time.Duration`: Inactivity duration before a session expires (Default: `24 * time.Hour`).
   - `SessionMaxLifetime time.Duration`: Maximum absolute session lifespan (Default: `7 * 24 * time.Hour`).
 - **`func LoadConfig() *Config`**:
-  - Inspects environment variables (`PORT`, `HOST`, `SESSION_STORAGE_DIR`, `MAX_UPLOAD_SIZE_BYTES`) and returns a validated pointer to `Config`.
+  - Inspects environment variables and returns a `Config`. Call `Validate()` before using it at startup.
+- **`func (c *Config) Validate() error`**:
+  - Requires MSSQL outside `APP_ENV=test` and a positive `WorkspaceTTL`. Malformed duration values fail validation.
 - **`func getEnv(key, fallback string) string`**:
   - Private helper that checks `os.Getenv(key)` and returns the fallback string if empty.
 
@@ -36,3 +38,9 @@ Reads configuration settings from the process environment (with fallback default
 | `HOST` | `0.0.0.0` | Host IP binding. |
 | `SESSION_STORAGE_DIR` | `./temp/sessions` | Filesystem root for temporary session workspaces. |
 | `MAX_UPLOAD_SIZE_BYTES` | `524288000` | Max multipart body upload limit (500 MB). |
+| `APP_ENV` | `development` | Only isolated `test` configuration may omit MSSQL. |
+| `MSSQL_CONNECTION_STRING` | empty | Required database connection; alternatively supplied by the existing discrete `MSSQL_*` variables. |
+| `WORKSPACE_TTL` | `24h` | Positive Go duration for the temporary workspace lifecycle. |
+| `RESEND_API_KEY` | empty | Mail provider key, loaded for the later verification/invitation cutover. |
+| `RESEND_FROM_EMAIL` | empty | Verification/invitation sender, loaded as `ResendFrom`. |
+| `APP_PUBLIC_URL` | empty | Public frontend URL used by verification/invitation links. |

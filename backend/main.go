@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -28,6 +27,21 @@ import (
 
 func main() {
 	cfg := config.LoadConfig()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 60*time.Second)
+	sqlDB, err := db.InitDB(startupCtx, cfg.MSSQLConnStr)
+	if err != nil {
+		cancelStartup()
+		log.Fatal("Failed to connect to MSSQL; check database availability and configuration (connection details withheld)")
+	}
+	defer sqlDB.Close()
+	if err := db.RunMigrations(startupCtx, sqlDB, "migrations"); err != nil {
+		cancelStartup()
+		log.Fatalf("Failed to migrate MSSQL schema: %v", err)
+	}
+	cancelStartup()
 
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
@@ -47,26 +61,8 @@ func main() {
 		log.Fatalf("Failed to initialize project repository: %v", err)
 	}
 
-	// Connect to Microsoft SQL Server 2022 if configured
-	if cfg.MSSQLConnStr != "" {
-		sqlDB, err := db.InitDB(cfg.MSSQLConnStr)
-		if err != nil {
-			log.Printf("[MSSQL WARNING] Could not connect to MSSQL Server: %v (continuing with local persistent storage)", err)
-		} else {
-			log.Printf("[MSSQL SUCCESS] Connected to Microsoft SQL Server 2022 database")
-			migrationsDir := filepath.Join("migrations")
-			if err := db.RunMigrations(sqlDB, migrationsDir); err != nil {
-				log.Printf("[MSSQL WARNING] Migration execution notice: %v", err)
-			}
-			// Migrate JSON data to MSSQL
-			if err := repository.MigrateJSONToMSSQL("storage", sqlDB); err != nil {
-				log.Printf("[MSSQL WARNING] Data migration notice: %v", err)
-			}
-			// Wire DB into repositories
-			authRepo.SetDB(sqlDB)
-			projRepo.SetDB(sqlDB)
-		}
-	}
+	authRepo.SetDB(sqlDB)
+	projRepo.SetDB(sqlDB)
 
 	middleware := api.NewMiddleware(repo, authRepo)
 

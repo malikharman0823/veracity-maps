@@ -78,3 +78,14 @@ From the `backend/` directory:
 ```powershell
 go test -v -count=1 ./tests/...
 ```
+
+`mssql_multi_user_test.go` reads only `MSSQL_TEST_CONNECTION_STRING` for live SQL
+tests. Supply a dedicated test database: these tests apply migrations and write
+fixtures. An absent variable skips integration tests; a configured but unavailable
+database fails them. No production connection fallback or arbitrary server probing
+occurs in the test helper.
+
+The suite covers production configuration validation, workspace duration parsing,
+cancelled database initialization, migration idempotence/tracking, failed migration
+rollback and corrected retry (including `GO` batches), additive schema columns,
+and the existing multi-user workflow against the migrated database.
