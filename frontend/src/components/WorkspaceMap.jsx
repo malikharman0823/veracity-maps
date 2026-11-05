@@ -1407,7 +1407,7 @@ export default function WorkspaceMap({
                 {hoveredPoint.description}
               </div>
             )}
-            <div className="text-[9px] text-blue-300 capitalize">
+            <div className="text-[9px] text-[#3ecf8e] capitalize">
               Floor {hoveredPoint.floor_level} • {hoveredPoint.scope}
             </div>
           </div>

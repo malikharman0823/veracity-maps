@@ -344,7 +344,7 @@ function FloorLevelRow({
                 {isMultiLayer && (
                   <button
                     type="button"
-                    className="workspace-layer-feature-btn text-blue-600"
+                    className="workspace-layer-feature-btn text-[#24b47e] dark:text-[#3ecf8e]"
                     onClick={() => {
                       setExpanded(!expanded)
                       setMenuOpen(false)
@@ -535,7 +535,7 @@ function BuildingGroup({
           >
             {expanded ? <ChevronDown /> : <ChevronRight />}
           </button>
-          <Building2 className="size-4 text-blue-600 shrink-0" />
+          <Building2 className="size-4 text-[#24b47e] dark:text-[#3ecf8e] shrink-0" />
           <LayerCheckbox
             checked={allVisible}
             label={buildingName}
@@ -555,7 +555,7 @@ function BuildingGroup({
                 <button
                   type="button"
                   disabled={isPropagating}
-                  className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  className="text-[10px] text-[#24b47e] dark:text-[#3ecf8e] font-semibold bg-[#3ecf8e]/10 px-2 py-0.5 rounded-full border border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/20 transition-colors disabled:opacity-50 whitespace-nowrap"
                   title="Inherit footprint and georeference coordinates from matching floor"
                   onClick={handleInheritFootprint}
                 >
@@ -707,7 +707,7 @@ function FileDocumentGroup({
                 )}
                 <button
                   type="button"
-                  className="workspace-layer-feature-btn text-blue-600"
+                  className="workspace-layer-feature-btn text-[#24b47e] dark:text-[#3ecf8e]"
                   onClick={() => {
                     setExpanded((prev) => !prev)
                     setMenuOpen(false)

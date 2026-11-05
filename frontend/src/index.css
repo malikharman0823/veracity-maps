@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:where(.dark, :is(.dark *)));
+@custom-variant dark (.dark &, &.dark);
 @config "../tailwind.config.js";
 
 :root {
@@ -85,7 +85,7 @@ button:active,
 }
 
 :focus-visible {
-  outline: 2px solid #0071e3;
+  outline: 2px solid #3ecf8e;
   outline-offset: 3px;
 }
 
@@ -147,7 +147,9 @@ button:active,
   font-size: 10px;
 }
 
-input[type="range"] {
+input[type="range"],
+input[type="checkbox"],
+input[type="radio"] {
   accent-color: #3ecf8e;
 }
 

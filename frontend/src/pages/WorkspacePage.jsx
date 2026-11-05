@@ -716,23 +716,23 @@ export default function WorkspacePage() {
               <X />
             </button>
             <div className="workspace-dialog-icon">
-              <Bookmark className="text-blue-600 size-6" />
+              <Bookmark className="text-[#24b47e] dark:text-[#3ecf8e] size-6" />
             </div>
             <h2 id="save-config-title">Save Map Configuration</h2>
             <p>Save this configuration to the dashboard so you can reopen all layers, camera position, and active datasets anytime during this session.</p>
             <form onSubmit={handleSaveConfigSubmit} className="mt-4 flex flex-col gap-4 text-left">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Configuration Name</label>
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 block mb-1">Configuration Name</label>
                 <input
                   type="text"
                   value={saveConfigName}
                   onChange={(e) => setSaveConfigName(e.target.value)}
                   placeholder="e.g. Master Floorplan Review"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white rounded-[6px] focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
                   autoFocus
                 />
               </div>
-              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-[#171717] p-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e]">
                 <strong>Included datasets:</strong> {workspace.manifest?.members?.length || 1} layer(s)
               </div>
               <div className="workspace-dialog-actions mt-2">

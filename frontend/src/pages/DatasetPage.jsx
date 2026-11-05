@@ -447,15 +447,15 @@ export default function DatasetPage() {
 
   if (!dataset) {
     return (
-      <main className="min-h-screen bg-[#f5f5f7] px-5 py-24 flex items-center justify-center">
-        <div className="max-w-md w-full bg-[#ffffff] border border-[#e0e0e0] rounded-[18px] p-8 text-center shadow-xs" role="alert">
-          <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 text-[#ff3b30] flex items-center justify-center mx-auto mb-4">
+      <main className="min-h-screen bg-neutral-100 dark:bg-[#1c1c1c] px-5 py-24 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] p-8 text-center shadow-xs" role="alert">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="size-6" />
           </div>
-          <p className="font-semibold text-[#1d1d1f] text-base">{error?.message || "Dataset unavailable"}</p>
-          <p className="mt-2 text-xs text-[#7a7a7a] leading-relaxed">{error?.details}</p>
+          <p className="font-semibold text-neutral-900 dark:text-white text-base">{error?.message || "Dataset unavailable"}</p>
+          <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">{error?.details}</p>
           <div className="mt-6">
-            <Link className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#0066cc] px-6 py-2 text-xs font-normal text-white hover:bg-[#0071e3] transition-colors" to="/">
+            <Link className="inline-flex min-h-9 items-center justify-center rounded-[6px] bg-[#3ecf8e] px-5 py-2 text-xs font-semibold text-[#171717] hover:bg-[#24b47e] transition-colors cursor-pointer shadow-xs" to="/">
               Back to datasets
             </Link>
           </div>
