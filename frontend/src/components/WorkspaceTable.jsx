@@ -59,9 +59,9 @@ function coordinates(record) {
 }
 
 const LAYER_PALETTE = [
-  "#0066cc", // action blue
+  "#3ecf8e", // emerald
   "#8b5cf6", // purple
-  "#10b981", // emerald
+  "#10b981", // emerald-teal
   "#f59e0b", // amber
   "#ec4899", // pink
   "#06b6d4", // cyan
@@ -165,23 +165,23 @@ function RecordEditor({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md p-1 hover:bg-[#f5f5f7] transition-colors"
+          className="rounded-md p-1 hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors"
           aria-label="Close record details"
         >
-          <X className="size-4 text-[#7a7a7a]" />
+          <X className="size-4" />
         </button>
       </div>
 
       <div className="workspace-record-fields">
         {/* Quick Map Action */}
-        <div className="flex items-center gap-2 pb-2 border-b border-[#f0f0f0]">
+        <div className="flex items-center gap-2 pb-2 border-b border-neutral-200 dark:border-[#2e2e2e]">
           {onSwitchToMap && (
             <button
               type="button"
-              className="record-action-btn flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] text-xs font-medium text-[#1d1d1f] shadow-2xs transition-colors"
+              className="record-action-btn flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] hover:bg-neutral-50 dark:hover:bg-[#282828] text-xs font-medium text-neutral-900 dark:text-white shadow-2xs transition-colors"
               onClick={() => onSwitchToMap(record.id)}
             >
-              <Navigation className="size-3.5 text-[#0066cc]" />
+              <Navigation className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
               <span>Locate on Map</span>
             </button>
           )}
@@ -190,7 +190,7 @@ function RecordEditor({
               to={`/datasets/${record.dataset_id}/georeference?returnTo=${encodeURIComponent(
                 `/datasets/${workspaceId}/workspace?view=database`
               )}`}
-              className="record-action-btn flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-[#0066cc] bg-[#0066cc] hover:bg-[#0071e3] text-xs font-medium text-white shadow-2xs transition-colors"
+              className="record-action-btn flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] border border-[#24b47e] bg-[#3ecf8e] hover:bg-[#24b47e] text-xs font-semibold text-[#171717] shadow-2xs transition-colors"
             >
               <Sparkles className="size-3.5" />
               <span>Georeference</span>
@@ -201,9 +201,9 @@ function RecordEditor({
         {/* Editable Fields */}
         {record.kind === "raster" && (
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-[#1d1d1f]">Layer Alias</span>
+            <span className="text-xs font-medium text-neutral-900 dark:text-white">Layer Alias</span>
             <input
-              className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+              className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none"
               value={draft.alias || ""}
               onChange={(event) => update("alias", event.target.value)}
               placeholder="Display name for this layer"
@@ -214,9 +214,9 @@ function RecordEditor({
         {record.kind === "icon_point" && (
           <div className="space-y-3">
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-[#1d1d1f]">Point Name</span>
+              <span className="text-xs font-medium text-neutral-900 dark:text-white">Point Name</span>
               <input
-                className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+                className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none"
                 value={draft.name || ""}
                 onChange={(event) => update("name", event.target.value)}
                 placeholder="Point name"
@@ -224,9 +224,9 @@ function RecordEditor({
             </label>
             <div className="grid grid-cols-2 gap-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-[#1d1d1f]">Scope</span>
+                <span className="text-xs font-medium text-neutral-900 dark:text-white">Scope</span>
                 <select
-                  className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+                  className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none"
                   value={draft.scope || "floor"}
                   onChange={(event) => update("scope", event.target.value)}
                 >
@@ -236,9 +236,9 @@ function RecordEditor({
                 </select>
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-[#1d1d1f]">Floor</span>
+                <span className="text-xs font-medium text-neutral-900 dark:text-white">Floor</span>
                 <select
-                  className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none disabled:opacity-50"
+                  className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none disabled:opacity-50"
                   disabled={draft.scope === "building"}
                   value={draft.floor_level ?? 0}
                   onChange={(event) => update("floor_level", Number(event.target.value))}
@@ -254,9 +254,9 @@ function RecordEditor({
               </label>
             </div>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-[#1d1d1f]">Icon Marker</span>
+              <span className="text-xs font-medium text-neutral-900 dark:text-white">Icon Marker</span>
               <select
-                className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none"
+                className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none"
                 value={draft.icon_key || ""}
                 onChange={(event) => update("icon_key", event.target.value)}
               >
@@ -269,9 +269,9 @@ function RecordEditor({
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-[#1d1d1f]">Description / Note</span>
+              <span className="text-xs font-medium text-neutral-900 dark:text-white">Description / Note</span>
               <textarea
-                className="w-full text-xs py-2 px-3 rounded-lg border border-[#e0e0e0] bg-[#ffffff] focus:border-[#0066cc] outline-none resize-none"
+                className="w-full text-xs py-2 px-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:border-[#3ecf8e] outline-none resize-none"
                 value={draft.description || ""}
                 onChange={(event) => update("description", event.target.value)}
                 rows="3"
@@ -283,96 +283,96 @@ function RecordEditor({
 
         {/* Read-only dataset attributes */}
         <div className="space-y-3 pt-2">
-          <div className="text-[11px] font-mono uppercase tracking-wider text-[#7a7a7a] font-semibold">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-neutral-500 dark:text-neutral-400 font-semibold">
             Row Attributes
           </div>
 
           <div className="space-y-2 text-xs">
-            <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
-              <span className="text-[#7a7a7a] shrink-0 font-mono text-[11px]">id</span>
+            <div className="flex items-start justify-between gap-2 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+              <span className="text-neutral-500 dark:text-neutral-400 shrink-0 font-mono text-[11px]">id</span>
               <div className="flex items-center gap-1 min-w-0">
-                <span className="font-mono text-[11px] text-[#1d1d1f] truncate">{record.id}</span>
+                <span className="font-mono text-[11px] text-neutral-900 dark:text-white truncate">{record.id}</span>
                 <button
                   type="button"
                   onClick={() => copyText("id", record.id)}
-                  className="text-[#7a7a7a] hover:text-[#0066cc]"
+                  className="text-neutral-500 dark:text-neutral-400 hover:text-[#3ecf8e]"
                   title="Copy ID"
                 >
-                  {copiedKey === "id" ? <Check className="size-3 text-[#34c759]" /> : <Copy className="size-3" />}
+                  {copiedKey === "id" ? <Check className="size-3 text-[#3ecf8e]" /> : <Copy className="size-3" />}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
-              <span className="text-[#7a7a7a] shrink-0 font-mono text-[11px]">layer</span>
-              <span className="font-medium text-[#1d1d1f] truncate">{record.dataset_name}</span>
+            <div className="flex items-start justify-between gap-2 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+              <span className="text-neutral-500 dark:text-neutral-400 shrink-0 font-mono text-[11px]">layer</span>
+              <span className="font-medium text-neutral-900 dark:text-white truncate">{record.dataset_name}</span>
             </div>
 
-            <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
-              <span className="text-[#7a7a7a] shrink-0 font-mono text-[11px]">status</span>
+            <div className="flex items-start justify-between gap-2 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+              <span className="text-neutral-500 dark:text-neutral-400 shrink-0 font-mono text-[11px]">status</span>
               <span className={`workspace-status status-${record.status}`}>{formatKind(record.status)}</span>
             </div>
 
-            <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
-              <span className="text-[#7a7a7a] shrink-0 font-mono text-[11px]">crs</span>
-              <span className="font-mono text-[11px] text-[#1d1d1f]">{record.crs || "Unprojected"}</span>
+            <div className="flex items-start justify-between gap-2 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+              <span className="text-neutral-500 dark:text-neutral-400 shrink-0 font-mono text-[11px]">crs</span>
+              <span className="font-mono text-[11px] text-neutral-900 dark:text-white">{record.crs || "Unprojected"}</span>
             </div>
 
-            <div className="flex flex-col gap-1 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
+            <div className="flex flex-col gap-1 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
               <div className="flex items-center justify-between">
-                <span className="text-[#7a7a7a] font-mono text-[11px]">coordinates</span>
+                <span className="text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">coordinates</span>
                 <button
                   type="button"
                   onClick={() => copyText("coords", coordinates(record))}
-                  className="text-[#7a7a7a] hover:text-[#0066cc]"
+                  className="text-neutral-500 dark:text-neutral-400 hover:text-[#3ecf8e]"
                   title="Copy coordinates"
                 >
-                  {copiedKey === "coords" ? <Check className="size-3 text-[#34c759]" /> : <Copy className="size-3" />}
+                  {copiedKey === "coords" ? <Check className="size-3 text-[#3ecf8e]" /> : <Copy className="size-3" />}
                 </button>
               </div>
-              <span className="font-mono text-[11px] text-[#1d1d1f] break-all">{coordinates(record)}</span>
+              <span className="font-mono text-[11px] text-neutral-900 dark:text-white break-all">{coordinates(record)}</span>
             </div>
 
             {record.kind === "control_point" && (
-              <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
-                <span className="text-[#7a7a7a] shrink-0 font-mono text-[11px]">image_pixel</span>
-                <span className="font-mono text-[11px] text-[#1d1d1f]">
+              <div className="flex items-start justify-between gap-2 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+                <span className="text-neutral-500 dark:text-neutral-400 shrink-0 font-mono text-[11px]">image_pixel</span>
+                <span className="font-mono text-[11px] text-neutral-900 dark:text-white">
                   X: {record.image_x}, Y: {record.image_y}
                 </span>
               </div>
             )}
 
-            <div className="flex flex-col gap-1 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
+            <div className="flex flex-col gap-1 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
               <div className="flex items-center justify-between">
-                <span className="text-[#7a7a7a] font-mono text-[11px]">local_file_loc</span>
+                <span className="text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">local_file_loc</span>
                 <button
                   type="button"
                   onClick={() => copyText("path", record.managed_path)}
-                  className="text-[#7a7a7a] hover:text-[#0066cc]"
+                  className="text-neutral-500 dark:text-neutral-400 hover:text-[#3ecf8e]"
                   title="Copy path"
                 >
-                  {copiedKey === "path" ? <Check className="size-3 text-[#34c759]" /> : <Copy className="size-3" />}
+                  {copiedKey === "path" ? <Check className="size-3 text-[#3ecf8e]" /> : <Copy className="size-3" />}
                 </button>
               </div>
-              <span className="font-mono text-[11px] text-[#1d1d1f] break-all leading-tight">
+              <span className="font-mono text-[11px] text-neutral-900 dark:text-white break-all leading-tight">
                 {record.managed_path}
               </span>
             </div>
 
             {record.georeferenced_path && (
-              <div className="flex flex-col gap-1 p-2 rounded-lg bg-[#fafafc] border border-[#f0f0f0]">
+              <div className="flex flex-col gap-1 p-2 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
                 <div className="flex items-center justify-between">
-                  <span className="text-[#7a7a7a] font-mono text-[11px]">georef_output_path</span>
+                  <span className="text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">georef_output_path</span>
                   <button
                     type="button"
                     onClick={() => copyText("georef", record.georeferenced_path)}
-                    className="text-[#7a7a7a] hover:text-[#0066cc]"
+                    className="text-neutral-500 dark:text-neutral-400 hover:text-[#3ecf8e]"
                     title="Copy path"
                   >
-                    {copiedKey === "georef" ? <Check className="size-3 text-[#34c759]" /> : <Copy className="size-3" />}
+                    {copiedKey === "georef" ? <Check className="size-3 text-[#3ecf8e]" /> : <Copy className="size-3" />}
                   </button>
                 </div>
-                <span className="font-mono text-[11px] text-[#1d1d1f] break-all leading-tight">
+                <span className="font-mono text-[11px] text-neutral-900 dark:text-white break-all leading-tight">
                   {record.georeferenced_path}
                 </span>
               </div>
@@ -384,19 +384,19 @@ function RecordEditor({
         {record.metadata && Object.keys(record.metadata).length > 0 && (
           <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-[#7a7a7a] font-semibold">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-500 dark:text-neutral-400 font-semibold">
                 Metadata JSON
               </span>
               <button
                 type="button"
                 onClick={() => copyText("meta", JSON.stringify(record.metadata, null, 2))}
-                className="text-[11px] text-[#0066cc] hover:underline inline-flex items-center gap-1"
+                className="text-[11px] text-[#24b47e] dark:text-[#3ecf8e] hover:underline inline-flex items-center gap-1"
               >
-                {copiedKey === "meta" ? <Check className="size-3 text-[#34c759]" /> : <Copy className="size-3" />}
+                {copiedKey === "meta" ? <Check className="size-3 text-[#3ecf8e]" /> : <Copy className="size-3" />}
                 <span>Copy JSON</span>
               </button>
             </div>
-            <pre className="p-2.5 rounded-lg bg-[#1d1d1f] text-[#f5f5f7] text-[10px] font-mono overflow-auto max-h-40 leading-relaxed">
+            <pre className="p-2.5 rounded-[6px] bg-neutral-950 text-[#ededed] border border-neutral-800 text-[10px] font-mono overflow-auto max-h-40 leading-relaxed">
               {JSON.stringify(record.metadata, null, 2)}
             </pre>
           </div>
@@ -406,17 +406,17 @@ function RecordEditor({
       </div>
 
       {editable && (
-        <div className="workspace-editor-actions flex items-center justify-end gap-2 p-3 border-t border-[#f0f0f0]">
+        <div className="workspace-editor-actions flex items-center justify-end gap-2 p-3 border-t border-neutral-200 dark:border-[#2e2e2e]">
           <button
             type="button"
-            className="px-3 py-1.5 rounded-lg border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] text-xs font-medium text-[#1d1d1f] transition-colors"
+            className="px-3 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] hover:bg-neutral-50 dark:hover:bg-[#282828] text-xs font-medium text-neutral-900 dark:text-white transition-colors"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="px-3 py-1.5 rounded-lg bg-[#0066cc] hover:bg-[#0071e3] text-xs font-medium text-white transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-xs font-semibold text-[#171717] transition-colors flex items-center gap-1.5"
             onClick={save}
             disabled={saving}
           >
@@ -519,7 +519,7 @@ export default function WorkspaceTable({
         header: "#",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="text-[11px] font-mono text-[#7a7a7a] select-none">
+          <span className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 select-none">
             {row.index + 1 + (filters.page - 1) * filters.pageSize}
           </span>
         ),
@@ -534,7 +534,7 @@ export default function WorkspaceTable({
               style={{ backgroundColor: getLayerColor(row.original.dataset_id, members) }}
               title={`Layer: ${row.original.dataset_name}`}
             />
-            <span className="font-medium text-[#1d1d1f] truncate max-w-[200px]" title={row.original.name}>
+            <span className="font-medium text-neutral-900 dark:text-white truncate max-w-[200px]" title={row.original.name}>
               {row.original.name}
             </span>
           </div>
@@ -556,7 +556,7 @@ export default function WorkspaceTable({
         accessorKey: "dataset_name",
         header: "Layer",
         cell: ({ row }) => (
-          <div className="flex items-center gap-1.5 text-xs text-[#1d1d1f] max-w-[150px] truncate">
+          <div className="flex items-center gap-1.5 text-xs text-neutral-900 dark:text-white max-w-[150px] truncate">
             <span className="truncate">{row.original.dataset_name}</span>
           </div>
         ),
@@ -571,7 +571,7 @@ export default function WorkspaceTable({
             <button
               type="button"
               className={`p-1 rounded-md transition-colors ${
-                isVisible ? "text-[#0066cc] hover:bg-[#eaf3fc]" : "text-[#7a7a7a] hover:bg-[#f0f0f0]"
+                isVisible ? "text-[#24b47e] dark:text-[#3ecf8e] hover:bg-[#3ecf8e]/10" : "text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#282828]"
               }`}
               title={isVisible ? "Visible (click to hide)" : "Hidden (click to show)"}
               onClick={(e) => {
@@ -589,7 +589,7 @@ export default function WorkspaceTable({
         header: "Coordinates / Bounds",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-[#555] truncate max-w-[200px] block" title={coordinates(row.original)}>
+          <span className="font-mono text-[11px] text-neutral-600 dark:text-neutral-300 truncate max-w-[200px] block" title={coordinates(row.original)}>
             {coordinates(row.original)}
           </span>
         ),
@@ -604,7 +604,7 @@ export default function WorkspaceTable({
           return (
             <button
               type="button"
-              className="workspace-path-cell flex items-center gap-1 text-left font-mono text-[11px] text-[#555] hover:text-[#0066cc] group max-w-[240px]"
+              className="workspace-path-cell flex items-center gap-1 text-left font-mono text-[11px] text-neutral-600 dark:text-neutral-300 hover:text-[#3ecf8e] group max-w-[240px]"
               onClick={(event) => {
                 event.stopPropagation()
                 copyPath(row.original.id, path)
@@ -613,7 +613,7 @@ export default function WorkspaceTable({
             >
               <span className="truncate">{path}</span>
               {isCopied ? (
-                <Check className="size-3 text-[#34c759] shrink-0" />
+                <Check className="size-3 text-[#3ecf8e] shrink-0" />
               ) : (
                 <Copy className="size-3 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
               )}
@@ -626,7 +626,7 @@ export default function WorkspaceTable({
         header: "CRS",
         enableSorting: false,
         cell: ({ getValue }) => (
-          <span className="font-mono text-[11px] text-[#7a7a7a] px-1.5 py-0.5 rounded bg-[#f5f5f7] border border-[#e0e0e0]">
+          <span className="font-mono text-[11px] text-neutral-600 dark:text-neutral-300 px-1.5 py-0.5 rounded-[4px] bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
             {getValue() || "Unprojected"}
           </span>
         ),
@@ -651,7 +651,7 @@ export default function WorkspaceTable({
               {onSwitchToMap && (
                 <button
                   type="button"
-                  className="p-1 rounded hover:bg-[#eaf3fc] text-[#7a7a7a] hover:text-[#0066cc] transition-colors"
+                  className="p-1 rounded-[6px] hover:bg-neutral-100 dark:hover:bg-[#282828] text-neutral-400 hover:text-[#3ecf8e] transition-colors"
                   title="Locate on map"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -666,7 +666,7 @@ export default function WorkspaceTable({
                   to={`/datasets/${record.dataset_id}/georeference?returnTo=${encodeURIComponent(
                     `/datasets/${workspaceId}/workspace?view=database`
                   )}`}
-                  className="p-1 rounded hover:bg-[#eaf3fc] text-[#0066cc] transition-colors"
+                  className="p-1 rounded-[6px] hover:bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] transition-colors"
                   title="Georeference this dataset"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -720,21 +720,21 @@ export default function WorkspaceTable({
   ]
 
   return (
-    <div className="workspace-table-layout">
-      <section className="workspace-table-view flex flex-col h-full bg-[#ffffff]">
+    <div className="workspace-table-layout bg-white dark:bg-[#1c1c1c] text-neutral-900 dark:text-white">
+      <section className="workspace-table-view flex flex-col h-full bg-white dark:bg-[#1c1c1c]">
         {/* Table editor header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-[#e0e0e0] bg-[#fafafc]">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#202020]">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Database className="size-4 text-[#0066cc]" />
-              <span className="text-sm font-semibold text-[#1d1d1f]">Workspace Records</span>
+              <Database className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
+              <span className="text-sm font-semibold text-neutral-900 dark:text-white">Workspace Records</span>
             </div>
-            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-[#ffffff] border border-[#e0e0e0] text-[#7a7a7a]">
+            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-white dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-500 dark:text-neutral-400">
               {recordsData.total} {recordsData.total === 1 ? "row" : "rows"}
             </span>
 
             {/* Quick Sublayer Type Filter Tabs */}
-            <div className="hidden md:flex items-center gap-1 ml-2 bg-[#f0f0f2] p-0.5 rounded-lg border border-[#e0e0e0]">
+            <div className="hidden md:flex items-center gap-1 ml-2 bg-neutral-100 dark:bg-[#171717] p-0.5 rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e]">
               {sublayerTabs.map((tab) => {
                 const TabIcon = tab.icon
                 const isActive = filters.kind === tab.id
@@ -743,10 +743,10 @@ export default function WorkspaceTable({
                     key={tab.id}
                     type="button"
                     onClick={() => onFiltersChange({ kind: tab.id, page: 1 })}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] text-xs font-medium transition-colors ${
                       isActive
-                        ? "bg-[#ffffff] text-[#1d1d1f] shadow-2xs font-semibold"
-                        : "text-[#7a7a7a] hover:text-[#1d1d1f]"
+                        ? "bg-white dark:bg-[#282828] text-neutral-900 dark:text-white shadow-2xs font-semibold"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                     }`}
                   >
                     <TabIcon className="size-3" />
@@ -763,7 +763,7 @@ export default function WorkspaceTable({
               <button
                 type="button"
                 onClick={onAddDataset}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0066cc] hover:bg-[#0071e3] text-white text-xs font-medium shadow-2xs transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold shadow-xs transition-colors"
                 title="Add and merge another dataset into this workspace"
               >
                 <Plus className="size-3.5" />
@@ -776,10 +776,10 @@ export default function WorkspaceTable({
               <button
                 type="button"
                 onClick={() => exportRecords("csv")}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] text-[#1d1d1f] text-xs font-medium transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-50 dark:hover:bg-[#282828] text-neutral-900 dark:text-white text-xs font-medium transition-colors"
                 title="Export rows as CSV"
               >
-                <Download className="size-3 text-[#7a7a7a]" />
+                <Download className="size-3 text-neutral-500 dark:text-neutral-400" />
                 <span className="hidden sm:inline">Export</span>
               </button>
             </div>
@@ -787,22 +787,22 @@ export default function WorkspaceTable({
         </div>
 
         {/* Second Toolbar: Search, Filters, Column Select */}
-        <div className="workspace-table-toolbar flex flex-wrap items-center gap-2.5 px-4 py-2 border-b border-[#e0e0e0] bg-[#ffffff]">
+        <div className="workspace-table-toolbar flex flex-wrap items-center gap-2.5 px-4 py-2 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#1c1c1c]">
           {/* Search Bar */}
-          <div className="workspace-table-search flex items-center gap-2 flex-1 min-w-[200px] max-w-sm px-2.5 py-1.5 rounded-lg border border-[#e0e0e0] bg-[#fafafc] focus-within:bg-[#ffffff] focus-within:border-[#0066cc] transition-all">
-            <Search className="size-3.5 text-[#7a7a7a] shrink-0" />
+          <div className="workspace-table-search flex items-center gap-2 flex-1 min-w-[200px] max-w-sm px-2.5 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] focus-within:bg-white dark:focus-within:bg-[#171717] focus-within:border-[#3ecf8e] transition-all">
+            <Search className="size-3.5 text-neutral-500 dark:text-neutral-400 shrink-0" />
             <input
               value={filters.search}
               onChange={(event) => onFiltersChange({ search: event.target.value, page: 1 })}
               placeholder="Search records by name, ID, or coords…"
-              className="text-xs bg-transparent border-0 outline-none w-full placeholder:text-[#7a7a7a]"
+              className="text-xs bg-transparent border-0 outline-none w-full text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
               aria-label="Search workspace records"
             />
             {filters.search && (
               <button
                 type="button"
                 onClick={() => onFiltersChange({ search: "", page: 1 })}
-                className="text-[#7a7a7a] hover:text-[#1d1d1f]"
+                className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
               >
                 <X className="size-3" />
               </button>
@@ -811,11 +811,11 @@ export default function WorkspaceTable({
 
           {/* Layer Filter (All Datasets or Specific Member) */}
           <div className="flex items-center gap-1.5">
-            <Filter className="size-3 text-[#7a7a7a] hidden sm:inline" />
+            <Filter className="size-3 text-neutral-500 dark:text-neutral-400 hidden sm:inline" />
             <select
               value={filters.datasetId}
               onChange={(event) => onFiltersChange({ datasetId: event.target.value, page: 1 })}
-              className="text-xs py-1.5 px-2.5 rounded-lg border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f] outline-none"
+              className="text-xs py-1.5 px-2.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white outline-none"
               aria-label="Filter by dataset layer"
             >
               <option value="">All Layers ({members.length})</option>
@@ -832,7 +832,7 @@ export default function WorkspaceTable({
             <select
               value={filters.kind}
               onChange={(event) => onFiltersChange({ kind: event.target.value, page: 1 })}
-              className="text-xs py-1.5 px-2.5 rounded-lg border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f] outline-none"
+              className="text-xs py-1.5 px-2.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white outline-none"
               aria-label="Filter record type"
             >
               <option value="">All Types</option>
@@ -846,7 +846,7 @@ export default function WorkspaceTable({
           <select
             value={filters.status}
             onChange={(event) => onFiltersChange({ status: event.target.value, page: 1 })}
-            className="text-xs py-1.5 px-2.5 rounded-lg border border-[#e0e0e0] bg-[#fafafc] text-[#1d1d1f] outline-none"
+            className="text-xs py-1.5 px-2.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white outline-none"
             aria-label="Filter status"
           >
             <option value="">All Statuses</option>
@@ -860,26 +860,26 @@ export default function WorkspaceTable({
             <button
               type="button"
               onClick={() => setColumnsOpen((value) => !value)}
-              className="flex items-center gap-1.5 text-xs py-1.5 px-2.5 rounded-lg border border-[#e0e0e0] bg-[#fafafc] text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#ffffff] transition-colors"
+              className="flex items-center gap-1.5 text-xs py-1.5 px-2.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-[#202020] transition-colors"
             >
               <Columns3 className="size-3.5" />
               <span>Columns</span>
             </button>
             {columnsOpen && (
-              <div className="workspace-columns-popover absolute right-0 top-full mt-1.5 z-30 p-2.5 rounded-xl border border-[#e0e0e0] bg-[#ffffff] shadow-lg min-w-[180px] space-y-1.5">
-                <div className="text-[11px] font-semibold text-[#7a7a7a] pb-1 border-b border-[#f0f0f0]">
+              <div className="workspace-columns-popover absolute right-0 top-full mt-1.5 z-30 p-2.5 rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] shadow-lg min-w-[180px] space-y-1.5">
+                <div className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 pb-1 border-b border-neutral-200 dark:border-[#2e2e2e]">
                   Toggle Columns
                 </div>
                 {table.getAllLeafColumns().map((column) => (
                   <label
                     key={column.id}
-                    className="flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer hover:bg-[#f5f5f7] p-1 rounded"
+                    className="flex items-center gap-2 text-xs text-neutral-900 dark:text-white cursor-pointer hover:bg-neutral-100 dark:hover:bg-[#282828] p-1 rounded-[4px]"
                   >
                     <input
                       type="checkbox"
                       checked={column.getIsVisible()}
                       onChange={column.getToggleVisibilityHandler()}
-                      className="accent-[#0066cc]"
+                      className="accent-[#3ecf8e]"
                     />
                     <span>{typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}</span>
                   </label>
@@ -890,15 +890,15 @@ export default function WorkspaceTable({
         </div>
 
         {/* Table Body */}
-        <div className="workspace-table-scroll flex-1 overflow-auto bg-[#ffffff]">
+        <div className="workspace-table-scroll flex-1 overflow-auto bg-white dark:bg-[#1c1c1c]">
           <table className="workspace-table record-grid w-full">
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} className="border-b border-[#e0e0e0] bg-[#fafafc]">
+                <tr key={headerGroup.id} className="border-b border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#202020]">
                   {headerGroup.headers.map((header) => (
                     <th
                       key={header.id}
-                      className="py-2.5 px-3 text-left font-semibold text-xs text-[#555] border-r border-[#f0f0f0] select-none"
+                      className="py-2.5 px-3 text-left font-semibold text-xs text-neutral-600 dark:text-neutral-300 border-r border-neutral-200 dark:border-[#2e2e2e] select-none"
                     >
                       {header.isPlaceholder ? null : (
                         <button
@@ -924,8 +924,8 @@ export default function WorkspaceTable({
               {loading ? (
                 <tr>
                   <td colSpan={columns.length} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center gap-2 text-[#7a7a7a] text-xs">
-                      <Loader2 className="size-5 animate-spin text-[#0066cc]" />
+                    <div className="flex flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400 text-xs">
+                      <Loader2 className="size-5 animate-spin text-[#24b47e] dark:text-[#3ecf8e]" />
                       <span>Loading workspace records…</span>
                     </div>
                   </td>
@@ -936,13 +936,13 @@ export default function WorkspaceTable({
                   return (
                     <tr
                       key={row.id}
-                      className={`border-b border-[#f0f0f0] cursor-pointer transition-colors ${
-                        isSelected ? "bg-[#eaf3fc]" : "hover:bg-[#fafafc]"
+                      className={`border-b border-neutral-200 dark:border-[#2e2e2e] cursor-pointer transition-colors ${
+                        isSelected ? "bg-[#3ecf8e]/10" : "hover:bg-neutral-50 dark:hover:bg-[#252525]"
                       }`}
                       onClick={() => onSelectRecord(row.original.id)}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="py-2 px-3 text-xs border-r border-[#f0f0f0]">
+                        <td key={cell.id} className="py-2 px-3 text-xs border-r border-neutral-200 dark:border-[#2e2e2e]">
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
@@ -952,10 +952,10 @@ export default function WorkspaceTable({
               ) : (
                 <tr>
                   <td colSpan={columns.length} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center gap-2 text-[#7a7a7a] text-xs">
-                      <Database className="size-6 text-[#cccccc]" />
-                      <span className="font-medium text-[#1d1d1f]">No matching records</span>
-                      <p className="text-[11px] text-[#7a7a7a]">
+                    <div className="flex flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400 text-xs">
+                      <Database className="size-6 text-neutral-400 dark:text-neutral-600" />
+                      <span className="font-medium text-neutral-900 dark:text-white">No matching records</span>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                         Try clearing search terms or changing your layer filter.
                       </p>
                     </div>
@@ -967,7 +967,7 @@ export default function WorkspaceTable({
         </div>
 
         {/* Footer Pagination */}
-        <div className="workspace-table-footer flex items-center justify-between px-4 py-2.5 border-t border-[#e0e0e0] bg-[#fafafc] text-xs text-[#7a7a7a]">
+        <div className="workspace-table-footer flex items-center justify-between px-4 py-2.5 border-t border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#202020] text-xs text-neutral-500 dark:text-neutral-400">
           <div className="flex items-center gap-2">
             <span>
               Showing {recordsData.records.length} of {recordsData.total} records
@@ -978,7 +978,7 @@ export default function WorkspaceTable({
               type="button"
               disabled={filters.page <= 1}
               onClick={() => onFiltersChange({ page: filters.page - 1 })}
-              className="p-1 rounded border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] disabled:opacity-40"
+              className="p-1 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-[#282828] disabled:opacity-40 cursor-pointer"
               aria-label="Previous page"
             >
               <ChevronLeft className="size-3.5" />
@@ -990,7 +990,7 @@ export default function WorkspaceTable({
               type="button"
               disabled={filters.page >= recordsData.pages}
               onClick={() => onFiltersChange({ page: filters.page + 1 })}
-              className="p-1 rounded border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#fafafc] disabled:opacity-40"
+              className="p-1 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-[#282828] disabled:opacity-40 cursor-pointer"
               aria-label="Next page"
             >
               <ChevronRight className="size-3.5" />

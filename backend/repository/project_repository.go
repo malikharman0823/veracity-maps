@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -250,20 +251,32 @@ func (r *ProjectRepository) Create(userID, name, description, ownerName, ownerEm
 	r.logActivityLocked(projectID, userID, ownerName, "project_created", "Project created")
 
 	if r.db != nil {
-		var orgIDParam interface{} = nil
+		var orgIDParam sql.NullString
 		if orgID != "" {
-			orgIDParam = orgID
+			orgIDParam = sql.NullString{String: orgID, Valid: true}
+		}
+		var descParam sql.NullString
+		if p.Description != "" {
+			descParam = sql.NullString{String: p.Description, Valid: true}
+		}
+		var primaryDSParam sql.NullString
+		if p.PrimaryDatasetID != "" {
+			primaryDSParam = sql.NullString{String: p.PrimaryDatasetID, Valid: true}
 		}
 		datasetBytes, _ := json.Marshal(p.DatasetIDs)
-		_, _ = r.db.Exec(`
+		if _, err := r.db.Exec(`
 			INSERT INTO Projects (id, user_id, org_id, owner_type, name, description, primary_dataset_id, dataset_ids, created_at, updated_at)
 			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
-		`, p.ID, p.UserID, orgIDParam, p.OwnerType, p.Name, p.Description, nil, string(datasetBytes), p.CreatedAt, p.UpdatedAt)
+		`, p.ID, p.UserID, orgIDParam, p.OwnerType, p.Name, descParam, primaryDSParam, string(datasetBytes), p.CreatedAt, p.UpdatedAt); err != nil {
+			log.Printf("[MSSQL ERROR] Projects INSERT failed: %v", err)
+		}
 
-		_, _ = r.db.Exec(`
+		if _, err := r.db.Exec(`
 			INSERT INTO ProjectMembers (id, project_id, user_id, user_email, user_name, role, invitation_status, invited_by, created_at, updated_at)
 			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
-		`, ownerMember.ID, ownerMember.ProjectID, ownerMember.UserID, ownerMember.UserEmail, ownerMember.UserName, string(ownerMember.Role), string(ownerMember.InvitationStatus), ownerMember.InvitedBy, ownerMember.CreatedAt, ownerMember.UpdatedAt)
+		`, ownerMember.ID, ownerMember.ProjectID, ownerMember.UserID, ownerMember.UserEmail, ownerMember.UserName, string(ownerMember.Role), string(ownerMember.InvitationStatus), ownerMember.InvitedBy, ownerMember.CreatedAt, ownerMember.UpdatedAt); err != nil {
+			log.Printf("[MSSQL ERROR] ProjectMembers INSERT failed: %v", err)
+		}
 	}
 
 	return p, nil

@@ -282,7 +282,7 @@ export default function ReferenceMap({
           source: "control-points",
           paint: {
             "circle-radius": ["case", ["boolean", ["get", "selected"], false], 12, 10],
-            "circle-color": ["case", ["boolean", ["get", "selected"], false], "#0052a3", "#0066cc"],
+            "circle-color": ["case", ["boolean", ["get", "selected"], false], "#24b47e", "#3ecf8e"],
             "circle-stroke-width": 2,
             "circle-stroke-color": "#ffffff",
           },
@@ -565,7 +565,7 @@ export default function ReferenceMap({
               <Button
                 type="button"
                 size="sm"
-                className="h-7 rounded-full bg-[#0066cc] px-2.5 text-[11px] font-medium text-white hover:bg-[#0071e3]"
+                className="h-7 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-2.5 text-[11px] font-semibold text-[#171717] shadow-xs cursor-pointer"
                 onClick={handlePairTargetPin}
               >
                 <Check className="mr-1 size-3" />

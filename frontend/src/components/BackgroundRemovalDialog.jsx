@@ -165,18 +165,18 @@ export default function BackgroundRemovalDialog({
 
   return (
     <div className="bg-removal-backdrop" role="presentation">
-      <div className="bg-removal-modal" role="dialog" aria-modal="true" aria-labelledby="bg-removal-title">
+      <div className="bg-removal-modal bg-white dark:bg-[#202020] text-neutral-900 dark:text-white border border-neutral-200 dark:border-[#2e2e2e] shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="bg-removal-title">
         {/* Header */}
-        <div className="bg-removal-header">
+        <div className="bg-removal-header border-b border-neutral-200 dark:border-[#2e2e2e]">
           <div className="flex items-center gap-2">
-            <span className="bg-removal-icon">
+            <span className="bg-removal-icon bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e]">
               <Sparkles />
             </span>
             <div>
-              <h2 id="bg-removal-title" className="text-base font-bold text-gray-900 leading-tight">
+              <h2 id="bg-removal-title" className="text-base font-bold text-neutral-900 dark:text-white leading-tight">
                 Remove Floor Plan Background
               </h2>
-              <p className="text-xs text-gray-500">{datasetName}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">{datasetName}</p>
             </div>
           </div>
           <button
@@ -212,8 +212,8 @@ export default function BackgroundRemovalDialog({
         {/* Content Body */}
         {loading ? (
           <div className="bg-removal-loading">
-            <Loader2 className="animate-spin" />
-            <span>Loading raster properties…</span>
+            <Loader2 className="animate-spin text-[#24b47e] dark:text-[#3ecf8e]" />
+            <span className="text-neutral-500 dark:text-neutral-400">Loading raster properties…</span>
           </div>
         ) : (
           <div className="bg-removal-grid">
@@ -232,8 +232,8 @@ export default function BackgroundRemovalDialog({
               {/* Background Color Picker */}
               <div className="bg-removal-section">
                 <label className="bg-removal-label">
-                  <span>Background Color to Remove</span>
-                  <span className="text-xs font-mono text-gray-500 uppercase">{color}</span>
+                  <span className="text-neutral-800 dark:text-neutral-200">Background Color to Remove</span>
+                  <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400 uppercase">{color}</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -258,9 +258,9 @@ export default function BackgroundRemovalDialog({
               <div className="bg-removal-section">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="bg-removal-label mb-0">
-                    <span>Background Threshold</span>
+                    <span className="text-neutral-800 dark:text-neutral-200">Background Threshold</span>
                   </label>
-                  <span className="text-xs font-semibold text-blue-600">{threshold}</span>
+                  <span className="text-xs font-semibold text-[#24b47e] dark:text-[#3ecf8e]">{threshold}</span>
                 </div>
                 <input
                   type="range"
@@ -277,9 +277,9 @@ export default function BackgroundRemovalDialog({
               <div className="bg-removal-section">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="bg-removal-label mb-0">
-                    <span>Edge Softness</span>
+                    <span className="text-neutral-800 dark:text-neutral-200">Edge Softness</span>
                   </label>
-                  <span className="text-xs font-semibold text-blue-600">{edgeSoftness}px</span>
+                  <span className="text-xs font-semibold text-[#24b47e] dark:text-[#3ecf8e]">{edgeSoftness}px</span>
                 </div>
                 <input
                   type="range"
@@ -294,16 +294,16 @@ export default function BackgroundRemovalDialog({
 
               {/* Multi-Floor Propagation Checkbox */}
               <div className="bg-removal-section pt-1">
-                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 select-none">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
                   <input
                     type="checkbox"
                     checked={applyToAllFloors}
                     onChange={(e) => setApplyToAllFloors(e.target.checked)}
-                    className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    className="mt-0.5 rounded border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e] cursor-pointer"
                   />
                   <div>
-                    <span className="font-semibold block text-slate-800">Apply these background-removal settings to all floors</span>
-                    <span className="text-[11px] text-slate-500 block leading-tight mt-0.5">
+                    <span className="font-semibold block text-neutral-800 dark:text-neutral-200">Apply these background-removal settings to all floors</span>
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block leading-tight mt-0.5">
                       Propagates color and threshold settings across all floors in the building while preserving each floor's original raster.
                     </span>
                   </div>
@@ -315,10 +315,10 @@ export default function BackgroundRemovalDialog({
             {/* Right Column: Visual Preview */}
             <div className="bg-removal-preview-wrap">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5 text-gray-500" />
+                <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400" />
                   <span>Transparency Preview</span>
-                  {previewing && <Loader2 className="w-3 h-3 animate-spin text-blue-600" />}
+                  {previewing && <Loader2 className="w-3 h-3 animate-spin text-[#24b47e] dark:text-[#3ecf8e]" />}
                 </span>
               </div>
 
@@ -332,7 +332,7 @@ export default function BackgroundRemovalDialog({
                   />
                 ) : (
                   <div className="bg-removal-stage-placeholder">
-                    {previewing ? <Loader2 className="animate-spin" /> : <span>No preview available</span>}
+                    {previewing ? <Loader2 className="animate-spin text-[#24b47e] dark:text-[#3ecf8e]" /> : <span>No preview available</span>}
                   </div>
                 )}
               </div>
@@ -341,10 +341,10 @@ export default function BackgroundRemovalDialog({
         )}
 
         {/* Footer Actions */}
-        <div className="bg-removal-footer">
+        <div className="bg-removal-footer bg-neutral-50 dark:bg-[#171717] border-t border-neutral-200 dark:border-[#2e2e2e]">
           <button
             type="button"
-            className="bg-removal-btn-reset"
+            className="bg-removal-btn-reset bg-white dark:bg-[#202020] text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828]"
             onClick={handleReset}
             disabled={processing || loading}
             title="Restore original raster and disable background removal"
@@ -355,7 +355,7 @@ export default function BackgroundRemovalDialog({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="bg-removal-btn-cancel"
+              className="bg-removal-btn-cancel text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#282828]"
               onClick={onClose}
               disabled={processing}
             >
@@ -363,7 +363,7 @@ export default function BackgroundRemovalDialog({
             </button>
             <button
               type="button"
-              className="bg-removal-btn-apply"
+              className="bg-removal-btn-apply bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold"
               onClick={handleApply}
               disabled={processing || loading}
             >

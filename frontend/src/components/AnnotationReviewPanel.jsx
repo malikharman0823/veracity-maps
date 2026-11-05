@@ -223,20 +223,20 @@ export default function AnnotationReviewPanel({
         <div className="px-6 py-3 border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
             <div className="relative flex-1 min-w-[160px] max-w-xs">
-              <Search className="size-3.5 text-[#7a7a7a] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="size-3.5 text-neutral-500 dark:text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filter labels or CAD layers..."
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-[#e0e0e0] focus:outline-none focus:border-[#0066cc]"
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e]"
               />
             </div>
 
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-[#e0e0e0] bg-white focus:outline-none focus:border-[#0066cc]"
+              className="text-xs px-2.5 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e]"
             >
               <option value="all">All Categories</option>
               {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
@@ -253,7 +253,7 @@ export default function AnnotationReviewPanel({
               onChange={(e) => setMinConfidence(Number(e.target.value))}
               disabled={runningOcr}
               title="Minimum OCR Confidence"
-              className="text-xs px-2 py-1.5 rounded-lg border border-[#e0e0e0] bg-white"
+              className="text-xs px-2 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white"
             >
               <option value={0.35}>Conf ≥ 35%</option>
               <option value={0.5}>Conf ≥ 50%</option>
@@ -264,7 +264,7 @@ export default function AnnotationReviewPanel({
               type="button"
               onClick={handleAddManual}
               disabled={runningOcr || savingId === "new"}
-              className="inline-flex items-center gap-1 rounded-full border border-[#e0e0e0] bg-white px-3 py-1.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7]"
+              className="inline-flex items-center gap-1 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-3 py-1.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828]"
             >
               <Plus className="size-3.5" />
               <span>Add Label</span>
@@ -274,7 +274,7 @@ export default function AnnotationReviewPanel({
               type="button"
               onClick={handleRunOcr}
               disabled={runningOcr}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#0066cc] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#0055b3] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] px-3.5 py-1.5 text-xs font-semibold text-[#171717] disabled:opacity-50"
             >
               {runningOcr ? (
                 <>
@@ -293,30 +293,30 @@ export default function AnnotationReviewPanel({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-3">
-          <div className="p-3 rounded-xl bg-[#f5f8ff] border border-[#dce8f8] text-[11px] text-[#334155]">
-            <strong>Truthfulness & Source Integrity:</strong> Labels are stored separately from original raster pixels. Unreviewed OCR detections remain marked <em>Unverified</em> until confirmed by an engineer, and false positives can be hidden or deleted at any time.
+          <div className="p-3 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-[11px] text-neutral-600 dark:text-neutral-400">
+            <strong className="text-neutral-900 dark:text-white">Truthfulness & Source Integrity:</strong> Labels are stored separately from original raster pixels. Unreviewed OCR detections remain marked <em>Unverified</em> until confirmed by an engineer, and false positives can be hidden or deleted at any time.
           </div>
 
           {error && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+            <div className="p-3 rounded-[8px] bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold">{error.message || "Annotation error"}</p>
-                {error.details && <p className="text-red-600 mt-0.5">{error.details}</p>}
+                {error.details && <p className="text-red-500/80 mt-0.5">{error.details}</p>}
               </div>
             </div>
           )}
 
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-xs text-[#7a7a7a] gap-2">
-              <Loader2 className="size-5 animate-spin text-[#0066cc]" />
+            <div className="py-12 flex flex-col items-center justify-center text-xs text-neutral-500 dark:text-neutral-400 gap-2">
+              <Loader2 className="size-5 animate-spin text-[#24b47e] dark:text-[#3ecf8e]" />
               <span>Loading extracted vector & OCR annotations...</span>
             </div>
           ) : filteredAnnotations.length === 0 ? (
-            <div className="py-12 text-center border border-dashed border-[#e0e0e0] rounded-xl bg-[#fafafc] px-4">
-              <ScanText className="size-7 text-[#7a7a7a] mx-auto mb-2" />
-              <p className="text-xs font-semibold text-[#1d1d1f]">No label annotations found</p>
-              <p className="text-[11px] text-[#7a7a7a] mt-1 max-w-md mx-auto">
+            <div className="py-12 text-center border border-dashed border-neutral-200 dark:border-[#2e2e2e] rounded-[10px] bg-neutral-50 dark:bg-[#171717] px-4">
+              <ScanText className="size-7 text-neutral-400 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-neutral-900 dark:text-white">No label annotations found</p>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 max-w-md mx-auto">
                 Click <strong>Run PaddleOCR</strong> above to detect dimensions, elevations, pipe/culvert tags, and road labels, or import a vector PDF / CAD DXF drawing.
               </p>
             </div>
@@ -329,36 +329,36 @@ export default function AnnotationReviewPanel({
                 return (
                   <div
                     key={ann.id}
-                    className={`rounded-xl border p-3 transition-colors ${
+                    className={`rounded-[8px] border p-3 transition-colors ${
                       ann.visible
-                        ? "border-[#e0e0e0] bg-white"
-                        : "border-[#ececef] bg-[#fafafc] opacity-70"
+                        ? "border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020]"
+                        : "border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] opacity-70"
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                        <span className="px-2 py-0.5 rounded-full bg-[#f0f4ff] text-[#0066cc] border border-[#0066cc]/20 font-semibold">
+                        <span className="px-2 py-0.5 rounded-full bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-semibold">
                           {SOURCE_LABELS[ann.source] || ann.source || "OCR"}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[#f5f5f7] text-[#555558] border border-[#e0e0e0] font-medium">
+                        <span className="px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-[#171717] text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-[#2e2e2e] font-medium">
                           {CATEGORY_LABELS[ann.category] || ann.category || "General"}
                         </span>
                         {typeof ann.confidence === "number" && (
-                          <span className="font-mono text-[#7a7a7a]">
+                          <span className="font-mono text-neutral-500 dark:text-neutral-400">
                             {Math.round(ann.confidence * 100)}% conf
                           </span>
                         )}
                         {ann.cad_layer && (
-                          <span className="font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                          <span className="font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-[#171717] text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-[#2e2e2e]">
                             Layer: {ann.cad_layer}
                           </span>
                         )}
                         {ann.has_geo ? (
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="px-1.5 py-0.5 rounded bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30">
                             WGS84 Map Overlay
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                             Pixel Space ({Math.round(ann.image_x)}, {Math.round(ann.image_y)})
                           </span>
                         )}
@@ -369,10 +369,10 @@ export default function AnnotationReviewPanel({
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleToggleField(ann, "verified")}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-[6px] text-[11px] font-medium border transition-colors ${
                             ann.verified
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                              : "bg-white text-[#7a7a7a] border-[#e0e0e0] hover:text-[#1d1d1f]"
+                              ? "bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border-[#3ecf8e]/30"
+                              : "bg-white dark:bg-[#202020] text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-[#2e2e2e] hover:text-neutral-900 dark:hover:text-white"
                           }`}
                           title={ann.verified ? "Verified engineering label" : "Mark label as verified"}
                         >
@@ -393,7 +393,7 @@ export default function AnnotationReviewPanel({
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleToggleField(ann, "visible")}
-                          className="p-1.5 rounded-md border border-[#e0e0e0] bg-white text-[#555558] hover:text-[#1d1d1f]"
+                          className="p-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                           title={ann.visible ? "Hide from MapLibre overlay" : "Show on MapLibre overlay"}
                         >
                           {ann.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
@@ -403,7 +403,7 @@ export default function AnnotationReviewPanel({
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleDelete(ann.id)}
-                          className="p-1.5 rounded-md border border-[#e0e0e0] bg-white text-red-600 hover:bg-red-50"
+                          className="p-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] text-red-500 hover:bg-red-500/10"
                           title="Delete false-positive detection"
                         >
                           <Trash2 className="size-3.5" />
@@ -424,7 +424,7 @@ export default function AnnotationReviewPanel({
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && isDirty) handleSaveText(ann)
                         }}
-                        className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-[#e0e0e0] focus:outline-none focus:border-[#0066cc] font-medium"
+                        className="flex-1 text-xs px-3 py-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e] font-medium"
                       />
                       {isDirty && (
                         <button

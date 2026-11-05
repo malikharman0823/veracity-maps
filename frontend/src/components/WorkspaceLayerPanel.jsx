@@ -650,9 +650,9 @@ function FileDocumentGroup({
   const GroupIcon = isPdf ? FileText : Archive
 
   return (
-    <div className={`workspace-doc-container ${expanded ? "" : "is-collapsed"}`}>
+    <div className={`workspace-doc-container bg-white dark:bg-[#1c1c1c] border border-slate-200 dark:border-[#2e2e2e] ${expanded ? "" : "is-collapsed"}`}>
       {/* File Document Layer Header */}
-      <div className="workspace-doc-header">
+      <div className="workspace-doc-header bg-slate-50 dark:bg-[#202020] border-b border-slate-200 dark:border-[#2e2e2e]">
         <div className="workspace-doc-header-main">
           <button
             type="button"
@@ -751,7 +751,7 @@ function FileDocumentGroup({
             return (
               <div
                 key={member.dataset_id}
-                className={`workspace-doc-sublayer ${isSelected ? "is-selected" : ""}`}
+                className={`workspace-doc-sublayer bg-white dark:bg-[#202020] border border-slate-200 dark:border-[#2e2e2e] text-neutral-800 dark:text-neutral-200 ${isSelected ? "is-selected dark:bg-[#3ecf8e]/10" : ""}`}
               >
                 <div
                   className="workspace-doc-sublayer-info"
@@ -773,7 +773,7 @@ function FileDocumentGroup({
                   />
 
                   {/* Dynamic Thumbnail Preview */}
-                  <div className="workspace-doc-thumb" title={sublayerLabel}>
+                  <div className="workspace-doc-thumb bg-slate-100 dark:bg-[#171717] border border-slate-200 dark:border-[#2e2e2e]" title={sublayerLabel}>
                     <img
                       src={thumbUrl}
                       alt=""
@@ -785,10 +785,10 @@ function FileDocumentGroup({
                   </div>
 
                   <div className="workspace-doc-sublayer-text">
-                    <span className="workspace-doc-sublayer-name" title={sublayerLabel}>
+                    <span className="workspace-doc-sublayer-name text-neutral-900 dark:text-white" title={sublayerLabel}>
                       {sublayerLabel}
                     </span>
-                    <span className="workspace-doc-sublayer-meta">
+                    <span className="workspace-doc-sublayer-meta text-neutral-500 dark:text-neutral-400">
                       {isGeoreferenced ? (
                         <span className="text-emerald-600 font-medium">Georeferenced</span>
                       ) : (
@@ -1252,8 +1252,8 @@ export default function WorkspaceLayerPanel({
   const memberById = new Map(standaloneMembers.map((member) => [member.dataset_id, member]))
 
   return (
-    <aside className="workspace-layer-panel" aria-label="Workspace layers">
-      <div className="workspace-panel-header">
+    <aside className="workspace-layer-panel bg-white dark:bg-[#202020] text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-[#2e2e2e]" aria-label="Workspace layers">
+      <div className="workspace-panel-header border-b border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020]">
         <div>
           <span className="workspace-eyebrow">Layer stack</span>
           <h2>Datasets</h2>

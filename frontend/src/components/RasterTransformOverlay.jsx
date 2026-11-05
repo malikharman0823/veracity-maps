@@ -274,7 +274,7 @@ export default function RasterTransformOverlay({
           type: "fill",
           source: SOURCE_ID,
           paint: {
-            "fill-color": "#0066cc",
+            "fill-color": "#3ecf8e",
             "fill-opacity": 0.08,
           },
         })
@@ -283,7 +283,7 @@ export default function RasterTransformOverlay({
           type: "line",
           source: SOURCE_ID,
           paint: {
-            "line-color": "#0066cc",
+            "line-color": "#3ecf8e",
             "line-width": 2.5,
             "line-dasharray": [2, 1.5],
           },
@@ -355,7 +355,7 @@ export default function RasterTransformOverlay({
               ["get", "kind"],
               "rotation", "#ffffff",
               "pivot", "#ffffff",
-              "#0066cc",
+              "#3ecf8e",
             ],
           },
         })
@@ -721,15 +721,15 @@ export default function RasterTransformOverlay({
   }
 
   return (
-    <aside className="workspace-transform-toolbar" aria-label="Raster Transformation Controls">
+    <aside className="workspace-transform-toolbar bg-white/95 dark:bg-[#202020]/95 backdrop-blur-md border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white rounded-[12px] shadow-2xl" aria-label="Raster Transformation Controls">
       <div className="workspace-transform-header">
-        <div className="workspace-transform-title">
+        <div className="workspace-transform-title font-semibold text-neutral-900 dark:text-white">
           <Sparkles className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
           <span>Transform: {datasetName}</span>
         </div>
         <button
           type="button"
-          className="workspace-dialog-close"
+          className="workspace-dialog-close text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
           onClick={onClose}
           aria-label="Close transform tool"
         >
@@ -738,7 +738,7 @@ export default function RasterTransformOverlay({
       </div>
 
       {error && (
-        <div className="workspace-dialog-error" style={{ margin: "4px 0" }}>
+        <div className="workspace-dialog-error bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 p-2 rounded-[6px]" style={{ margin: "4px 0" }}>
           <AlertCircle className="size-4" />
           <div>
             <strong>{error.message}</strong>
@@ -748,10 +748,10 @@ export default function RasterTransformOverlay({
       )}
 
       {/* Mode Switcher */}
-      <div className="workspace-transform-modes">
+      <div className="workspace-transform-modes bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] rounded-[8px] p-1">
         <button
           type="button"
-          className={`workspace-transform-mode-btn${mode === "move" ? " is-active" : ""}`}
+          className={`workspace-transform-mode-btn rounded-[6px] transition-colors ${mode === "move" ? "is-active bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"}`}
           onClick={() => setMode("move")}
           title="Move: Translate entire raster"
         >
@@ -760,7 +760,7 @@ export default function RasterTransformOverlay({
         </button>
         <button
           type="button"
-          className={`workspace-transform-mode-btn${mode === "resize" ? " is-active" : ""}`}
+          className={`workspace-transform-mode-btn rounded-[6px] transition-colors ${mode === "resize" ? "is-active bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"}`}
           onClick={() => setMode("resize")}
           title="Resize: Scale corners and edges"
         >
@@ -769,7 +769,7 @@ export default function RasterTransformOverlay({
         </button>
         <button
           type="button"
-          className={`workspace-transform-mode-btn${mode === "rotate" ? " is-active" : ""}`}
+          className={`workspace-transform-mode-btn rounded-[6px] transition-colors ${mode === "rotate" ? "is-active bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"}`}
           onClick={() => setMode("rotate")}
           title="Rotate: Rotate around pivot"
         >
@@ -778,7 +778,7 @@ export default function RasterTransformOverlay({
         </button>
         <button
           type="button"
-          className={`workspace-transform-mode-btn${mode === "free" ? " is-active" : ""}`}
+          className={`workspace-transform-mode-btn rounded-[6px] transition-colors ${mode === "free" ? "is-active bg-[#3ecf8e] text-[#171717] font-semibold shadow-xs" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"}`}
           onClick={() => setMode("free")}
           title="Free Transform: Move individual corners"
         >
@@ -789,28 +789,28 @@ export default function RasterTransformOverlay({
 
       {/* Options & Metrics */}
       <div className="workspace-transform-options">
-        <label className="workspace-transform-lock-label">
+        <label className="workspace-transform-lock-label text-neutral-700 dark:text-neutral-300">
           <input
             type="checkbox"
             checked={lockAspect}
             onChange={(e) => setLockAspect(e.target.checked)}
           />
-          {lockAspect ? <Lock className="size-3 text-[#0066cc]" /> : <Unlock className="size-3 text-[#7a7a7a]" />}
+          {lockAspect ? <Lock className="size-3 text-[#24b47e] dark:text-[#3ecf8e]" /> : <Unlock className="size-3 text-neutral-400" />}
           <span>Lock Aspect Ratio</span>
         </label>
         {rotationAngle !== 0 && (
-          <span className="workspace-transform-badge">
+          <span className="workspace-transform-badge bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-800 dark:text-neutral-200">
             {rotationAngle}°
           </span>
         )}
       </div>
 
       {/* Action Buttons */}
-      <div className="workspace-transform-actions">
+      <div className="workspace-transform-actions border-t border-neutral-200 dark:border-[#2e2e2e] pt-2">
         <div className="workspace-transform-history-btns">
           <button
             type="button"
-            className="workspace-secondary-button size-8 p-0"
+            className="workspace-secondary-button size-8 p-0 bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px]"
             onClick={handleUndo}
             disabled={!canUndo || processing}
             title="Undo applied transformation"
@@ -819,7 +819,7 @@ export default function RasterTransformOverlay({
           </button>
           <button
             type="button"
-            className="workspace-secondary-button size-8 p-0"
+            className="workspace-secondary-button size-8 p-0 bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px]"
             onClick={handleRedo}
             disabled={!canRedo || processing}
             title="Redo transformation"
@@ -828,7 +828,7 @@ export default function RasterTransformOverlay({
           </button>
           <button
             type="button"
-            className="workspace-secondary-button size-8 p-0"
+            className="workspace-secondary-button size-8 p-0 bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px]"
             onClick={handleReset}
             disabled={processing}
             title="Reset to original"
@@ -840,7 +840,7 @@ export default function RasterTransformOverlay({
         <div className="workspace-transform-commit-btns">
           <button
             type="button"
-            className="workspace-secondary-button text-xs py-1 px-3"
+            className="workspace-secondary-button text-xs py-1.5 px-3 bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px]"
             onClick={onClose}
             disabled={processing}
           >
@@ -848,7 +848,7 @@ export default function RasterTransformOverlay({
           </button>
           <button
             type="button"
-            className="workspace-primary-button text-xs py-1 px-3"
+            className="workspace-primary-button text-xs py-1.5 px-3 bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold rounded-[6px] shadow-xs"
             onClick={handleApply}
             disabled={processing || loading}
           >

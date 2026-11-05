@@ -1035,7 +1035,7 @@ export default function WorkspaceMap({
               type: "circle",
               paint: {
                 "circle-radius": ["case", ["get", "selected"], 8, 6],
-                "circle-color": "#0066cc",
+                "circle-color": "#3ecf8e",
                 "circle-stroke-color": "#ffffff",
                 "circle-stroke-width": ["case", ["get", "selected"], 3, 2],
               },
@@ -1049,7 +1049,7 @@ export default function WorkspaceMap({
                 "text-allow-overlap": true,
                 "text-ignore-placement": true,
               },
-              paint: { "text-color": "#ffffff" },
+              paint: { "text-color": "#171717" },
             },
           ],
           visible: isControlVisible,
@@ -1063,8 +1063,8 @@ export default function WorkspaceMap({
               type: "circle",
               paint: {
                 "circle-radius": ["case", ["get", "selected"], 16, 0],
-                "circle-color": "rgba(0, 102, 204, 0.2)",
-                "circle-stroke-color": "#0066cc",
+                "circle-color": "rgba(62, 207, 142, 0.2)",
+                "circle-stroke-color": "#3ecf8e",
                 "circle-stroke-width": ["case", ["get", "selected"], 2, 0],
                 "circle-translate": [0, -12],
               },

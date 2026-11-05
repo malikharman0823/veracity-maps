@@ -526,8 +526,8 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      <div className="workspace-body">
-        <div className="workspace-desktop-layers">
+      <div className="workspace-body bg-white dark:bg-[#1c1c1c]">
+        <div className="workspace-desktop-layers bg-white dark:bg-[#202020] border-r border-neutral-200 dark:border-[#2e2e2e]">
           <WorkspaceLayerPanel
             members={workspace.manifest.members}
             records={workspace.mapRecords}

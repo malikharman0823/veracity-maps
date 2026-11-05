@@ -246,9 +246,9 @@ export default function EnhancementModal({
                   onClose()
                   onOpenAnnotations(datasetId, datasetName || inspection?.filename)
                 }}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#e0e0e0] bg-white px-3 py-1.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7]"
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-3 py-1.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#282828]"
               >
-                <ScanText className="size-3.5 text-[#0066cc]" />
+                <ScanText className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
                 <span>Labels & OCR ({inspection?.annotation_count || 0})</span>
               </button>
             )}
@@ -256,7 +256,7 @@ export default function EnhancementModal({
               type="button"
               onClick={onClose}
               disabled={processing || tiling}
-              className="size-8 rounded-full flex items-center justify-center text-[#7a7a7a] hover:text-[#1d1d1f] hover:bg-[#e8e8ed] disabled:opacity-50"
+              className="size-8 rounded-[6px] flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#282828] disabled:opacity-50"
               aria-label="Close enhancement dialog"
             >
               <X className="size-4" />
@@ -267,59 +267,59 @@ export default function EnhancementModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {error && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5">
+            <div className="p-3.5 rounded-[8px] bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-start gap-2.5">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold">{error.message || "Operation failed"}</p>
-                {error.details && <p className="mt-0.5 text-red-600">{error.details}</p>}
+                {error.details && <p className="mt-0.5 text-red-500/80">{error.details}</p>}
               </div>
             </div>
           )}
 
           {statusMessage && (
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2.5">
-              <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-600" />
+            <div className="p-3.5 rounded-[8px] bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 text-[#24b47e] dark:text-[#3ecf8e] text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
               <span>{statusMessage}</span>
             </div>
           )}
 
           {loading && !inspection ? (
-            <div className="py-16 flex flex-col items-center justify-center text-xs text-[#7a7a7a] gap-2">
-              <Loader2 className="size-6 animate-spin text-[#0066cc]" />
+            <div className="py-16 flex flex-col items-center justify-center text-xs text-neutral-500 dark:text-neutral-400 gap-2">
+              <Loader2 className="size-6 animate-spin text-[#24b47e] dark:text-[#3ecf8e]" />
               <span>Inspecting raster dimensions, DPI, quality metrics, and vector metadata...</span>
             </div>
           ) : (
             <>
               {/* 1. Universal File Inspection Grid */}
-              <section className="rounded-xl border border-[#e0e0e0] bg-[#fafafc] p-4 space-y-3">
+              <section className="rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <FileSearch className="size-4 text-[#0066cc]" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558]">
+                    <FileSearch className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
                       Universal Dataset Inspection
                     </h3>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                     {content?.has_raster && (
-                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                      <span className="px-2 py-0.5 rounded-full bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-medium">
                         Raster Imagery
                       </span>
                     )}
                     {content?.has_vector && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                      <span className="px-2 py-0.5 rounded-full bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-medium">
                         Vector Geometry ({inspection?.vector_feature_count || 0})
                       </span>
                     )}
                     {content?.has_embedded_text && (
-                      <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-medium">
+                      <span className="px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
                         Embedded Text
                       </span>
                     )}
                     <span
                       className={`px-2 py-0.5 rounded-full font-medium border ${
                         inspection?.is_georeferenced
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-amber-50 text-amber-700 border-amber-200"
+                          ? "bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border-[#3ecf8e]/30"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                       }`}
                     >
                       {inspection?.is_georeferenced
@@ -330,42 +330,42 @@ export default function EnhancementModal({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
-                    <span className="text-[11px] text-[#7a7a7a] block">Original Dimensions</span>
-                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                  <div className="rounded-[8px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] px-3 py-2">
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block">Original Dimensions</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white">
                       {inspection?.width && inspection?.height
                         ? `${inspection.width} × ${inspection.height} px`
                         : "Tile Pyramid"}
                     </span>
                   </div>
-                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
-                    <span className="text-[11px] text-[#7a7a7a] block">DPI / Color Depth</span>
-                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                  <div className="rounded-[8px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] px-3 py-2">
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block">DPI / Color Depth</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white">
                       {inspection?.dpi_x || inspection?.rendering_dpi
                         ? `${Math.round(inspection.dpi_x || inspection.rendering_dpi)} DPI`
                         : "Native px"}{" "}
                       • {inspection?.color_depth_bits ? `${inspection.color_depth_bits}-bit` : inspection?.dtype || "RGBA"}
                     </span>
                   </div>
-                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
-                    <span className="text-[11px] text-[#7a7a7a] block">Sharpness / Blur Score</span>
-                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                  <div className="rounded-[8px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] px-3 py-2">
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block">Sharpness / Blur Score</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white">
                       {quality?.blur_score !== undefined
                         ? `${quality.blur_score} (${quality.blur_status || "normal"})`
                         : "N/A"}
                     </span>
                   </div>
-                  <div className="rounded-lg bg-white border border-[#e6e6ea] px-3 py-2">
-                    <span className="text-[11px] text-[#7a7a7a] block">Text Density & Compression</span>
-                    <span className="font-mono font-semibold text-[#1d1d1f]">
+                  <div className="rounded-[8px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] px-3 py-2">
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block">Text Density & Compression</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white">
                       {quality?.text_density_level || "standard"} • {inspection?.compression || "lossless"}
                     </span>
                   </div>
                 </div>
 
                 {recommendation?.reason && (
-                  <p className="text-xs text-[#555558] bg-white rounded-lg border border-[#e6e6ea] px-3 py-2">
-                    <strong className="text-[#1d1d1f]">Recommendation:</strong> {recommendation.reason}
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300 bg-white dark:bg-[#202020] rounded-[8px] border border-neutral-200 dark:border-[#2e2e2e] px-3 py-2">
+                    <strong className="text-neutral-900 dark:text-white">Recommendation:</strong> {recommendation.reason}
                   </p>
                 )}
               </section>
@@ -374,22 +374,22 @@ export default function EnhancementModal({
               {!isStandaloneMbtiles && (
                 <section className="space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
-                      <Eye className="size-3.5 text-[#0066cc]" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+                      <Eye className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
                       Original vs. Enhanced Preview
                     </h3>
 
                     {hasEnhancedImage && (
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-[#7a7a7a]">Active Map Layer:</span>
+                        <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Active Map Layer:</span>
                         <button
                           type="button"
                           disabled={processing}
                           onClick={() => handleSwitchVariant("original")}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                          className={`px-2.5 py-1 rounded-[6px] text-xs font-medium border transition-colors ${
                             activeVariant === "original"
-                              ? "bg-[#1d1d1f] text-white border-[#1d1d1f]"
-                              : "bg-white text-[#1d1d1f] border-[#e0e0e0] hover:bg-[#f5f5f7]"
+                              ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 border-neutral-900 dark:border-white font-semibold"
+                              : "bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border-neutral-200 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828]"
                           }`}
                         >
                           Original
@@ -398,10 +398,10 @@ export default function EnhancementModal({
                           type="button"
                           disabled={processing}
                           onClick={() => handleSwitchVariant("enhanced")}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                          className={`px-2.5 py-1 rounded-[6px] text-xs font-medium border transition-colors ${
                             activeVariant === "enhanced"
-                              ? "bg-[#0066cc] text-white border-[#0066cc]"
-                              : "bg-white text-[#1d1d1f] border-[#e0e0e0] hover:bg-[#f5f5f7]"
+                              ? "bg-[#3ecf8e] text-[#171717] border-[#3ecf8e] font-semibold"
+                              : "bg-white dark:bg-[#202020] text-neutral-800 dark:text-neutral-200 border-neutral-200 dark:border-[#2e2e2e] hover:bg-neutral-100 dark:hover:bg-[#282828]"
                           }`}
                         >
                           Enhanced ({enhancement?.enhanced_width || inspection?.width}×
@@ -412,10 +412,10 @@ export default function EnhancementModal({
                   </div>
 
                   <div className={`grid grid-cols-1 ${hasEnhancedImage ? "md:grid-cols-2" : ""} gap-3`}>
-                    <div className="rounded-xl border border-[#e0e0e0] bg-[#f5f5f7] overflow-hidden flex flex-col">
-                      <div className="px-3 py-1.5 bg-white border-b border-[#e0e0e0] flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#1d1d1f]">Original Source (Untouched)</span>
-                        <span className="font-mono text-[#7a7a7a]">
+                    <div className="rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] overflow-hidden flex flex-col">
+                      <div className="px-3 py-1.5 bg-white dark:bg-[#202020] border-b border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-neutral-900 dark:text-white">Original Source (Untouched)</span>
+                        <span className="font-mono text-neutral-500 dark:text-neutral-400">
                           {inspection?.width} × {inspection?.height} px
                         </span>
                       </div>
@@ -429,13 +429,13 @@ export default function EnhancementModal({
                     </div>
 
                     {hasEnhancedImage && (
-                      <div className="rounded-xl border border-[#0066cc]/40 bg-[#f5f5f7] overflow-hidden flex flex-col">
-                        <div className="px-3 py-1.5 bg-[#f0f6ff] border-b border-[#0066cc]/20 flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-[#0066cc]">
+                      <div className="rounded-[10px] border border-[#3ecf8e]/40 bg-neutral-50 dark:bg-[#171717] overflow-hidden flex flex-col">
+                        <div className="px-3 py-1.5 bg-[#3ecf8e]/10 border-b border-[#3ecf8e]/20 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-[#24b47e] dark:text-[#3ecf8e]">
                             Enhanced Output ({enhancement?.preset || "OpenCV"})
                             {enhancement?.ai_upscaled ? ` • ${enhancement.ai_upscale_factor}x Real-ESRGAN` : ""}
                           </span>
-                          <span className="font-mono text-[#0066cc]">
+                          <span className="font-mono text-[#24b47e] dark:text-[#3ecf8e]">
                             {enhancement?.enhanced_width || inspection?.width} ×{" "}
                             {enhancement?.enhanced_height || inspection?.height} px
                           </span>
@@ -457,9 +457,9 @@ export default function EnhancementModal({
               {!isStandaloneMbtiles ? (
                 <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* OpenCV Pipeline Card */}
-                  <div className="rounded-xl border border-[#e0e0e0] p-4 space-y-3 bg-white">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
-                      <Wand2 className="size-3.5 text-[#0066cc]" />
+                  <div className="rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] p-4 space-y-3 bg-white dark:bg-[#202020]">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+                      <Wand2 className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
                       OpenCV Enhancement Profile
                     </h3>
 
@@ -467,10 +467,10 @@ export default function EnhancementModal({
                       {PRESET_OPTIONS.map((opt) => (
                         <label
                           key={opt.value}
-                          className={`block rounded-lg border p-2.5 cursor-pointer transition-colors ${
+                          className={`block rounded-[8px] border p-2.5 cursor-pointer transition-colors ${
                             preset === opt.value
-                              ? "border-[#0066cc] bg-[#f0f6ff]/60"
-                              : "border-[#e6e6ea] hover:border-[#c7c7cc]"
+                              ? "border-[#3ecf8e] bg-[#3ecf8e]/10"
+                              : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-neutral-600"
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -481,38 +481,38 @@ export default function EnhancementModal({
                               checked={preset === opt.value}
                               onChange={() => setPreset(opt.value)}
                               disabled={processing}
-                              className="text-[#0066cc]"
+                              className="accent-[#3ecf8e]"
                             />
-                            <span className="text-xs font-semibold text-[#1d1d1f]">{opt.label}</span>
+                            <span className="text-xs font-semibold text-neutral-900 dark:text-white">{opt.label}</span>
                             {recommendation?.recommended_preset === opt.value && (
-                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-medium">
                                 Suggested
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-[#7a7a7a] pl-5 mt-0.5">{opt.description}</p>
+                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 pl-5 mt-0.5">{opt.description}</p>
                         </label>
                       ))}
                     </div>
 
-                    <div className="pt-1 space-y-2 border-t border-[#f0f0f2]">
-                      <label className="flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                    <div className="pt-1 space-y-2 border-t border-neutral-200 dark:border-[#2e2e2e]">
+                      <label className="flex items-center gap-2 text-xs text-neutral-900 dark:text-white cursor-pointer">
                         <input
                           type="checkbox"
                           checked={adaptiveThreshold}
                           onChange={(e) => setAdaptiveThreshold(e.target.checked)}
                           disabled={processing}
-                          className="rounded border-[#b0b0b0] text-[#0066cc]"
+                          className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e]"
                         />
                         <span>Soft-blended adaptive thresholding (for faint scanned blueprints)</span>
                       </label>
-                      <label className="flex items-center gap-2 text-xs text-[#1d1d1f] cursor-pointer">
+                      <label className="flex items-center gap-2 text-xs text-neutral-900 dark:text-white cursor-pointer">
                         <input
                           type="checkbox"
                           checked={grayscale}
                           onChange={(e) => setGrayscale(e.target.checked)}
                           disabled={processing}
-                          className="rounded border-[#b0b0b0] text-[#0066cc]"
+                          className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e]"
                         />
                         <span>Monochrome / grayscale normalization</span>
                       </label>
@@ -520,22 +520,22 @@ export default function EnhancementModal({
                   </div>
 
                   {/* Real-ESRGAN AI Upscaling & GDAL Optimization Card */}
-                  <div className="rounded-xl border border-[#e0e0e0] p-4 space-y-4 bg-white flex flex-col justify-between">
+                  <div className="rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] p-4 space-y-4 bg-white dark:bg-[#202020] flex flex-col justify-between">
                     <div className="space-y-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
-                        <Sparkles className="size-3.5 text-[#0066cc]" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
                         Optional AI Upscaling (Real-ESRGAN)
                       </h3>
 
                       <div>
-                        <label className="text-xs font-medium text-[#1d1d1f] block mb-1">
+                        <label className="text-xs font-medium text-neutral-900 dark:text-white block mb-1">
                           Super-Resolution Scale Factor
                         </label>
                         <select
                           value={upscaleFactor}
                           onChange={(e) => setUpscaleFactor(Number(e.target.value))}
                           disabled={processing}
-                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-white focus:outline-none focus:border-[#0066cc]"
+                          className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e]"
                         >
                           <option value={1}>1x — Keep Native Pixel Dimensions (Default)</option>
                           <option value={2}>2x — Real-ESRGAN Super-Resolution</option>
@@ -544,7 +544,7 @@ export default function EnhancementModal({
                       </div>
 
                       {recommendation?.is_high_resolution && upscaleFactor > 1 && (
-                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1.5">
+                        <div className="p-2.5 rounded-[8px] bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] space-y-1.5">
                           <p className="font-medium">
                             Source image is already high resolution ({inspection?.width}×{inspection?.height} px).
                             AI upscaling is automatically skipped unless forced.
@@ -555,6 +555,7 @@ export default function EnhancementModal({
                               checked={forceUpscale}
                               onChange={(e) => setForceUpscale(e.target.checked)}
                               disabled={processing}
+                              className="accent-[#3ecf8e]"
                             />
                             <span>Force AI upscaling anyway</span>
                           </label>
@@ -562,24 +563,24 @@ export default function EnhancementModal({
                       )}
 
                       {(upscaleFactor > 1 || enhancement?.ai_upscaled) && (
-                        <div className="p-2.5 rounded-lg bg-[#fff8eb] border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
-                          <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                        <div className="p-2.5 rounded-[8px] bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] flex items-start gap-2">
+                          <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" />
                           <span>
                             <strong>Engineering Truthfulness Notice:</strong> AI-upscaled pixels enhance visual readability only and are never marked as verified engineering measurements. Original raster dimensions and georeferencing control points remain untouched.
                           </span>
                         </div>
                       )}
 
-                      <div className="pt-3 border-t border-[#f0f0f2] space-y-2">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-[#555558] flex items-center gap-1.5">
-                          <Layers className="size-3.5 text-[#0066cc]" />
+                      <div className="pt-3 border-t border-neutral-200 dark:border-[#2e2e2e] space-y-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+                          <Layers className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e]" />
                           GDAL Overview & MBTiles Resampling
                         </h4>
                         <select
                           value={resampling}
                           onChange={(e) => setResampling(e.target.value)}
                           disabled={processing || tiling}
-                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#e0e0e0] bg-white focus:outline-none focus:border-[#0066cc]"
+                          className="w-full text-xs px-3 py-2 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] text-neutral-900 dark:text-white focus:outline-none focus:border-[#3ecf8e]"
                         >
                           {RESAMPLING_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -592,7 +593,7 @@ export default function EnhancementModal({
                             type="button"
                             onClick={handleGenerateMbtiles}
                             disabled={tiling || processing}
-                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#0066cc]/30 bg-[#f0f6ff] px-3 py-2 text-xs font-medium text-[#0066cc] hover:bg-[#e1eeff] disabled:opacity-50"
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-[6px] border border-[#3ecf8e]/30 bg-[#3ecf8e]/10 px-3 py-2 text-xs font-medium text-[#24b47e] dark:text-[#3ecf8e] hover:bg-[#3ecf8e]/20 disabled:opacity-50"
                           >
                             {tiling ? (
                               <>
@@ -612,7 +613,7 @@ export default function EnhancementModal({
                   </div>
                 </section>
               ) : (
-                <div className="rounded-xl border border-[#e0e0e0] bg-[#fafafc] p-4 text-xs text-[#555558]">
+                <div className="rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50 dark:bg-[#171717] p-4 text-xs text-neutral-600 dark:text-neutral-400">
                   This layer is backed directly by a standalone SQLite <strong>.mbtiles</strong> tile pyramid and renders natively via MapLibre tile streaming.
                 </div>
               )}
