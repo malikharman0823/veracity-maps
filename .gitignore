@@ -16,6 +16,9 @@ build/
 # Temporary Sessions & Datasets
 backend/temp/
 temp/
+backend/storage/users/
+backend/storage/projects/
+backend/storage/organizations/
 *.log
 
 # Environment & Local Configuration
