@@ -187,6 +187,9 @@ func HashPassword(password string) (string, error) {
 }
 
 func VerifyPassword(password, encoded string) (bool, error) {
+	if len([]byte(password)) > 72 {
+		return false, errors.New("password must be at most 72 bytes")
+	}
 	err := bcrypt.CompareHashAndPassword([]byte(encoded), []byte(password))
 	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return false, nil

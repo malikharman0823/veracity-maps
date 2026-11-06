@@ -77,6 +77,78 @@ func TestAuthTokenDatabaseValueIsHashed(t *testing.T) {
 	}
 }
 
+func TestPasswordVerificationRejectsOversizeSuffix(t *testing.T) {
+	for _, tc := range []struct{ name, password, suffix string }{
+		{"ascii", strings.Repeat("x", 72), "x"},
+		{"multibyte", strings.Repeat("\u00e9", 36), "\u00e9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hash, err := models.HashPassword(tc.password)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := models.VerifyPassword(tc.password, hash); err != nil || !ok {
+				t.Fatalf("valid 72-byte password rejected: ok=%v err=%v", ok, err)
+			}
+			if ok, err := models.VerifyPassword(tc.password+tc.suffix, hash); ok || err == nil {
+				t.Fatalf("oversize suffix accepted: ok=%v err=%v", ok, err)
+			}
+		})
+	}
+}
+
+func TestAuthenticationLoginRejectsOversizePasswordSuffix(t *testing.T) {
+	server, _, _ := setupMultiUserTestServer(t, t.TempDir())
+	defer server.Close()
+	for _, tc := range []struct{ name, password, suffix string }{
+		{"ascii", strings.Repeat("x", 72), "x"},
+		{"multibyte", strings.Repeat("\u00e9", 36), "\u00e9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			email := tc.name + "@password.example.com"
+			registration, err := json.Marshal(models.RegisterRequest{Name: "Boundary User", Email: email, Password: tc.password})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := server.Client().Post(server.URL+"/api/auth/register", "application/json", bytes.NewReader(registration))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("72-byte registration: %d", response.StatusCode)
+			}
+			for _, login := range []struct {
+				password string
+				want     int
+			}{
+				{tc.password, http.StatusOK},
+				{tc.password + tc.suffix, http.StatusUnauthorized},
+			} {
+				body, err := json.Marshal(models.LoginRequest{Email: email, Password: login.password})
+				if err != nil {
+					t.Fatal(err)
+				}
+				response, err := server.Client().Post(server.URL+"/api/auth/login", "application/json", bytes.NewReader(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := io.ReadAll(response.Body)
+				response.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode != login.want {
+					t.Fatalf("login: want %d got %d", login.want, response.StatusCode)
+				}
+				if login.want == http.StatusUnauthorized && bytes.Contains(data, []byte(`"token"`)) {
+					t.Fatal("rejected login issued a token")
+				}
+			}
+		})
+	}
+}
+
 func TestAuthenticationResponsesAndLogout(t *testing.T) {
 	server, _, _ := setupMultiUserTestServer(t, t.TempDir())
 	defer server.Close()
