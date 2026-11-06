@@ -470,6 +470,8 @@ func TestProductionAuthenticationSurvivesEmptyStorageRestart(t *testing.T) {
 		}
 		command.Stdout, command.Stderr = logFile, logFile
 		command.Env = append(os.Environ(), "APP_ENV=production", "HOST=127.0.0.1", "PORT="+port,
+			"RESEND_API_KEY=test-key", "RESEND_FROM_EMAIL=maps@example.com", "APP_PUBLIC_URL=https://maps.example.com",
+			"HTTPS_PROXY=http://127.0.0.1:1", // Isolate production mail transport: fail locally without contacting Resend.
 			"WORKSPACE_TTL=24h", "MSSQL_CONNECTION_STRING="+os.Getenv("MSSQL_TEST_CONNECTION_STRING"),
 			"SESSION_STORAGE_DIR="+filepath.Join(runtimeDir, "sessions"),
 			"UPLOAD_DIR="+filepath.Join(runtimeDir, "uploads"),

@@ -13,6 +13,29 @@ The `repository` package provides the thread-safe, in-memory data store for anon
 Collaboration uses project members, invitations, and owner/editor/viewer permissions.
 Organization repositories and project-transfer methods have been removed. Existing SQL schema
 compatibility columns remain in place; session storage and lifecycle remain the GIS boundary.
+
+## Profile persistence
+
+`MSSQLProfileRepository` implements the context-aware `ProfileRepo` methods:
+`Get`, `UpdateName`, `SetAvatar`, `AvatarPath`, `ChangePassword`,
+`CreateEmailVerification`, and `ConsumeEmailVerification`. `AvatarPath` is
+internal file metadata; public profiles contain an authenticated avatar URL.
+SQL statements use named parameters. Password verification, bcrypt replacement,
+and revocation of every other token commit in one transaction. The current token
+must belong to the user and remain active.
+
+Email requests persist `pending_email` and only the SHA-256 token hash, expiring
+after 30 minutes. Initial registration uses `initial_verification` tokens;
+profile changes use `email_change` tokens. A shared one-minute per-user window
+is checked while holding the user update lock to serialize concurrent requests.
+A request consumes preceding pending requests of its purpose. Consumption
+locks the user before the token, updates the email/verified flag, clears the
+pending email, and consumes the token in one transaction. The unique user email
+constraint also prevents a conflicting activation after a request was issued.
+Initial-token consumption only verifies the current address and preserves a
+pending email change; it rejects stale addresses or already verified accounts.
+The MSSQL auth repository reads profile metadata on login/token validation so
+`/api/auth/me` reflects account edits immediately.
 Migration 002 adds nullable `Projects.owner_user_id`, backfilled only for valid
 personal owners (`owner_type='personal'`, no organization, and an existing user).
 Current repositories continue using their compatibility fields until the later

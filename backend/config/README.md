@@ -24,7 +24,7 @@ Reads configuration settings from the process environment (with fallback default
 - **`func LoadConfig() *Config`**:
   - Inspects environment variables and returns a `Config`. Call `Validate()` before using it at startup.
 - **`func (c *Config) Validate() error`**:
-  - Requires MSSQL outside `APP_ENV=test` and a positive `WorkspaceTTL`. Malformed duration values fail validation.
+  - Requires MSSQL, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `APP_PUBLIC_URL` outside `APP_ENV=test`, plus a positive `WorkspaceTTL`. Malformed duration values fail validation. Missing-setting errors contain variable names only.
 - **`func getEnv(key, fallback string) string`**:
   - Private helper that checks `os.Getenv(key)` and returns the fallback string if empty.
 
@@ -41,6 +41,6 @@ Reads configuration settings from the process environment (with fallback default
 | `APP_ENV` | `development` | Only isolated `test` configuration may omit MSSQL. |
 | `MSSQL_CONNECTION_STRING` | empty | Required database connection; alternatively supplied by the existing discrete `MSSQL_*` variables. |
 | `WORKSPACE_TTL` | `24h` | Positive Go duration for the temporary workspace lifecycle. |
-| `RESEND_API_KEY` | empty | Mail provider key, loaded for the later verification/invitation cutover. |
-| `RESEND_FROM_EMAIL` | empty | Verification/invitation sender, loaded as `ResendFrom`. |
-| `APP_PUBLIC_URL` | empty | Public frontend URL used by verification/invitation links. |
+| `RESEND_API_KEY` | empty | Required outside tests; verification/invitation mail provider key. |
+| `RESEND_FROM_EMAIL` | empty | Required outside tests; verification/invitation sender, loaded as `ResendFrom`. |
+| `APP_PUBLIC_URL` | empty | Required outside tests; public frontend URL used by verification/invitation links. |

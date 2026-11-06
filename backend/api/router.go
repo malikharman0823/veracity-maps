@@ -10,6 +10,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
 	"github.com/malikharman0823/veracity-maps/functions/health"
+	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -27,6 +28,7 @@ type Router struct {
 	exportH    *export.Handler
 	authH      *auth.Handler
 	projectsH  *projects.Handler
+	profileH   *profile.Handler
 }
 
 func NewRouter(
@@ -40,8 +42,9 @@ func NewRouter(
 	eh *export.Handler,
 	ah *auth.Handler,
 	ph *projects.Handler,
+	profileHandlers ...*profile.Handler,
 ) *Router {
-	return &Router{
+	router := &Router{
 		repo:       repo,
 		authRepo:   authRepo,
 		projRepo:   projRepo,
@@ -53,6 +56,10 @@ func NewRouter(
 		authH:      ah,
 		projectsH:  ph,
 	}
+	if len(profileHandlers) > 0 {
+		router.profileH = profileHandlers[0]
+	}
+	return router
 }
 
 func (rt *Router) BuildHandler() http.Handler {
@@ -73,6 +80,37 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1a. Authentication
+	if path == "/api/auth/resend-verification" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, 401, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		rt.authH.ResendVerification(w, r, user)
+		return
+	}
+	if path == "/api/auth/verify-email" && rt.profileH != nil {
+		rt.profileH.VerifyEmail(w, r)
+		return
+	}
+	if rt.profileH != nil && (path == "/api/profile" || path == "/api/profile/avatar" || path == "/api/profile/password" || path == "/api/profile/email-change") {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, 401, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		switch path {
+		case "/api/profile":
+			rt.profileH.Profile(w, r, user.ID)
+		case "/api/profile/avatar":
+			rt.profileH.Avatar(w, r, user.ID)
+		case "/api/profile/password":
+			rt.profileH.Password(w, r, user.ID, GetToken(r))
+		case "/api/profile/email-change":
+			rt.profileH.EmailChange(w, r, user.ID)
+		}
+		return
+	}
 	if path == "/api/auth/register" || path == "/auth/register" {
 		rt.authH.Register(w, r)
 		return

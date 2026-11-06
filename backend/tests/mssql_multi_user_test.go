@@ -75,7 +75,8 @@ func TestConfigValidation(t *testing.T) {
 		{"production configured", "production", "configured", time.Hour, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{Environment: tc.environment, MSSQLConnStr: tc.connection, WorkspaceTTL: tc.ttl}
+			cfg := &config.Config{Environment: tc.environment, MSSQLConnStr: tc.connection, WorkspaceTTL: tc.ttl,
+				ResendAPIKey: "test-key", ResendFrom: "maps@example.com", AppPublicURL: "https://maps.example.com"}
 			err := cfg.Validate()
 			if tc.wantError == "" {
 				if err != nil {

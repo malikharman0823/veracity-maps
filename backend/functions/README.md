@@ -4,6 +4,10 @@ Located in [`backend/functions/`](file:///c:/Users/harma/OneDrive/Desktop/veraci
 
 The `functions` package groups HTTP handlers by business resource. Each subpackage contains the request schemas, response models, and HTTP handler functions required to process API calls, enforce input validation, and interact with backend services.
 
+[`profile/`](profile/README.md) handles authenticated account information, avatar
+uploads/downloads, password changes, pending email changes, and public email
+verification. Its repository and mailer are injected at startup.
+
 ---
 
 ## Subpackages

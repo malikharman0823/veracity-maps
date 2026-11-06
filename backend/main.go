@@ -17,6 +17,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/gis"
@@ -70,8 +71,11 @@ func main() {
 	datasetsHandler := datasets.NewHandler(datasetService, repo)
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)
-	authHandler := auth.NewHandler(authRepo)
+	profileRepo := repository.NewMSSQLProfileRepository(sqlDB)
+	mailer := services.NewResendMailer(cfg.ResendAPIKey, cfg.ResendFrom)
+	authHandler := auth.NewHandlerWithVerification(authRepo, profileRepo, mailer, cfg.AppPublicURL)
 	projectsHandler := projects.NewHandler(projRepo, repo, authRepo)
+	profileHandler := profile.NewHandler(profileRepo, mailer, "storage", cfg.AppPublicURL)
 
 	router := api.NewRouter(
 		repo,
@@ -84,6 +88,7 @@ func main() {
 		exportHandler,
 		authHandler,
 		projectsHandler,
+		profileHandler,
 	)
 
 	// Background session cleaner

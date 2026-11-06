@@ -70,9 +70,9 @@ func (r *MSSQLAuthRepository) Authenticate(ctx context.Context, email, password 
 	cleanEmail := strings.ToLower(strings.TrimSpace(email))
 
 	var u models.User
-	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at FROM Users WHERE email = @email"
+	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at, COALESCE(profile_picture_path, ''), email_verified, account_status FROM Users WHERE email = @email"
 	err := r.db.QueryRowContext(ctx, query, sql.Named("email", cleanEmail)).Scan(
-		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt, &u.ProfilePicturePath, &u.EmailVerified, &u.AccountStatus,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -143,14 +143,15 @@ func (r *MSSQLAuthRepository) CreateToken(ctx context.Context, userID string, du
 func (r *MSSQLAuthRepository) ValidateToken(ctx context.Context, tokenStr string) (*models.User, error) {
 	now := time.Now()
 	query := `
-		SELECT u.id, u.email, u.name, u.password_hash, u.salt, u.created_at, u.updated_at
+		SELECT u.id, u.email, u.name, u.password_hash, u.salt, u.created_at, u.updated_at,
+		COALESCE(u.profile_picture_path, ''), u.email_verified, u.account_status
 		FROM AuthTokens t
 		INNER JOIN Users u ON t.user_id = u.id
 		WHERE t.token_hash = @hash AND t.expires_at > @now AND t.revoked_at IS NULL;
 	`
 	var u models.User
 	err := r.db.QueryRowContext(ctx, query, sql.Named("hash", models.HashToken(tokenStr)), sql.Named("now", now)).Scan(
-		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt, &u.ProfilePicturePath, &u.EmailVerified, &u.AccountStatus,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -172,9 +173,9 @@ func (r *MSSQLAuthRepository) RevokeToken(ctx context.Context, tokenStr string) 
 
 func (r *MSSQLAuthRepository) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
 	var u models.User
-	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at FROM Users WHERE id = @id"
+	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at, COALESCE(profile_picture_path, ''), email_verified, account_status FROM Users WHERE id = @id"
 	err := r.db.QueryRowContext(ctx, query, sql.Named("id", userID)).Scan(
-		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt, &u.ProfilePicturePath, &u.EmailVerified, &u.AccountStatus,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -188,9 +189,9 @@ func (r *MSSQLAuthRepository) GetUserByID(ctx context.Context, userID string) (*
 func (r *MSSQLAuthRepository) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	cleanEmail := strings.ToLower(strings.TrimSpace(email))
 	var u models.User
-	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at FROM Users WHERE email = @email"
+	query := "SELECT id, email, name, password_hash, salt, created_at, updated_at, COALESCE(profile_picture_path, ''), email_verified, account_status FROM Users WHERE email = @email"
 	err := r.db.QueryRowContext(ctx, query, sql.Named("email", cleanEmail)).Scan(
-		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt, &u.ProfilePicturePath, &u.EmailVerified, &u.AccountStatus,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

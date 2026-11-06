@@ -18,6 +18,17 @@ type AuthRepo interface {
 	FindUserByEmail(ctx context.Context, email string) (*models.User, error)
 }
 
+// ProfileRepo handles account mutations independently of authentication.
+type ProfileRepo interface {
+	Get(context.Context, string) (*models.UserPublicProfile, error)
+	UpdateName(context.Context, string, string) (*models.UserPublicProfile, error)
+	SetAvatar(context.Context, string, string) (*models.UserPublicProfile, error)
+	AvatarPath(context.Context, string) (string, error)
+	ChangePassword(context.Context, string, string, string, string) error
+	CreateEmailVerification(context.Context, string, string, string) (string, error)
+	ConsumeEmailVerification(context.Context, string) error
+}
+
 // ProjectRepo defines the interface for project management and sharing.
 type ProjectRepo interface {
 	CreateProject(userID, name, description string) (*models.UserProject, error)

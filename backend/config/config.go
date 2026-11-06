@@ -33,6 +33,15 @@ func (c *Config) Validate() error {
 	if c.WorkspaceTTL <= 0 {
 		return errors.New("WORKSPACE_TTL must be positive")
 	}
+	if c.Environment != "test" {
+		for _, setting := range []struct{ name, value string }{
+			{"RESEND_API_KEY", c.ResendAPIKey}, {"RESEND_FROM_EMAIL", c.ResendFrom}, {"APP_PUBLIC_URL", c.AppPublicURL},
+		} {
+			if strings.TrimSpace(setting.value) == "" {
+				return errors.New(setting.name + " is required outside tests")
+			}
+		}
+	}
 	return nil
 }
 

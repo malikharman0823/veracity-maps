@@ -4,6 +4,16 @@ Located in [`backend/api/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-map
 
 The `api` package provides the central HTTP request multiplexer, routing logic, path parameter parsing, and middleware chain for the Veracity Maps Go backend.
 
+`NewRouter` accepts an optional final `*profile.Handler`; production supplies it.
+Authenticated account routes are `GET/PATCH /api/profile`,
+`POST /api/profile/password`, `POST /api/profile/email-change`, and
+`GET/POST /api/profile/avatar`. `POST /api/auth/verify-email` consumes the JSON
+token without authentication. These routes do not require a GIS session.
+Authenticated `POST /api/auth/resend-verification` rotates initial account
+verification subject to the shared SQL-enforced mail request window.
+See [`functions/profile/README.md`](../functions/profile/README.md) for payloads
+and response behavior.
+
 ---
 
 ## Files in Package

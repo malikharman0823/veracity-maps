@@ -4,6 +4,21 @@ Located in [`backend/tests/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-m
 
 The `tests` package houses the automated test suites for the Veracity Maps Go backend, spanning unit tests, regression suites, concurrency testing, and end-to-end API matrix execution.
 
+`profile_test.go` covers profile fields/name edits, authentication and validation,
+password verification and session revocation, rollback on revocation failure,
+hashed expiring/single-use email verification, email rotation/conflicts/delivery
+failure, and avatar storage/limits. SQL cases require a dedicated disposable
+`MSSQL_TEST_CONNECTION_STRING`; they skip when unset. Validation/configuration
+and `resend_mailer_test.go` run offline. `test_server_test.go` provides the fake
+mailer; no real mail is sent. Focused command:
+`go test -v -count=1 ./tests/... -run "TestProfile|TestPasswordChange|TestEmailChange|TestResend"`.
+
+`TestInitialVerification*` also covers registration delivery and failure with
+retained account/authentication, resend rotation, a shared rate limit across
+resend/email-change routes, single-use consumption, and already-verified users.
+The production-startup subprocess test uses a failing loopback HTTPS proxy for
+the mail provider, preventing real external email requests.
+
 ---
 
 ## Test Files in Package

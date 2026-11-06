@@ -14,13 +14,16 @@ import (
 
 // User represents a registered system user.
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	PasswordHash string    `json:"password_hash,omitempty"`
-	Salt         string    `json:"salt,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                 string    `json:"id"`
+	Email              string    `json:"email"`
+	Name               string    `json:"name"`
+	PasswordHash       string    `json:"password_hash,omitempty"`
+	Salt               string    `json:"salt,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	ProfilePicturePath string    `json:"-"`
+	EmailVerified      bool      `json:"-"`
+	AccountStatus      string    `json:"-"`
 }
 
 // UserProject represents a personal project owned by a user.
@@ -126,22 +129,24 @@ type AuthToken struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
-// UserPublicProfile is safe to serialize in public responses (without hashes or salts).
-type UserPublicProfile struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 func (u *User) Public() UserPublicProfile {
+	status := u.AccountStatus
+	if status == "" {
+		status = "active"
+	}
+	avatar := ""
+	if u.ProfilePicturePath != "" {
+		avatar = "/api/profile/avatar"
+	}
 	return UserPublicProfile{
-		ID:        u.ID,
-		Email:     u.Email,
-		Name:      u.Name,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		ID:             u.ID,
+		Email:          u.Email,
+		FullName:       u.Name,
+		ProfilePicture: avatar,
+		EmailVerified:  u.EmailVerified,
+		AccountStatus:  status,
+		CreatedAt:      u.CreatedAt,
+		UpdatedAt:      u.UpdatedAt,
 	}
 }
 
@@ -160,8 +165,10 @@ type LoginRequest struct {
 
 // AuthResponse payload returned on successful register or login.
 type AuthResponse struct {
-	Token string            `json:"token"`
-	User  UserPublicProfile `json:"user"`
+	Token                string            `json:"token"`
+	User                 UserPublicProfile `json:"user"`
+	VerificationDelivery string            `json:"verification_delivery,omitempty"`
+	VerificationCode     string            `json:"verification_code,omitempty"`
 }
 
 // CreateProjectRequest payload.

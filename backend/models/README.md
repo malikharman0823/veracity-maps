@@ -8,6 +8,14 @@ upgrading an existing salted password after a successful login. Public auth
 responses serialize `User.Public()`; persistence hashes, salts, and revocation
 metadata are excluded from the public profile.
 
+`profile.go` defines `UserPublicProfile` with `id`, `full_name`, `email`, optional
+`profile_picture`, `email_verified`, `account_status`, `created_at`, and
+`updated_at`. JSON also includes the compatibility `name` alias, derived directly
+from `FullName`; there is no second persisted name. `User.Public()` returns this
+shape for registration/login/me. Avatar paths become `/api/profile/avatar` and
+never expose disk locations. `UpdateProfileRequest`, `ChangePasswordRequest`,
+`ChangeEmailRequest`, and `VerifyEmailRequest` are account mutation payloads.
+
 Located in [`backend/models/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/models)
 
 The `models` package defines all core domain entities, API response wrappers, and session extraction utilities shared across the backend service layers.

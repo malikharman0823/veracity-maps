@@ -4,6 +4,13 @@ Located in [`backend/services/`](file:///c:/Users/harma/OneDrive/Desktop/veracit
 
 The `services` package contains the core business logic of Veracity Maps, coordinating between storage managers, session repositories, GIS solvers, and archive packagers.
 
+`Mailer` separates delivery from profile handlers. `VerificationEmail` and
+`InvitationEmail` contain `To` and the already-built `Link`.
+`NewResendMailer(apiKey, from)` uses the official `resend-go/v4` SDK with a
+15-second HTTP timeout and `Emails.SendWithContext`. Provider errors are
+sanitized; links and keys are never logged by the adapter. Tests use a fake
+mailer or a captured HTTP transport and never send real email.
+
 ---
 
 ## Files in Package

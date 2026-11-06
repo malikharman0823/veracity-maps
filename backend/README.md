@@ -4,6 +4,14 @@ The **Veracity Maps Backend** is a modular, zero-dependency Go web service built
 
 ---
 
+Account profiles persist in MSSQL through `MSSQLProfileRepository`; production
+startup also requires `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `APP_PUBLIC_URL`
+for verification mail. See [profile handlers](functions/profile/README.md) for
+account/password/avatar/email API contracts. GIS sessions retain their existing
+temporary storage lifecycle.
+
+---
+
 ## 1. Directory Structure
 
 | Package / Folder | Purpose |
