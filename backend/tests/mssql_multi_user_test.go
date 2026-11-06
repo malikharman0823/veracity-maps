@@ -143,7 +143,7 @@ func TestUserOwnedSchemaIsAdditive(t *testing.T) {
 		{"Users", "profile_picture_path"}, {"Users", "email_verified"}, {"Users", "pending_email"}, {"Users", "account_status"},
 		{"Projects", "owner_user_id"}, {"Projects", "org_id"}, {"Projects", "owner_type"},
 		{"ProjectMembers", "permissions"}, {"ProjectMembers", "joined_at"},
-		{"AuthTokens", "token"}, {"AuthTokens", "token_hash"}, {"AuthTokens", "revoked_at"},
+		{"AuthTokens", "id"}, {"AuthTokens", "token_hash"}, {"AuthTokens", "revoked_at"},
 		{"ProjectInvitations", "invitee_key"}, {"ProjectInvitations", "token_hash"}, {"ProjectInvitations", "delivery_status"},
 		{"Maps", "map_configuration"}, {"Uploads", "storage_path"}, {"Activities", "description"},
 		{"WorkspaceDrafts", "expires_at"}, {"UserVerificationTokens", "token_hash"},

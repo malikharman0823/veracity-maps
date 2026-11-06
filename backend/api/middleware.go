@@ -71,7 +71,7 @@ func (m *Middleware) Session(next http.Handler) http.Handler {
 		// Also extract bearer auth token if provided
 		tokenStr := ExtractBearerToken(r)
 		if tokenStr != "" && m.authRepo != nil {
-			user, err := m.authRepo.ValidateToken(tokenStr)
+			user, err := m.authRepo.ValidateToken(r.Context(), tokenStr)
 			if err == nil && user != nil {
 				ctx := context.WithValue(r.Context(), UserContextKey, user)
 				ctx = context.WithValue(ctx, TokenContextKey, tokenStr)

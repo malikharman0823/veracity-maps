@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -50,7 +51,7 @@ func (r *MSSQLProjectRepository) CreateProject(userID, name, description string)
 		return nil, fmt.Errorf("failed creating project in database: %w", err)
 	}
 
-	user, err := r.authRepo.GetUserByID(userID)
+	user, err := r.authRepo.GetUserByID(context.Background(), userID)
 	userName := "Owner"
 	userEmail := ""
 	if err == nil && user != nil {
@@ -320,13 +321,13 @@ func (r *MSSQLProjectRepository) ShareProject(projectID, targetEmail, invitedBy 
 		return nil, err
 	}
 
-	inviterUser, _ := r.authRepo.GetUserByID(invitedBy)
+	inviterUser, _ := r.authRepo.GetUserByID(context.Background(), invitedBy)
 	inviterName := "Project Collaborator"
 	if inviterUser != nil {
 		inviterName = inviterUser.Name
 	}
 
-	targetUser, err := r.authRepo.FindUserByEmail(cleanEmail)
+	targetUser, err := r.authRepo.FindUserByEmail(context.Background(), cleanEmail)
 	if err != nil || targetUser == nil {
 		return nil, fmt.Errorf("user with email %s is not registered", cleanEmail)
 	}

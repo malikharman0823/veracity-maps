@@ -19,6 +19,23 @@ Current repositories continue using their compatibility fields until the later
 repository cutover. `MigrateJSONToMSSQL` is deprecated offline tooling and is never
 called at server startup.
 
+`AuthRepo` accepts `context.Context` first on every operation. MSSQL authentication
+uses contextual queries and named parameters. New passwords use bcrypt cost 12;
+a successful legacy-password login persists a bcrypt replacement and clears its
+salt before issuing a token. Migration 003 deliberately invalidates existing auth
+tokens and replaces their table with an ID primary key, unique SHA-256 lookup
+hash, expiry, creation time, and nullable revocation time. Token creation returns
+the raw secret once; validation and revocation hash the presented secret, and
+validation excludes expired or revoked rows. `RevokeToken` returns persistence
+errors. The filesystem compatibility repository also persists only token hashes
+and ignores old raw-token files; it remains for isolated tests and legacy tooling.
+Production startup injects `MSSQLAuthRepository` through `AuthRepo` into middleware,
+auth handlers, and the existing project consumers. Project persistence remains
+on its compatibility repository until its separate cutover.
+
+The existing context-free project repository methods use `context.Background()`
+for their internal auth lookups until their separate repository cutover.
+
 ## File: `session_repository.go`
 
 ### Purpose

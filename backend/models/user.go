@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // User represents a registered system user.
@@ -115,10 +117,13 @@ type RespondInvitationRequest struct {
 
 // AuthToken represents a persistent or session-based bearer authentication token.
 type AuthToken struct {
-	Token     string    `json:"token"`
-	UserID    string    `json:"user_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id"`
+	Token     string     `json:"token,omitempty"`
+	TokenHash string     `json:"token_hash,omitempty"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	UserID    string     `json:"user_id"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // UserPublicProfile is safe to serialize in public responses (without hashes or salts).
@@ -171,19 +176,37 @@ type UpdateProjectRequest struct {
 	Description string `json:"description,omitempty"`
 }
 
-// Helper to hash password using SHA-256 with cryptographic salt and multiple stretching iterations.
-func HashPassword(password, salt string) string {
+const BcryptCost = 12
+
+func HashPassword(password string) (string, error) {
+	if len([]byte(password)) > 72 {
+		return "", errors.New("password must be at most 72 bytes")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+	return string(hash), err
+}
+
+func VerifyPassword(password, encoded string) (bool, error) {
+	err := bcrypt.CompareHashAndPassword([]byte(encoded), []byte(password))
+	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func HashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// VerifyLegacyPassword is only for upgrading an existing salted hash on login.
+func VerifyLegacyPassword(password, salt, expectedHash string) bool {
 	combined := []byte(salt + password)
 	h := sha256.Sum256(combined)
 	for i := 0; i < 100000; i++ {
 		h = sha256.Sum256(h[:])
 	}
-	return hex.EncodeToString(h[:])
-}
-
-// VerifyPassword performs constant-time comparison of hashed password.
-func VerifyPassword(password, salt, expectedHash string) bool {
-	computed := HashPassword(password, salt)
+	computed := hex.EncodeToString(h[:])
 	return subtle.ConstantTimeCompare([]byte(computed), []byte(expectedHash)) == 1
 }
 
@@ -208,6 +231,9 @@ func ValidateRegisterRequest(req *RegisterRequest) error {
 	}
 	if len(req.Password) < 6 {
 		return errors.New("password must be at least 6 characters")
+	}
+	if len([]byte(req.Password)) > 72 {
+		return errors.New("password must be at most 72 bytes")
 	}
 	return nil
 }

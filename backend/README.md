@@ -64,11 +64,15 @@ in one transaction. Standalone `GO` lines separate batches within that transacti
 Run the executable from `backend/` so the `migrations/` directory is available.
 
 Migration 002 adds user profile, personal ownership, permission JSON, map, upload,
-activity, draft and verification-token structures. Existing organization tables,
-project compatibility columns, and raw-token columns remain during the additive
-rollout. Legacy raw tokens are never copied into hash columns. Authentication and
-invitation repository cutovers must remove raw-token dependencies and invalidate
-legacy tokens before the eventual destructive schema cleanup.
+activity, draft and verification-token structures. Existing organization tables
+and project compatibility columns remain during the additive rollout. Migration
+003 deliberately invalidates all existing authentication tokens and replaces
+their table with SHA-256 token hashes and revocation timestamps; users must log
+in again. Passwords use bcrypt cost 12, with legacy salted hashes upgraded after
+successful login. Production startup uses `MSSQLAuthRepository` for authoritative
+user and token reads and writes. Filesystem auth remains for isolated tests and
+legacy tooling; project persistence awaits its own cutover. Invitation token
+dependencies await their separate cutover.
 
 From the `backend/` directory:
 ```powershell

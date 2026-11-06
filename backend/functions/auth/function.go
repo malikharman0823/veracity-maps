@@ -35,7 +35,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authRepo.Register(req.Name, req.Email, req.Password)
+	user, err := h.authRepo.Register(r.Context(), req.Name, req.Email, req.Password)
 	if err != nil {
 		if err == repository.ErrUserAlreadyExists {
 			models.WriteError(w, http.StatusConflict, "USER_EXISTS", "A user with this email address already exists", nil, nil)
@@ -45,7 +45,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.authRepo.CreateToken(user.ID, 30*24*time.Hour) // 30 days valid
+	token, err := h.authRepo.CreateToken(r.Context(), user.ID, 30*24*time.Hour) // 30 days valid
 	if err != nil {
 		models.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR", "Failed to generate session token", nil, nil)
 		return
@@ -70,13 +70,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authRepo.Authenticate(req.Email, req.Password)
+	user, err := h.authRepo.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
 		models.WriteError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password", nil, nil)
 		return
 	}
 
-	token, err := h.authRepo.CreateToken(user.ID, 30*24*time.Hour)
+	token, err := h.authRepo.CreateToken(r.Context(), user.ID, 30*24*time.Hour)
 	if err != nil {
 		models.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR", "Failed to generate session token", nil, nil)
 		return
@@ -91,7 +91,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 // Logout revokes the current bearer token.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request, tokenStr string) {
 	if tokenStr != "" {
-		h.authRepo.RevokeToken(tokenStr)
+		if err := h.authRepo.RevokeToken(r.Context(), tokenStr); err != nil {
+			models.WriteError(w, http.StatusInternalServerError, "LOGOUT_ERROR", "Failed to revoke session token", nil, nil)
+			return
+		}
 	}
 	models.WriteJSON(w, http.StatusOK, map[string]bool{"logged_out": true})
 }

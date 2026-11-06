@@ -89,3 +89,13 @@ The suite covers production configuration validation, workspace duration parsing
 cancelled database initialization, migration idempotence/tracking, failed migration
 rollback and corrected retry (including `GO` batches), additive schema columns,
 and the existing multi-user workflow against the migrated database.
+
+`multi_user_auth_test.go` verifies bcrypt cost and byte boundaries, hash verification,
+SHA-256 token lookups, profile redaction, registration limits, logout failure reporting,
+and compatibility token persistence across restart. With the dedicated SQL test
+connection configured it also checks raw-token cutover in a rolled-back transaction,
+hashed token storage, expiry, revocation, legacy-password rehash, and cancellation
+of every auth repository operation.
+`TestProductionAuthenticationSurvivesEmptyStorageRestart` builds the actual server
+and restarts it with empty local storage against the same SQL database, verifying
+that both the issued token and password login survive without JSON auth files.

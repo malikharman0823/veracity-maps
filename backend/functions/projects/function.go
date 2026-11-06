@@ -12,13 +12,13 @@ import (
 type Handler struct {
 	projectRepo *repository.ProjectRepository
 	sessionRepo *repository.SessionRepository
-	authRepo    *repository.AuthRepository
+	authRepo    repository.AuthRepo
 }
 
 func NewHandler(
 	projectRepo *repository.ProjectRepository,
 	sessionRepo *repository.SessionRepository,
-	authRepo *repository.AuthRepository,
+	authRepo repository.AuthRepo,
 ) *Handler {
 	return &Handler{
 		projectRepo: projectRepo,
@@ -229,7 +229,7 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, projectID string
 		return
 	}
 
-	targetUser, err := h.authRepo.FindUserByEmail(cleanEmail)
+	targetUser, err := h.authRepo.FindUserByEmail(r.Context(), cleanEmail)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "No registered user found with that email address", nil, nil)
 		return

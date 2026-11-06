@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -292,7 +293,7 @@ func (r *ProjectRepository) ListByUser(userID string) []*models.UserProject {
 }
 
 // ListSharedWithUser returns projects shared with the user (accepted membership, role != owner).
-func (r *ProjectRepository) ListSharedWithUser(userID string, authRepo *AuthRepository) []*models.SharedProjectView {
+func (r *ProjectRepository) ListSharedWithUser(userID string, authRepo AuthRepo) []*models.SharedProjectView {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -309,7 +310,7 @@ func (r *ProjectRepository) ListSharedWithUser(userID string, authRepo *AuthRepo
 				ownerName := "Project Owner"
 				ownerEmail := ""
 				if authRepo != nil {
-					if owner, err := authRepo.GetUserByID(p.UserID); err == nil {
+					if owner, err := authRepo.GetUserByID(context.Background(), p.UserID); err == nil {
 						ownerName = owner.Name
 						ownerEmail = owner.Email
 					}
@@ -335,7 +336,7 @@ func (r *ProjectRepository) ListSharedWithUser(userID string, authRepo *AuthRepo
 }
 
 // ListPendingInvitations returns pending invitations for a specific user ID or email.
-func (r *ProjectRepository) ListPendingInvitations(userID, email string, authRepo *AuthRepository) []*models.PendingInvitationView {
+func (r *ProjectRepository) ListPendingInvitations(userID, email string, authRepo AuthRepo) []*models.PendingInvitationView {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -352,7 +353,7 @@ func (r *ProjectRepository) ListPendingInvitations(userID, email string, authRep
 			if (m.UserID == userID || strings.EqualFold(m.UserEmail, cleanEmail)) && m.InvitationStatus == models.StatusPending {
 				inviterName := "Project Owner"
 				if authRepo != nil {
-					if inviter, err := authRepo.GetUserByID(m.InvitedBy); err == nil {
+					if inviter, err := authRepo.GetUserByID(context.Background(), m.InvitedBy); err == nil {
 						inviterName = inviter.Name
 					}
 				}
@@ -435,7 +436,7 @@ func (r *ProjectRepository) GetByID(projectID, userID string) (*models.UserProje
 }
 
 // Update updates name and description (Owner or Editor).
-func (r *ProjectRepository) Update(projectID, userID, name, description string, authRepo *AuthRepository) (*models.UserProject, error) {
+func (r *ProjectRepository) Update(projectID, userID, name, description string, authRepo AuthRepo) (*models.UserProject, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -464,7 +465,7 @@ func (r *ProjectRepository) Update(projectID, userID, name, description string, 
 	}
 
 	if isOwner && authRepo != nil {
-		if owner, err := authRepo.GetUserByID(userID); err == nil {
+		if owner, err := authRepo.GetUserByID(context.Background(), userID); err == nil {
 			userName = owner.Name
 		}
 	}

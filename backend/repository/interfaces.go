@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -8,13 +9,13 @@ import (
 
 // AuthRepo defines the interface for user authentication and token storage.
 type AuthRepo interface {
-	Register(name, email, password string) (*models.User, error)
-	Authenticate(email, password string) (*models.User, error)
-	CreateToken(userID string, duration time.Duration) (*models.AuthToken, error)
-	ValidateToken(tokenStr string) (*models.User, error)
-	RevokeToken(tokenStr string)
-	GetUserByID(userID string) (*models.User, error)
-	FindUserByEmail(email string) (*models.User, error)
+	Register(ctx context.Context, name, email, password string) (*models.User, error)
+	Authenticate(ctx context.Context, email, password string) (*models.User, error)
+	CreateToken(ctx context.Context, userID string, duration time.Duration) (*models.AuthToken, error)
+	ValidateToken(ctx context.Context, tokenStr string) (*models.User, error)
+	RevokeToken(ctx context.Context, tokenStr string) error
+	GetUserByID(ctx context.Context, userID string) (*models.User, error)
+	FindUserByEmail(ctx context.Context, email string) (*models.User, error)
 }
 
 // ProjectRepo defines the interface for project management and sharing.

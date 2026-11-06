@@ -51,17 +51,13 @@ func main() {
 	repo := repository.NewSessionRepository()
 	repo.SetStorageDir(cfg.SessionStorageDir)
 
-	authRepo, err := repository.NewAuthRepository("storage")
-	if err != nil {
-		log.Fatalf("Failed to initialize auth repository: %v", err)
-	}
+	authRepo := repository.NewMSSQLAuthRepository(sqlDB)
 
 	projRepo, err := repository.NewProjectRepository("storage")
 	if err != nil {
 		log.Fatalf("Failed to initialize project repository: %v", err)
 	}
 
-	authRepo.SetDB(sqlDB)
 	projRepo.SetDB(sqlDB)
 
 	middleware := api.NewMiddleware(repo, authRepo)

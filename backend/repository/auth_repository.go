@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -30,7 +31,7 @@ type AuthRepository struct {
 	tokensFile string
 	users      map[string]*models.User      // Key: user ID
 	emailToID  map[string]string            // Key: lowercased email -> user ID
-	tokens     map[string]*models.AuthToken // Key: token string
+	tokens     map[string]*models.AuthToken // Key: SHA-256 token hash
 }
 
 func (r *AuthRepository) SetDB(db *sql.DB) {
@@ -87,8 +88,8 @@ func (r *AuthRepository) load() error {
 			now := time.Now()
 			if err := json.Unmarshal(data, &tokenList); err == nil {
 				for _, t := range tokenList {
-					if t.ExpiresAt.After(now) {
-						r.tokens[t.Token] = t
+					if t.TokenHash != "" && t.Token == "" && t.RevokedAt == nil && t.ExpiresAt.After(now) {
+						r.tokens[t.TokenHash] = t
 					}
 				}
 			}
@@ -138,7 +139,10 @@ func (r *AuthRepository) saveTokensLocked() error {
 }
 
 // Register creates a new user and hashes their password.
-func (r *AuthRepository) Register(name, email, password string) (*models.User, error) {
+func (r *AuthRepository) Register(ctx context.Context, name, email, password string) (*models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -153,12 +157,10 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 	}
 	userID := "usr_" + uid
 
-	salt, err := models.GenerateRandomHex(16)
+	hash, err := models.HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
-
-	hash := models.HashPassword(password, salt)
 	now := time.Now()
 
 	user := &models.User{
@@ -166,7 +168,6 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 		Email:        cleanEmail,
 		Name:         strings.TrimSpace(name),
 		PasswordHash: hash,
-		Salt:         salt,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -181,10 +182,10 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 	}
 
 	if r.db != nil {
-		if _, err := r.db.Exec(`
+		if _, err := r.db.ExecContext(ctx, `
 			INSERT INTO Users (id, email, name, password_hash, salt, created_at, updated_at)
-			VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7);
-		`, user.ID, user.Email, user.Name, user.PasswordHash, user.Salt, user.CreatedAt, user.UpdatedAt); err != nil {
+			VALUES (@id, @email, @name, @hash, @salt, @created, @updated);
+		`, sql.Named("id", user.ID), sql.Named("email", user.Email), sql.Named("name", user.Name), sql.Named("hash", user.PasswordHash), sql.Named("salt", user.Salt), sql.Named("created", user.CreatedAt), sql.Named("updated", user.UpdatedAt)); err != nil {
 			log.Printf("[MSSQL ERROR] Users INSERT failed: %v", err)
 		}
 	}
@@ -193,9 +194,12 @@ func (r *AuthRepository) Register(name, email, password string) (*models.User, e
 }
 
 // Authenticate verifies email and password, returning the User if valid.
-func (r *AuthRepository) Authenticate(email, password string) (*models.User, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (r *AuthRepository) Authenticate(ctx context.Context, email, password string) (*models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	cleanEmail := strings.ToLower(strings.TrimSpace(email))
 	uid, exists := r.emailToID[cleanEmail]
@@ -208,15 +212,38 @@ func (r *AuthRepository) Authenticate(email, password string) (*models.User, err
 		return nil, ErrInvalidPassword
 	}
 
-	if !models.VerifyPassword(password, user.Salt, user.PasswordHash) {
-		return nil, ErrInvalidPassword
+	if strings.HasPrefix(user.PasswordHash, "$2") {
+		ok, err := models.VerifyPassword(password, user.PasswordHash)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrInvalidPassword
+		}
+	} else {
+		if !models.VerifyLegacyPassword(password, user.Salt, user.PasswordHash) {
+			return nil, ErrInvalidPassword
+		}
+		hash, err := models.HashPassword(password)
+		if err != nil {
+			return nil, err
+		}
+		previous := *user
+		user.PasswordHash, user.Salt, user.UpdatedAt = hash, "", time.Now()
+		if err := r.saveUsersLocked(); err != nil {
+			*user = previous
+			return nil, err
+		}
 	}
 
 	return user, nil
 }
 
 // CreateToken issues a new session bearer token for a user.
-func (r *AuthRepository) CreateToken(userID string, duration time.Duration) (*models.AuthToken, error) {
+func (r *AuthRepository) CreateToken(ctx context.Context, userID string, duration time.Duration) (*models.AuthToken, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -225,33 +252,46 @@ func (r *AuthRepository) CreateToken(userID string, duration time.Duration) (*mo
 		return nil, err
 	}
 
+	id, err := models.GenerateRandomHex(16)
+	if err != nil {
+		return nil, err
+	}
 	token := &models.AuthToken{
+		ID:        "tok_" + id,
 		Token:     "vmap_" + tokHex,
 		UserID:    userID,
 		ExpiresAt: time.Now().Add(duration),
 		CreatedAt: time.Now(),
 	}
 
-	r.tokens[token.Token] = token
-	_ = r.saveTokensLocked()
+	stored := *token
+	stored.TokenHash, stored.Token = models.HashToken(token.Token), ""
+	r.tokens[stored.TokenHash] = &stored
+	if err := r.saveTokensLocked(); err != nil {
+		delete(r.tokens, stored.TokenHash)
+		return nil, err
+	}
 
 	if r.db != nil {
-		_, _ = r.db.Exec(`
-			INSERT INTO AuthTokens (token, user_id, expires_at, created_at)
-			VALUES (@p1, @p2, @p3, @p4);
-		`, token.Token, token.UserID, token.ExpiresAt, token.CreatedAt)
+		_, _ = r.db.ExecContext(ctx, `
+			INSERT INTO AuthTokens (id, token_hash, user_id, expires_at, created_at)
+			VALUES (@id, @hash, @user, @expires, @created);
+		`, sql.Named("id", token.ID), sql.Named("hash", stored.TokenHash), sql.Named("user", token.UserID), sql.Named("expires", token.ExpiresAt), sql.Named("created", token.CreatedAt))
 	}
 
 	return token, nil
 }
 
 // ValidateToken returns the User associated with a valid token.
-func (r *AuthRepository) ValidateToken(tokenStr string) (*models.User, error) {
+func (r *AuthRepository) ValidateToken(ctx context.Context, tokenStr string) (*models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	token, ok := r.tokens[tokenStr]
-	if !ok || token.ExpiresAt.Before(time.Now()) {
+	token, ok := r.tokens[models.HashToken(tokenStr)]
+	if !ok || token.RevokedAt != nil || !token.ExpiresAt.After(time.Now()) {
 		return nil, ErrInvalidToken
 	}
 
@@ -264,20 +304,37 @@ func (r *AuthRepository) ValidateToken(tokenStr string) (*models.User, error) {
 }
 
 // RevokeToken deletes an auth token (logout).
-func (r *AuthRepository) RevokeToken(tokenStr string) {
+func (r *AuthRepository) RevokeToken(ctx context.Context, tokenStr string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delete(r.tokens, tokenStr)
-	_ = r.saveTokensLocked()
+	hash := models.HashToken(tokenStr)
+	token := r.tokens[hash]
+	delete(r.tokens, hash)
+	if err := r.saveTokensLocked(); err != nil {
+		if token != nil {
+			r.tokens[hash] = token
+		}
+		return err
+	}
 
 	if r.db != nil {
-		_, _ = r.db.Exec("DELETE FROM AuthTokens WHERE token = @p1", tokenStr)
+		_, err := r.db.ExecContext(ctx, "UPDATE AuthTokens SET revoked_at = @now WHERE token_hash = @hash AND revoked_at IS NULL", sql.Named("now", time.Now()), sql.Named("hash", hash))
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // GetUserByID returns user info by ID.
-func (r *AuthRepository) GetUserByID(userID string) (*models.User, error) {
+func (r *AuthRepository) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -289,7 +346,10 @@ func (r *AuthRepository) GetUserByID(userID string) (*models.User, error) {
 }
 
 // FindUserByEmail returns user info by lowercased email address.
-func (r *AuthRepository) FindUserByEmail(email string) (*models.User, error) {
+func (r *AuthRepository) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

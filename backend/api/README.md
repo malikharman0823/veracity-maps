@@ -14,7 +14,7 @@ The `api` package provides the central HTTP request multiplexer, routing logic, 
   - `Router`: Holds references to `SessionRepository`, `Middleware`, and functional handlers (`uploadH`, `datasetsH`, `georefH`, `exportH`).
 - **Core Functions**:
   - `NewRouter(...) *Router`: Constructs a new router with dependency injection.
-    It receives session, authentication, and project repositories plus middleware and upload, dataset, georeference, export, authentication, and project handlers.
+    It receives session, authentication (`AuthRepo`), and project repositories plus middleware and upload, dataset, georeference, export, authentication, and project handlers.
   - `BuildHandler() http.Handler`: Wraps the core routing dispatcher with `Session`, `Recovery`, and `CORS` middleware.
   - `route(w http.ResponseWriter, r *http.Request)`: Implements URL path matching:
     - `/api/projects`: Authenticated user-owned project listing and creation; project sharing uses owner, editor, and viewer roles.
@@ -46,6 +46,7 @@ The `api` package provides the central HTTP request multiplexer, routing logic, 
 
 ### 2. `middleware.go`
 - **Purpose**: Provides cross-cutting concerns: CORS header injection, panic recovery, and session token resolution.
+- Bearer-token validation receives the HTTP request context, so cancelled requests cancel MSSQL auth lookups.
 - **Key Structs**:
   - `Middleware`: Holds a reference to the `SessionRepository`.
 - **Core Functions**:

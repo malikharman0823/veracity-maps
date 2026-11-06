@@ -18,7 +18,7 @@ import (
 
 type Router struct {
 	repo       *repository.SessionRepository
-	authRepo   *repository.AuthRepository
+	authRepo   repository.AuthRepo
 	projRepo   *repository.ProjectRepository
 	middleware *Middleware
 	uploadH    *upload.Handler
@@ -31,7 +31,7 @@ type Router struct {
 
 func NewRouter(
 	repo *repository.SessionRepository,
-	authRepo *repository.AuthRepository,
+	authRepo repository.AuthRepo,
 	projRepo *repository.ProjectRepository,
 	mw *Middleware,
 	uh *upload.Handler,

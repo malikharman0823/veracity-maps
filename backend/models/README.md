@@ -1,5 +1,13 @@
 # Package: `models`
 
+Authentication helpers in `user.go` are `HashPassword(password) (string, error)`
+using bcrypt cost 12, `VerifyPassword(password, encoded) (bool, error)`, and
+`HashToken(raw) string` using SHA-256 hex. Password creation rejects inputs over
+72 bytes, including multibyte strings. `VerifyLegacyPassword` exists only for
+upgrading an existing salted password after a successful login. Public auth
+responses serialize `User.Public()`; persistence hashes, salts, and revocation
+metadata are excluded from the public profile.
+
 Located in [`backend/models/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/models)
 
 The `models` package defines all core domain entities, API response wrappers, and session extraction utilities shared across the backend service layers.
