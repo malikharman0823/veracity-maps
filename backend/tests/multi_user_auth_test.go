@@ -405,6 +405,10 @@ func TestMSSQLAuthenticationHonorsCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	checks := []func() error{
+		func() error {
+			_, _, err := repo.AuthenticateAndCreateToken(ctx, "cancel@example.com", "Password123!", time.Hour)
+			return err
+		},
 		func() error { _, err := repo.Register(ctx, "Name", "cancel@example.com", "Password123!"); return err },
 		func() error { _, err := repo.Authenticate(ctx, "cancel@example.com", "Password123!"); return err },
 		func() error { _, err := repo.CreateToken(ctx, "usr_none", time.Hour); return err },

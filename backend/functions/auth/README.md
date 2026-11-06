@@ -1,5 +1,10 @@
 # Authentication handlers
 
+Login calls the atomic `AuthRepo.AuthenticateAndCreateToken` operation. Invalid
+credentials return 401; persistence or token-issuance failures return a safe
+500 `AUTHENTICATION_ERROR`. It never mints a token from a separately verified
+password snapshot.
+
 Registration, login, logout, and middleware pass the HTTP request context to
 `AuthRepo`. Registration accepts passwords of at least 6 characters and at most
 72 bytes; oversized passwords return HTTP 400. Registration and login return the

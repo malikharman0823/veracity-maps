@@ -40,6 +40,26 @@ func (r *AuthRepository) SetDB(db *sql.DB) {
 	r.db = db
 }
 
+func (r *AuthRepository) AuthenticateAndCreateToken(ctx context.Context, email, password string, duration time.Duration) (*models.User, *models.AuthToken, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, err := r.authenticateLocked(email, password)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	token, err := r.createTokenLocked(ctx, u.ID, duration)
+	if err != nil {
+		return nil, nil, err
+	}
+	return u, token, nil
+}
+
 func NewAuthRepository(storageDir string) (*AuthRepository, error) {
 	usersDir := filepath.Join(storageDir, "users")
 	if err := os.MkdirAll(usersDir, 0755); err != nil {
@@ -200,6 +220,13 @@ func (r *AuthRepository) Authenticate(ctx context.Context, email, password strin
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.authenticateLocked(email, password)
+}
+
+func (r *AuthRepository) authenticateLocked(email, password string) (*models.User, error) {
+	if len([]byte(password)) > 72 {
+		return nil, ErrInvalidPassword
+	}
 
 	cleanEmail := strings.ToLower(strings.TrimSpace(email))
 	uid, exists := r.emailToID[cleanEmail]
@@ -246,6 +273,10 @@ func (r *AuthRepository) CreateToken(ctx context.Context, userID string, duratio
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.createTokenLocked(ctx, userID, duration)
+}
+
+func (r *AuthRepository) createTokenLocked(ctx context.Context, userID string, duration time.Duration) (*models.AuthToken, error) {
 
 	tokHex, err := models.GenerateRandomHex(32)
 	if err != nil {

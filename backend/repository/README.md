@@ -1,5 +1,15 @@
 # Package: `repository`
 
+`AuthRepo.AuthenticateAndCreateToken(ctx, email, password, duration)` verifies
+credentials and issues a token as one operation. MSSQL holds `UPDLOCK, HOLDLOCK`
+on the user row through legacy hash upgrade, token insertion, and transaction
+commit. Password change takes the same lock before updating/revoking tokens, so
+a login that commits first has its token revoked, while a password change that
+commits first makes the old-password login fail. Both standalone and atomic
+authentication guard legacy upgrades against the originally read hash and salt;
+zero updated rows reject stale credentials. The filesystem test repository holds
+its mutex across verification and token persistence.
+
 Located in [`backend/repository/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/repository)
 
 The `repository` package provides the thread-safe, in-memory data store for anonymous user sessions, datasets, control points, map projects, and layer configurations.

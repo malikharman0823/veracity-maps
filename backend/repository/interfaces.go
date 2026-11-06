@@ -11,6 +11,7 @@ import (
 type AuthRepo interface {
 	Register(ctx context.Context, name, email, password string) (*models.User, error)
 	Authenticate(ctx context.Context, email, password string) (*models.User, error)
+	AuthenticateAndCreateToken(ctx context.Context, email, password string, duration time.Duration) (*models.User, *models.AuthToken, error)
 	CreateToken(ctx context.Context, userID string, duration time.Duration) (*models.AuthToken, error)
 	ValidateToken(ctx context.Context, tokenStr string) (*models.User, error)
 	RevokeToken(ctx context.Context, tokenStr string) error

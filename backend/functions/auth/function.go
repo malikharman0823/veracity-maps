@@ -131,15 +131,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authRepo.Authenticate(r.Context(), req.Email, req.Password)
+	user, token, err := h.authRepo.AuthenticateAndCreateToken(r.Context(), req.Email, req.Password, 30*24*time.Hour)
 	if err != nil {
-		models.WriteError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password", nil, nil)
-		return
-	}
-
-	token, err := h.authRepo.CreateToken(r.Context(), user.ID, 30*24*time.Hour)
-	if err != nil {
-		models.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR", "Failed to generate session token", nil, nil)
+		if errors.Is(err, repository.ErrInvalidPassword) {
+			models.WriteError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password", nil, nil)
+		} else {
+			models.WriteError(w, http.StatusInternalServerError, "AUTHENTICATION_ERROR", "Could not authenticate or issue a session token", nil, nil)
+		}
 		return
 	}
 

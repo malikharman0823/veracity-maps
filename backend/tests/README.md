@@ -1,5 +1,13 @@
 # Package: `tests`
 
+`auth_profile_concurrency_test.go` controls login/password interleavings without
+production hooks. It covers change-first login rejection, actual transaction and
+user-lock state at token insertion followed by password-change revocation, and
+a committed credential replacement between a legacy read and its guarded
+upgrade. Test-only driver wrappers use the real MSSQL driver and one SQL session;
+they do not infer ordering from sleeps. The SQL lock-state check requires access
+to `sys.dm_tran_locks`. Filesystem atomic-login persistence also runs offline.
+
 Located in [`backend/tests/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/backend/tests)
 
 The `tests` package houses the automated test suites for the Veracity Maps Go backend, spanning unit tests, regression suites, concurrency testing, and end-to-end API matrix execution.
