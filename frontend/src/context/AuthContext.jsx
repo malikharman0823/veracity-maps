@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react"
-import { getAuthToken, getCurrentUser, loginUser, registerUser, logoutUser, clearAuthToken } from "../api"
+import { getAuthToken, getCurrentUser, loginUser, registerUser, logoutUser, clearAuthToken, sendOtp, verifyOtp } from "../api"
 
 const AuthContext = createContext(null)
 
@@ -40,6 +40,24 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const sendOtpCode = async (email, purpose, name = "") => {
+    return await sendOtp(email, purpose, name)
+  }
+
+  const loginWithOtp = async (email, code) => {
+    const data = await verifyOtp(email, code, "login")
+    setUser(data.user)
+    setToken(data.token)
+    return data
+  }
+
+  const registerWithOtp = async (name, email, code) => {
+    const data = await verifyOtp(email, code, "register", name)
+    setUser(data.user)
+    setToken(data.token)
+    return data
+  }
+
   const login = async (email, password) => {
     const data = await loginUser(email, password)
     setUser(data.user)
@@ -68,6 +86,9 @@ export function AuthProvider({ children }) {
     token,
     isAuthenticated: !!user && !!token,
     loading,
+    sendOtp: sendOtpCode,
+    loginWithOtp,
+    registerWithOtp,
     login,
     register,
     logout,

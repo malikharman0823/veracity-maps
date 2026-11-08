@@ -31,6 +31,10 @@ temporary storage lifecycle.
 
 ## 2. API Capabilities
 
+- **Passwordless OTP Authentication**:
+  - `POST /api/auth/otp/send`: Generates and sends a single-use 6-digit numeric OTP via Resend email for login or registration, protected by a 60-second cooldown rate limit.
+  - `POST /api/auth/otp/verify`: Validates the 6-digit OTP code against SHA-256 hash storage (max 5 attempts, 10-minute expiry), marks it consumed, and issues a session token.
+
 - **Icon Points**:
   - `GET /icons`: Discovers and lists available icons from `manifest.json`.
   - `GET /icons/{id}`: Serves icon asset file (PNG/SVG/WebP/ICO/JPG) with caching headers.

@@ -249,7 +249,7 @@ func TestTransparency_APIEndpoints(t *testing.T) {
 		t.Fatalf("POST apply with enhanced variant failed: %v", err)
 	}
 
-	// Verify transparent source image is served
+	// Verify transparent source image is served (both default active and explicit ?variant=enhanced)
 	req, _ = http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/source-image", nil)
 	req.Header.Set("X-Session-ID", sessionID)
 	resp, err = client.Do(req)
@@ -263,6 +263,22 @@ func TestTransparency_APIEndpoints(t *testing.T) {
 	_, _, _, a = servedImg.At(0, 0).RGBA()
 	if a != 0 {
 		t.Errorf("expected served source-image to be transparent with background removal active, got alpha=%d", a)
+	}
+
+	// Verify transparent source image is ALSO served when client explicitly queries ?variant=enhanced
+	reqEnh, _ := http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/source-image?variant=enhanced", nil)
+	reqEnh.Header.Set("X-Session-ID", sessionID)
+	respEnh, errEnh := client.Do(reqEnh)
+	if errEnh != nil || respEnh.StatusCode != http.StatusOK {
+		t.Fatalf("GET source-image?variant=enhanced after apply failed: %v", errEnh)
+	}
+	servedImgEnh, errEnh := png.Decode(respEnh.Body)
+	if errEnh != nil {
+		t.Fatalf("failed to decode served image with ?variant=enhanced: %v", errEnh)
+	}
+	_, _, _, aEnh := servedImgEnh.At(0, 0).RGBA()
+	if aEnh != 0 {
+		t.Errorf("expected served source-image?variant=enhanced to be transparent with background removal active, got alpha=%d", aEnh)
 	}
 
 	// Reset background removal on the enhanced dataset
@@ -287,6 +303,22 @@ func TestTransparency_APIEndpoints(t *testing.T) {
 	_, _, _, a = servedImg.At(0, 0).RGBA()
 	if a == 0 {
 		t.Errorf("expected served source-image to be opaque white after reset on enhanced dataset, got transparent alpha=%d", a)
+	}
+
+	// Also verify that GET source-image?variant=enhanced serves the opaque enhanced raster with white background visible
+	reqResetEnh, _ := http.NewRequest("GET", server.URL+"/datasets/"+datasetID+"/source-image?variant=enhanced", nil)
+	reqResetEnh.Header.Set("X-Session-ID", sessionID)
+	respResetEnh, errResetEnh := client.Do(reqResetEnh)
+	if errResetEnh != nil || respResetEnh.StatusCode != http.StatusOK {
+		t.Fatalf("GET source-image?variant=enhanced after reset on enhanced dataset failed: %v", errResetEnh)
+	}
+	servedResetImgEnh, errResetEnh := png.Decode(respResetEnh.Body)
+	if errResetEnh != nil {
+		t.Fatalf("failed to decode served image after reset with ?variant=enhanced: %v", errResetEnh)
+	}
+	_, _, _, aResetEnh := servedResetImgEnh.At(0, 0).RGBA()
+	if aResetEnh == 0 {
+		t.Errorf("expected served source-image?variant=enhanced to be opaque white after reset on enhanced dataset, got transparent alpha=%d", aResetEnh)
 	}
 }
 

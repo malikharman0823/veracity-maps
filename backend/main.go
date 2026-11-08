@@ -31,18 +31,42 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
-	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 60*time.Second)
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 5*time.Second)
 	sqlDB, err := db.InitDB(startupCtx, cfg.MSSQLConnStr)
+
+	var authRepo repository.AuthRepo
+	var otpRepo repository.OTPRepo
+	var profileRepo repository.ProfileRepo
+
 	if err != nil {
 		cancelStartup()
-		log.Fatal("Failed to connect to MSSQL; check database availability and configuration (connection details withheld)")
-	}
-	defer sqlDB.Close()
-	if err := db.RunMigrations(startupCtx, sqlDB, "migrations"); err != nil {
+		if cfg.Environment == "production" {
+			log.Fatal("Failed to connect to MSSQL; check database availability and configuration (connection details withheld)")
+		}
+		log.Println("==================================================================")
+		log.Println(" [DEV NOTICE] MSSQL Server TCP connection (port 1433) is offline.")
+		log.Println(" [DEV NOTICE] Automatically running in local development mode.")
+		log.Println(" [DEV NOTICE] SMTP Email OTP delivery and workspaces are ACTIVE.")
+		log.Println("==================================================================")
+
+		memAuth, authErr := repository.NewAuthRepository("storage")
+		if authErr != nil {
+			log.Fatalf("Failed to initialize auth repository: %v", authErr)
+		}
+		authRepo = memAuth
+		otpRepo = repository.NewMemoryOTPRepository()
+		profileRepo = repository.NewMemoryProfileRepository(memAuth)
+	} else {
+		defer sqlDB.Close()
+		if err := db.RunMigrations(startupCtx, sqlDB, "migrations"); err != nil {
+			cancelStartup()
+			log.Fatalf("Failed to migrate MSSQL schema: %v", err)
+		}
 		cancelStartup()
-		log.Fatalf("Failed to migrate MSSQL schema: %v", err)
+		authRepo = repository.NewMSSQLAuthRepository(sqlDB)
+		otpRepo = repository.NewMSSQLOTPRepository(sqlDB)
+		profileRepo = repository.NewMSSQLProfileRepository(sqlDB)
 	}
-	cancelStartup()
 
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
@@ -52,14 +76,13 @@ func main() {
 	repo := repository.NewSessionRepository()
 	repo.SetStorageDir(cfg.SessionStorageDir)
 
-	authRepo := repository.NewMSSQLAuthRepository(sqlDB)
-
 	projRepo, err := repository.NewProjectRepository("storage")
 	if err != nil {
 		log.Fatalf("Failed to initialize project repository: %v", err)
 	}
-
-	projRepo.SetDB(sqlDB)
+	if sqlDB != nil {
+		projRepo.SetDB(sqlDB)
+	}
 
 	middleware := api.NewMiddleware(repo, authRepo)
 
@@ -71,11 +94,24 @@ func main() {
 	datasetsHandler := datasets.NewHandler(datasetService, repo)
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)
-	profileRepo := repository.NewMSSQLProfileRepository(sqlDB)
-	mailer := services.NewResendMailer(cfg.ResendAPIKey, cfg.ResendFrom)
-	authHandler := auth.NewHandlerWithVerification(authRepo, profileRepo, mailer, cfg.AppPublicURL)
-	projectsHandler := projects.NewHandler(projRepo, repo, authRepo)
+	var mailer services.Mailer
+	if cfg.SMTPHost != "" {
+		mailer = services.NewSMTPMailer(services.SMTPConfig{
+			Host:          cfg.SMTPHost,
+			Port:          cfg.SMTPPort,
+			Username:      cfg.SMTPUsername,
+			Password:      cfg.SMTPPassword,
+			From:          cfg.SMTPFrom,
+			UseTLS:        cfg.SMTPUseTLS,
+			SkipTLSVerify: cfg.Environment != "production",
+		})
+	} else if cfg.ResendAPIKey != "" {
+		mailer = services.NewResendMailer(cfg.ResendAPIKey, cfg.ResendFrom)
+	}
+	authHandler := auth.NewHandlerWithOTP(authRepo, otpRepo, profileRepo, mailer, cfg.AppPublicURL)
+	projectsHandler := projects.NewHandler(projRepo, repo, authRepo, mailer, cfg.AppPublicURL)
 	profileHandler := profile.NewHandler(profileRepo, mailer, "storage", cfg.AppPublicURL)
+	profileHandler.SetRepositories(repo, projRepo, authRepo)
 
 	router := api.NewRouter(
 		repo,

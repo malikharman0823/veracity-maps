@@ -106,6 +106,24 @@ client.interceptors.response.use(
 
 // --- Authentication APIs ---
 
+export async function sendOtp(email, purpose, name = "") {
+  const payload = { email, purpose }
+  if (name) payload.name = name
+  const response = await client.post("/api/auth/otp/send", payload)
+  return response.data.data
+}
+
+export async function verifyOtp(email, code, purpose, name = "") {
+  const payload = { email, code, purpose }
+  if (name) payload.name = name
+  const response = await client.post("/api/auth/otp/verify", payload)
+  const data = response.data.data
+  if (data?.token) {
+    setAuthToken(data.token)
+  }
+  return data
+}
+
 export async function registerUser(name, email, password) {
   const response = await client.post("/api/auth/register", { name, email, password })
   const data = response.data.data
@@ -252,13 +270,43 @@ export async function getSession(sessionId) {
   return response.data.data
 }
 
+export async function listSessions() {
+  const response = await client.get("/sessions")
+  return response.data.data?.sessions || []
+}
+
+export function switchSession(sessionId, targetDatasetId = null) {
+  if (!sessionId) return
+  setActiveSessionId(sessionId)
+  if (targetDatasetId) {
+    window.location.href = `/datasets/${encodeURIComponent(targetDatasetId)}/workspace`
+  } else {
+    window.location.href = `/workspace`
+  }
+}
+
 export async function endSession(sessionId) {
   const sid = sessionId || getActiveSessionId()
   if (!sid) return true
   try {
     await client.post(`/sessions/${encodeURIComponent(sid)}/end`)
   } finally {
-    clearActiveSessionId()
+    if (!sessionId || sessionId === getActiveSessionId()) {
+      clearActiveSessionId()
+    }
+  }
+  return true
+}
+
+export async function deleteSession(sessionId) {
+  const sid = sessionId || getActiveSessionId()
+  if (!sid) return true
+  try {
+    await client.delete(`/sessions/${encodeURIComponent(sid)}`)
+  } finally {
+    if (!sessionId || sessionId === getActiveSessionId()) {
+      clearActiveSessionId()
+    }
   }
   return true
 }
@@ -1126,3 +1174,33 @@ export async function deleteSavedConfig(sessionId, configId) {
   const response = await client.delete(`/sessions/${encodeURIComponent(sid)}/configs/${encodeURIComponent(configId)}`)
   return response.data.data
 }
+
+// -------------------------------------------------------------
+// User Profile & Profile Dashboard API
+// -------------------------------------------------------------
+
+export async function getProfileDashboard() {
+  const response = await client.get("/api/profile/dashboard")
+  return response.data.data
+}
+
+export async function getProfile() {
+  const response = await client.get("/api/profile")
+  return response.data.data
+}
+
+export async function updateProfileName(fullName) {
+  const response = await client.patch("/api/profile", { full_name: fullName })
+  return response.data.data
+}
+
+export async function listProfileFiles() {
+  const response = await client.get("/api/profile/files")
+  return response.data.data?.files || []
+}
+
+export async function deleteProfileFile(fileId) {
+  const response = await client.delete(`/api/profile/files/${encodeURIComponent(fileId)}`)
+  return response.data.data
+}
+

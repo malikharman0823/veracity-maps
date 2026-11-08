@@ -10,19 +10,54 @@ import {
   listUserInvitations,
   respondToInvitation,
   listProjectActivities,
+  listSessions,
+  switchSession,
+  getActiveSessionId,
+  deleteSession,
 } from "../api"
 import ShareProjectModal from "../components/ShareProjectModal"
 import ThemeToggle from "../components/ThemeToggle"
+import HoldButton from "../components/HoldButton"
+
+const formatDateTime = (dateVal, fallback = "----") => {
+  if (!dateVal) return fallback
+  try {
+    let cleanVal = dateVal
+    if (typeof cleanVal === "string") {
+      // Trim nanoseconds to milliseconds while keeping timezone intact
+      cleanVal = cleanVal.replace(/\.(\d{3})\d+([+-].*|Z)?$/, (match, p1, p2) => "." + p1 + (p2 || ""))
+      // Convert SQL datetime format with space to ISO format with T
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(cleanVal)) {
+        cleanVal = cleanVal.replace(" ", "T")
+      }
+    }
+    const d = new Date(cleanVal)
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1) return fallback
+    const formatted = d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+    return formatted === "Invalid Date" ? fallback : formatted
+  } catch {
+    return fallback
+  }
+}
 
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "invitations" | "activity" | "settings"
+  const [activeTab, setActiveTab] = useState("my") // "my" | "shared" | "sessions" | "invitations" | "activity" | "settings"
   const [projects, setProjects] = useState([])
   const [sharedProjects, setSharedProjects] = useState([])
   const [invitations, setInvitations] = useState([])
   const [activities, setActivities] = useState([])
+  const [sessions, setSessions] = useState([])
+  const [currentSessionId, setCurrentSessionId] = useState(getActiveSessionId())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -44,13 +79,16 @@ export default function DashboardPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true)
-      const [owned, shared, projInvites] = await Promise.all([
+      const [owned, shared, projInvites, sessList] = await Promise.all([
         listUserProjects().catch(() => []),
         listSharedProjects().catch(() => []),
         listUserInvitations().catch(() => []),
+        listSessions().catch(() => []),
       ])
       setProjects(owned || [])
       setSharedProjects(shared || [])
+      setSessions(sessList || [])
+      setCurrentSessionId(getActiveSessionId())
 
       const formattedProjInvites = (projInvites || []).map((inv) => ({ ...inv, inviteType: "project" }))
       setInvitations(formattedProjInvites)
@@ -63,7 +101,7 @@ export default function DashboardPage() {
             .catch(() => [])
         )
         const actArrays = await Promise.all(projActPromises)
-        const mergedActs = actArrays.flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        const mergedActs = actArrays.flat().sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at))
         setActivities(mergedActs)
       } catch {
         setActivities([])
@@ -72,6 +110,18 @@ export default function DashboardPage() {
       setError("Failed to load your workspaces.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteSession = async (sessionId) => {
+    try {
+      await deleteSession(sessionId)
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId))
+      if (sessionId === currentSessionId) {
+        setCurrentSessionId(getActiveSessionId())
+      }
+    } catch (err) {
+      console.warn("Failed to delete session:", err)
     }
   }
 
@@ -230,6 +280,16 @@ export default function DashboardPage() {
             Shared Projects ({sharedProjects.length})
           </button>
           <button
+            onClick={() => setActiveTab("sessions")}
+            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all shrink-0 cursor-pointer ${
+              activeTab === "sessions"
+                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
+            }`}
+          >
+            Workspace Sessions ({sessions.length})
+          </button>
+          <button
             onClick={() => setActiveTab("invitations")}
             className={`relative px-3.5 py-1.5 rounded-[6px] text-xs font-medium transition-all shrink-0 cursor-pointer ${
               activeTab === "invitations"
@@ -354,13 +414,18 @@ export default function DashboardPage() {
                     </p>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
-                    <span>
-                      {project.dataset_ids?.length || 0} {project.dataset_ids?.length === 1 ? "layer" : "layers"}
-                    </span>
-                    <span>
-                      Updated {new Date(project.updated_at).toLocaleDateString()}
-                    </span>
+                  <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex flex-col gap-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <div className="flex items-center justify-between">
+                      <span>
+                        {project.dataset_ids?.length || 0} {project.dataset_ids?.length === 1 ? "layer" : "layers"}
+                      </span>
+                      <span>
+                        Updated {formatDateTime(project.updated_at)}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      Created {formatDateTime(project.created_at)}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -408,16 +473,138 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
-                    <span>
-                      {project.dataset_ids?.length || 0} layers
-                    </span>
-                    <span>
-                      Shared {new Date(shared_date).toLocaleDateString()}
-                    </span>
+                  <div className="mt-6 pt-4 border-t border-neutral-100 dark:border-[#2e2e2e] flex flex-col gap-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <div className="flex items-center justify-between">
+                      <span>
+                        {project.dataset_ids?.length || 0} layers
+                      </span>
+                      <span>
+                        Shared {formatDateTime(shared_date || project.created_at)}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      Created {formatDateTime(project.created_at)}
+                    </div>
                   </div>
                 </div>
               ))}
+            </div>
+          )
+        ) : activeTab === "sessions" ? (
+          /* PREVIOUS SESSIONS VIEW */
+          sessions.length === 0 ? (
+            <div className="border border-dashed border-neutral-300 dark:border-[#2e2e2e] rounded-[12px] p-12 text-center flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-[8px] bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-neutral-400 mb-4">
+                <svg className="w-6 h-6 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-white">No workspace sessions found</h3>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mt-1">
+                Sessions are initialized whenever you upload maps or work on spatial layers.
+              </p>
+              <button
+                onClick={() => navigate("/")}
+                className="mt-4 px-4 py-2 rounded-[6px] bg-[#3ecf8e] text-[#171717] font-semibold text-xs hover:bg-[#24b47e] transition-colors cursor-pointer"
+              >
+                Upload Map Dataset
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {sessions.map((sess) => {
+                const isActive = sess.id === currentSessionId
+                return (
+                  <div
+                    key={sess.id}
+                    className={`bg-white dark:bg-[#202020] border rounded-[12px] p-5 flex flex-col justify-between transition-all duration-200 shadow-xs hover:shadow-md ${
+                      isActive
+                        ? "border-[#3ecf8e] ring-2 ring-[#3ecf8e]/20"
+                        : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-neutral-600"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-neutral-900 dark:text-white">
+                            {sess.id}
+                          </span>
+                          {isActive && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#3ecf8e]/15 text-[#10b981] dark:text-[#3ecf8e] border border-[#3ecf8e]/30">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-[#282828] text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-[#383838]">
+                          {sess.memory_size || "0 B"}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-400">Datasets:</span>
+                          <span className="font-medium text-neutral-900 dark:text-white">{sess.dataset_count}</span>
+                        </div>
+                        {sess.datasets && sess.datasets.length > 0 && (
+                          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-full">
+                            Files: {sess.datasets.slice(0, 3).join(", ")}{sess.datasets.length > 3 ? "..." : ""}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-400">Total File Memory:</span>
+                          <span className="font-mono font-medium text-neutral-800 dark:text-neutral-200">{sess.memory_size}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 pt-3 border-t border-neutral-100 dark:border-[#2e2e2e] space-y-3">
+                      <div className="space-y-0.5 text-[10px] text-neutral-400">
+                        <div>Created: {formatDateTime(sess.created_at, "----")}</div>
+                        <div>Last Active: {isActive ? (formatDateTime(sess.last_active_at, "----") !== "----" ? formatDateTime(sess.last_active_at, "----") : "Just now") : formatDateTime(sess.last_active_at, "----")}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => switchSession(sess.id, sess.first_dataset_id)}
+                          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                            isActive
+                              ? "bg-[#3ecf8e]/15 text-[#10b981] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/25"
+                              : "bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] shadow-xs"
+                          }`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                          </svg>
+                          {isActive ? "Continue Workspace" : "Open"}
+                        </button>
+
+                        <HoldButton
+                          doneLabel="Deleted"
+                          backgroundColor="#27272a"
+                          fillColor="#dc2626"
+                          textColor="#ef4444"
+                          fillTextColor="#ffffff"
+                          size="sm"
+                          radius={6}
+                          fillDirection="right"
+                          holdTime={1600}
+                          releaseTime={200}
+                          pressScale={0.97}
+                          wave
+                          waveAmplitude={4}
+                          glow
+                          resetAfter={1000}
+                          onHold={() => handleDeleteSession(sess.id)}
+                          className="shrink-0 text-xs px-2.5 h-[34px]"
+                          title="Hold to delete this session"
+                        >
+                          Hold to delete
+                        </HoldButton>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )
         ) : activeTab === "invitations" ? (
@@ -444,7 +631,7 @@ export default function DashboardPage() {
                       <h4 className="text-sm font-bold text-neutral-900 dark:text-white">{inv.project_name || inv.org_name}</h4>
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      Invited by <span className="text-neutral-700 dark:text-neutral-200 font-medium">{inv.inviter_name || inv.invited_by}</span> on {new Date(inv.created_at).toLocaleDateString()}
+                      Invited by <span className="text-neutral-700 dark:text-neutral-200 font-medium">{inv.inviter_name || inv.invited_by}</span> on {formatDateTime(inv.created_at)}
                     </p>
                   </div>
 
@@ -503,7 +690,7 @@ export default function DashboardPage() {
                       )}
                     </div>
                     <span className="text-[11px] text-neutral-400 mt-1 block">
-                      {new Date(act.created_at).toLocaleString()}
+                      {formatDateTime(act.timestamp || act.created_at)}
                     </span>
                   </div>
                 </div>

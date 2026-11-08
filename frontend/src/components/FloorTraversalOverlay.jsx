@@ -14,6 +14,7 @@ import {
   Settings,
 } from "lucide-react"
 import { resolveBuildingName } from "../lib/buildingUtils"
+import WakeSlider from "./WakeSlider"
 
 export default function FloorTraversalOverlay({
   members = [],
@@ -208,9 +209,9 @@ export default function FloorTraversalOverlay({
   }
 
   // Update active floor raster opacity
-  function handleOpacityChange(e) {
+  function handleOpacityChange(val) {
     if (!activeFloorMember || !onUpdateMember) return
-    const opacity = parseFloat(e.target.value)
+    const opacity = typeof val === "number" ? Math.max(0, Math.min(1, val / 100)) : parseFloat(val)
     const targets = activeFloorMember.members || [activeFloorMember]
     targets.forEach((m) => onUpdateMember(m.dataset_id, { raster_opacity: opacity }))
   }
@@ -482,20 +483,24 @@ export default function FloorTraversalOverlay({
 
           {/* Opacity slider popup */}
           {showOpacitySlider && (
-            <div className="flex items-center gap-2 px-1 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={activeOpacity}
+            <div className="px-1 pt-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+              <WakeSlider
+                value={Math.round(activeOpacity * 100)}
                 onChange={handleOpacityChange}
-                className="w-full h-1.5 bg-neutral-200 dark:bg-[#2e2e2e] rounded-lg appearance-none cursor-pointer accent-[#3ecf8e]"
-                title={`Opacity: ${Math.round(activeOpacity * 100)}%`}
+                min={0}
+                max={100}
+                step={1}
+                bars={24}
+                height={22}
+                restHeight={5}
+                gap={2}
+                fillColor="#3ecf8e"
+                trackColor="#262626"
+                crestColor="#3ecf8e"
+                showValue={true}
+                formatValue={(v) => `${Math.round(v)}%`}
+                ariaLabel="Floor raster opacity"
               />
-              <span className="text-[10px] font-mono font-medium text-neutral-500 dark:text-neutral-400 min-w-[28px] text-right">
-                {Math.round(activeOpacity * 100)}%
-              </span>
             </div>
           )}
         </div>

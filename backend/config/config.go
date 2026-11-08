@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,6 +21,12 @@ type Config struct {
 	SessionMaxLifetime time.Duration
 	MSSQLConnStr       string
 	Environment        string
+	SMTPHost           string
+	SMTPPort           int
+	SMTPUsername       string
+	SMTPPassword       string
+	SMTPFrom           string
+	SMTPUseTLS         bool
 	ResendAPIKey       string
 	ResendFrom         string
 	AppPublicURL       string
@@ -34,18 +41,55 @@ func (c *Config) Validate() error {
 		return errors.New("WORKSPACE_TTL must be positive")
 	}
 	if c.Environment != "test" {
-		for _, setting := range []struct{ name, value string }{
-			{"RESEND_API_KEY", c.ResendAPIKey}, {"RESEND_FROM_EMAIL", c.ResendFrom}, {"APP_PUBLIC_URL", c.AppPublicURL},
-		} {
-			if strings.TrimSpace(setting.value) == "" {
-				return errors.New(setting.name + " is required outside tests")
-			}
+		if strings.TrimSpace(c.AppPublicURL) == "" {
+			return errors.New("APP_PUBLIC_URL is required outside tests")
+		}
+		if strings.TrimSpace(c.SMTPHost) == "" && strings.TrimSpace(c.ResendAPIKey) == "" {
+			return errors.New("SMTP_HOST (or RESEND_API_KEY) is required outside tests")
+		}
+		if strings.TrimSpace(c.SMTPFrom) == "" && strings.TrimSpace(c.ResendFrom) == "" {
+			return errors.New("SMTP_FROM_EMAIL (or RESEND_FROM_EMAIL) is required outside tests")
 		}
 	}
 	return nil
 }
 
+func loadEnvFiles() {
+	if os.Getenv("APP_ENV") == "test" {
+		return
+	}
+	for _, p := range []string{".env", "../.env"} {
+		f, err := os.Open(p)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+					v = v[1 : len(v)-1]
+				}
+				if os.Getenv(k) == "" {
+					_ = os.Setenv(k, v)
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			// Ignore read error from truncated env file
+		}
+		_ = f.Close()
+	}
+}
+
 func LoadConfig() *Config {
+	loadEnvFiles()
 	workspaceTTL, err := time.ParseDuration(getEnv("WORKSPACE_TTL", "24h"))
 	if err != nil {
 		workspaceTTL = 0 // Validate rejects malformed durations before startup.
@@ -86,6 +130,28 @@ func LoadConfig() *Config {
 		}
 	}
 
+	smtpPort := 587
+	if pStr := getEnv("SMTP_PORT", ""); pStr != "" {
+		if pVal, err := strconv.Atoi(pStr); err == nil && pVal > 0 {
+			smtpPort = pVal
+		}
+	}
+	smtpUseTLS := false
+	if tlsStr := getEnv("SMTP_USE_TLS", ""); tlsStr != "" {
+		smtpUseTLS = (tlsStr == "true" || tlsStr == "1" || tlsStr == "yes")
+	} else if smtpPort == 465 {
+		smtpUseTLS = true
+	}
+
+	smtpHost := getEnv("SMTP_HOST", "")
+	smtpUser := getEnv("SMTP_USERNAME", getEnv("SMTP_USER", ""))
+	smtpPass := getEnv("SMTP_PASSWORD", getEnv("SMTP_PASS", ""))
+	smtpFrom := getEnv("SMTP_FROM_EMAIL", getEnv("SMTP_FROM", ""))
+	resendFrom := os.Getenv("RESEND_FROM_EMAIL")
+	if smtpFrom == "" {
+		smtpFrom = resendFrom
+	}
+
 	return &Config{
 		Port:               port,
 		Host:               host,
@@ -97,8 +163,14 @@ func LoadConfig() *Config {
 		SessionMaxLifetime: 7 * 24 * time.Hour,
 		MSSQLConnStr:       mssqlConn,
 		Environment:        getEnv("APP_ENV", "development"),
+		SMTPHost:           smtpHost,
+		SMTPPort:           smtpPort,
+		SMTPUsername:       smtpUser,
+		SMTPPassword:       smtpPass,
+		SMTPFrom:           smtpFrom,
+		SMTPUseTLS:         smtpUseTLS,
 		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
-		ResendFrom:         os.Getenv("RESEND_FROM_EMAIL"),
+		ResendFrom:         resendFrom,
 		AppPublicURL:       os.Getenv("APP_PUBLIC_URL"),
 		WorkspaceTTL:       workspaceTTL,
 	}

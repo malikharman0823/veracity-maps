@@ -6,10 +6,10 @@ The `services` package contains the core business logic of Veracity Maps, coordi
 
 `Mailer` separates delivery from profile handlers. `VerificationEmail` and
 `InvitationEmail` contain `To` and the already-built `Link`.
-`NewResendMailer(apiKey, from)` uses the official `resend-go/v4` SDK with a
-15-second HTTP timeout and `Emails.SendWithContext`. Provider errors are
-sanitized; links and keys are never logged by the adapter. Tests use a fake
-mailer or a captured HTTP transport and never send real email.
+`NewSMTPMailer(host, port, user, pass, from)` uses the standard Go `net/smtp` package
+with standard port 587 STARTTLS and TLS handshake verification. Provider errors are
+sanitized; credentials and tokens are never logged. Tests use captured transports and
+never send external traffic.
 
 ---
 
@@ -111,3 +111,11 @@ mailer or a captured HTTP transport and never send real email.
 - **Base Layer Only (`format: "base_layer"` / `"basemap"`)**:
   - Dedicated export packaging standalone offline base map tiles (`veracity-base-map.zip`) without project-specific overlays, landmarks, or control points.
   - Contains `./basemap/{z}/{x}/{y}.png`, standalone MapLibre `style.json` (v8) with `offline-basemap` source and layer, `metadata.json`, and offline reconstruction documentation for reuse in other Viewscapes.
+
+---
+
+### 4. `enhancement_service.go`
+- **Purpose**: Coordinates AI super-resolution (Real-ESRGAN), OpenCV contrast/denoise enhancements, PP-OCR text annotation extraction, and renderable raster resolution.
+- **Key Methods**:
+  - `ResolveRenderableRasterPath(dataset, variant)`: Resolves active image path for browser display, MBTiles generation, and MapLibre overlay rendering without altering original `StoragePath`. If background removal is active (`background_removal.enabled == true`), prioritizes `processed_transparent.png` over opaque `enhanced.png` so transparent backgrounds are rendered consistently whether enhancement is active or queried via `?variant=enhanced`.
+  - `EnhanceDataset(sessionID, datasetID, opts)`: Executes enhancement pipeline and automatically re-applies background removal onto the newly generated upscaled raster if transparency was previously enabled.

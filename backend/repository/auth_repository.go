@@ -17,10 +17,14 @@ import (
 )
 
 var (
-	ErrUserNotFound      = errors.New("user not found")
-	ErrUserAlreadyExists = errors.New("user with this email already exists")
-	ErrInvalidPassword   = errors.New("invalid email or password")
-	ErrInvalidToken      = errors.New("invalid or expired token")
+	ErrUserNotFound         = errors.New("user not found")
+	ErrUserAlreadyExists    = errors.New("user with this email already exists")
+	ErrInvalidPassword      = errors.New("invalid email or password")
+	ErrInvalidToken         = errors.New("invalid or expired token")
+	ErrOTPExpiredOrNotFound = errors.New("verification code expired or not found")
+	ErrOTPRateLimited       = errors.New("please wait before requesting another code")
+	ErrOTPMaxAttempts       = errors.New("maximum verification attempts exceeded")
+	ErrOTPInvalid           = errors.New("invalid verification code")
 )
 
 type AuthRepository struct {
@@ -211,6 +215,26 @@ func (r *AuthRepository) Register(ctx context.Context, name, email, password str
 	}
 
 	return user, nil
+}
+
+// RegisterWithoutPassword creates a new user verified via OTP without requiring a password.
+func (r *AuthRepository) RegisterWithoutPassword(ctx context.Context, name, email string) (*models.User, error) {
+	randomPassword, err := models.GenerateRandomHex(32)
+	if err != nil {
+		return nil, err
+	}
+	u, err := r.Register(ctx, name, email, randomPassword)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	if user, ok := r.users[u.ID]; ok {
+		user.EmailVerified = true
+	}
+	_ = r.saveUsersLocked()
+	r.mu.Unlock()
+	u.EmailVerified = true
+	return u, nil
 }
 
 // Authenticate verifies email and password, returning the User if valid.

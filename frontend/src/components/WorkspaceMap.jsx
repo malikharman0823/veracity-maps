@@ -865,8 +865,8 @@ export default function WorkspaceMap({
 
         if (existing) {
           if (existing.type === "image") {
-            const urlChanged = existing._currentImageUrl && existing._currentImageUrl !== imageUrl
-            const coordsChanged = existing._currentCoordsKey && existing._currentCoordsKey !== coordsKey
+            const urlChanged = !existing._currentImageUrl || existing._currentImageUrl !== imageUrl
+            const coordsChanged = !existing._currentCoordsKey || existing._currentCoordsKey !== coordsKey
             if (urlChanged || coordsChanged) {
               try {
                 if (typeof existing.updateImage === "function") {
@@ -910,6 +910,12 @@ export default function WorkspaceMap({
           : baseTileUrl
 
         const bounds = boundsArray(layer.bounds)
+        const existing = map.getSource(ids.rasterSource)
+        if (existing && (existing.type !== "raster" || existing._currentTileUrl !== tileUrl)) {
+          if (map.getLayer(ids.rasterLayer)) map.removeLayer(ids.rasterLayer)
+          map.removeSource(ids.rasterSource)
+        }
+
         if (!map.getSource(ids.rasterSource)) {
           const options = {
             type: "raster",
@@ -920,6 +926,8 @@ export default function WorkspaceMap({
           }
           if (bounds) options.bounds = bounds
           map.addSource(ids.rasterSource, options)
+          const added = map.getSource(ids.rasterSource)
+          if (added) added._currentTileUrl = tileUrl
         }
       }
 

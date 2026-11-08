@@ -18,6 +18,7 @@ import {
   readableApiError,
   resetBackgroundRemoval,
 } from "../api"
+import SpringCheck from "./SpringCheck"
 
 export default function BackgroundRemovalDialog({
   open,
@@ -294,20 +295,26 @@ export default function BackgroundRemovalDialog({
 
               {/* Multi-Floor Propagation Checkbox */}
               <div className="bg-removal-section pt-1">
-                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
-                  <input
-                    type="checkbox"
-                    checked={applyToAllFloors}
-                    onChange={(e) => setApplyToAllFloors(e.target.checked)}
-                    className="mt-0.5 rounded border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e] cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold block text-neutral-800 dark:text-neutral-200">Apply these background-removal settings to all floors</span>
-                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block leading-tight mt-0.5">
-                      Propagates color and threshold settings across all floors in the building while preserving each floor's original raster.
-                    </span>
-                  </div>
-                </label>
+                <SpringCheck
+                  checked={applyToAllFloors}
+                  onChange={setApplyToAllFloors}
+                  fillColor="#3ecf8e"
+                  checkColor="#141414"
+                  boxSize={18}
+                  boxRadius={4}
+                  strike="none"
+                  className="w-full text-xs select-none"
+                  label={
+                    <div>
+                      <span className="font-semibold block text-neutral-800 dark:text-neutral-200">
+                        Apply these background-removal settings to all floors
+                      </span>
+                      <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block leading-tight mt-0.5">
+                        Propagates color and threshold settings across all floors in the building while preserving each floor's original raster.
+                      </span>
+                    </div>
+                  }
+                />
               </div>
             </div>
 

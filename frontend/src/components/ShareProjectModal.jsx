@@ -7,6 +7,32 @@ import {
   listProjectActivities,
 } from "../api"
 
+const formatDateTime = (dateVal) => {
+  if (!dateVal) return "N/A"
+  try {
+    let cleanVal = dateVal
+    if (typeof cleanVal === "string") {
+      cleanVal = cleanVal.replace(/\.(\d{3})\d+([+-].*|Z)?$/, (match, p1, p2) => "." + p1 + (p2 || ""))
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(cleanVal)) {
+        cleanVal = cleanVal.replace(" ", "T")
+      }
+    }
+    const d = new Date(cleanVal)
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1) return "N/A"
+    const formatted = d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+    return formatted === "Invalid Date" ? "N/A" : formatted
+  } catch {
+    return "N/A"
+  }
+}
+
 export default function ShareProjectModal({ project, isOpen, onClose }) {
   if (!isOpen || !project) return null
 
@@ -273,7 +299,7 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
                       <span className="font-semibold text-neutral-900 dark:text-white">{act.user_name}</span>: {act.details}
                     </div>
                     <div className="text-[10px] text-neutral-400 mt-1 font-mono">
-                      {new Date(act.timestamp).toLocaleString()}
+                      {formatDateTime(act.timestamp || act.created_at)}
                     </div>
                   </div>
                 </div>

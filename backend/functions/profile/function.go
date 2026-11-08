@@ -3,6 +3,7 @@ package profile
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/mail"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -24,10 +26,19 @@ type Handler struct {
 	mailer      services.Mailer
 	storageRoot string
 	publicURL   string
+	sessionRepo *repository.SessionRepository
+	projectRepo *repository.ProjectRepository
+	authRepo    repository.AuthRepo
 }
 
 func NewHandler(repo repository.ProfileRepo, mailer services.Mailer, storageRoot, publicURL string) *Handler {
 	return &Handler{repo: repo, mailer: mailer, storageRoot: storageRoot, publicURL: strings.TrimRight(publicURL, "/")}
+}
+
+func (h *Handler) SetRepositories(sessionRepo *repository.SessionRepository, projectRepo *repository.ProjectRepository, authRepo repository.AuthRepo) {
+	h.sessionRepo = sessionRepo
+	h.projectRepo = projectRepo
+	h.authRepo = authRepo
 }
 
 func (h *Handler) Profile(w http.ResponseWriter, r *http.Request, userID string) {
@@ -221,6 +232,298 @@ func (h *Handler) avatarDiskPath(userID, relative string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(h.storageRoot, clean), true
+}
+
+type ProfileDashboardStats struct {
+	TotalProjects      int    `json:"total_projects"`
+	SharedProjects     int    `json:"shared_projects"`
+	TotalFiles         int    `json:"total_files"`
+	GeoreferencedFiles int    `json:"georeferenced_files"`
+	PendingInvitations int    `json:"pending_invitations"`
+	TotalSessions      int    `json:"total_sessions"`
+	TotalMemory        string `json:"total_memory"`
+}
+
+type UserFileView struct {
+	ID                 string    `json:"id"`
+	SessionID          string    `json:"session_id"`
+	Filename           string    `json:"filename"`
+	FileSize           int64     `json:"file_size"`
+	MemorySize         string    `json:"memory_size"`
+	RAMEstimate        string    `json:"ram_estimate,omitempty"`
+	ContentType        string    `json:"content_type"`
+	GeoreferenceStatus string    `json:"georeference_status"`
+	TileStatus         string    `json:"tile_status"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	Width              int       `json:"width,omitempty"`
+	Height             int       `json:"height,omitempty"`
+	CRS                string    `json:"crs,omitempty"`
+	Format             string    `json:"format,omitempty"`
+	ProjectID          string    `json:"project_id,omitempty"`
+	ProjectName        string    `json:"project_name,omitempty"`
+	DownloadURL        string    `json:"download_url,omitempty"`
+}
+
+type ProfileDashboardResponse struct {
+	User               *models.UserPublicProfile       `json:"user"`
+	Stats              ProfileDashboardStats           `json:"stats"`
+	Projects           []*models.UserProject           `json:"projects"`
+	SharedProjects     []*models.SharedProjectView     `json:"shared_projects"`
+	Files              []UserFileView                  `json:"files"`
+	PendingInvitations []*models.PendingInvitationView `json:"pending_invitations"`
+	Sessions           []*repository.SessionSummary    `json:"sessions,omitempty"`
+}
+
+func (h *Handler) getUserProfile(r *http.Request, userID string) (*models.UserPublicProfile, error) {
+	if h.repo != nil {
+		p, err := h.repo.Get(r.Context(), userID)
+		if err == nil && p != nil {
+			return p, nil
+		}
+	}
+	if h.authRepo != nil {
+		u, err := h.authRepo.GetUserByID(r.Context(), userID)
+		if err == nil && u != nil {
+			return &models.UserPublicProfile{
+				ID:            u.ID,
+				FullName:      u.Name,
+				Email:         u.Email,
+				EmailVerified: true,
+				AccountStatus: "active",
+				CreatedAt:     u.CreatedAt,
+				UpdatedAt:     u.UpdatedAt,
+			}, nil
+		}
+	}
+	return nil, repository.ErrUserNotFound
+}
+
+func formatMemoryBytes(b int64) string {
+	if b <= 0 {
+		return "0 B"
+	}
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+
+	userProf, err := h.getUserProfile(r, userID)
+	if err != nil {
+		writeFailure(w, err)
+		return
+	}
+
+	var ownedProjects []*models.UserProject
+	var sharedProjects []*models.SharedProjectView
+	var pendingInvs []*models.PendingInvitationView
+
+	if h.projectRepo != nil {
+		ownedProjects = h.projectRepo.ListByUser(userID)
+		sharedProjects = h.projectRepo.ListSharedWithUser(userID, h.authRepo)
+		pendingInvs = h.projectRepo.ListPendingInvitations(userID, userProf.Email, h.authRepo)
+	}
+	if ownedProjects == nil {
+		ownedProjects = make([]*models.UserProject, 0)
+	}
+	if sharedProjects == nil {
+		sharedProjects = make([]*models.SharedProjectView, 0)
+	}
+	if pendingInvs == nil {
+		pendingInvs = make([]*models.PendingInvitationView, 0)
+	}
+
+	files := h.collectUserFiles(userID, ownedProjects, sharedProjects)
+	georefCount := 0
+	var totalMemoryBytes int64
+	for _, f := range files {
+		totalMemoryBytes += f.FileSize
+		if f.GeoreferenceStatus == "completed" {
+			georefCount++
+		}
+	}
+
+	var sessionsList []*repository.SessionSummary
+	if h.sessionRepo != nil {
+		sessionsList = h.sessionRepo.ListSessions()
+	}
+	if sessionsList == nil {
+		sessionsList = make([]*repository.SessionSummary, 0)
+	}
+
+	stats := ProfileDashboardStats{
+		TotalProjects:      len(ownedProjects),
+		SharedProjects:     len(sharedProjects),
+		TotalFiles:         len(files),
+		GeoreferencedFiles: georefCount,
+		PendingInvitations: len(pendingInvs),
+		TotalSessions:      len(sessionsList),
+		TotalMemory:        formatMemoryBytes(totalMemoryBytes),
+	}
+
+	resp := ProfileDashboardResponse{
+		User:               userProf,
+		Stats:              stats,
+		Projects:           ownedProjects,
+		SharedProjects:     sharedProjects,
+		Files:              files,
+		PendingInvitations: pendingInvs,
+		Sessions:           sessionsList,
+	}
+
+	models.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) collectUserFiles(userID string, ownedProjects []*models.UserProject, sharedProjects []*models.SharedProjectView) []UserFileView {
+	if h.sessionRepo == nil {
+		return make([]UserFileView, 0)
+	}
+
+	projMap := make(map[string]*models.UserProject)
+	for _, p := range ownedProjects {
+		if p.PrimaryDatasetID != "" {
+			projMap[p.PrimaryDatasetID] = p
+		}
+		for _, dsID := range p.DatasetIDs {
+			projMap[dsID] = p
+		}
+	}
+	for _, sp := range sharedProjects {
+		if sp.Project != nil {
+			if sp.Project.PrimaryDatasetID != "" {
+				projMap[sp.Project.PrimaryDatasetID] = sp.Project
+			}
+			for _, dsID := range sp.Project.DatasetIDs {
+				projMap[dsID] = sp.Project
+			}
+		}
+	}
+
+	allDatasets := h.sessionRepo.ListAllDatasets()
+	files := make([]UserFileView, 0)
+
+	for _, ds := range allDatasets {
+		if ds == nil {
+			continue
+		}
+		proj, inProj := projMap[ds.ID]
+		ownerID, _ := ds.ExtractedMetadata["user_id"].(string)
+		isOwner := ownerID == userID
+
+		// Include if associated with project, explicitly tagged with userID,
+		// or if system has no projects created yet (convenient local dev mapping)
+		if inProj || isOwner || (len(ownedProjects) == 0 && len(sharedProjects) == 0) {
+			view := UserFileView{
+				ID:                 ds.ID,
+				SessionID:          ds.SessionID,
+				Filename:           ds.Filename,
+				FileSize:           ds.FileSize,
+				MemorySize:         formatMemoryBytes(ds.FileSize),
+				ContentType:        ds.ContentType,
+				GeoreferenceStatus: ds.GeoreferenceStatus,
+				TileStatus:         ds.TileStatus,
+				CreatedAt:          ds.CreatedAt,
+				UpdatedAt:          ds.UpdatedAt,
+				DownloadURL:        "/sessions/" + ds.SessionID + "/datasets/" + ds.ID + "/raw",
+			}
+			if proj != nil {
+				view.ProjectID = proj.ID
+				view.ProjectName = proj.Name
+			}
+			if ds.ExtractedMetadata != nil {
+				if w, ok := ds.ExtractedMetadata["width"].(float64); ok {
+					view.Width = int(w)
+				} else if w, ok := ds.ExtractedMetadata["width"].(int); ok {
+					view.Width = w
+				}
+				if hVal, ok := ds.ExtractedMetadata["height"].(float64); ok {
+					view.Height = int(hVal)
+				} else if hVal, ok := ds.ExtractedMetadata["height"].(int); ok {
+					view.Height = hVal
+				}
+				if crs, ok := ds.ExtractedMetadata["crs"].(string); ok {
+					view.CRS = crs
+				}
+				if fmt, ok := ds.ExtractedMetadata["format"].(string); ok {
+					view.Format = strings.ToUpper(fmt)
+				}
+			}
+			if view.Width > 0 && view.Height > 0 {
+				view.RAMEstimate = formatMemoryBytes(int64(view.Width) * int64(view.Height) * 4)
+			}
+			if view.Format == "" {
+				ext := strings.TrimPrefix(filepath.Ext(ds.Filename), ".")
+				view.Format = strings.ToUpper(ext)
+			}
+			files = append(files, view)
+		}
+	}
+	return files
+}
+
+func (h *Handler) Files(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	var ownedProjects []*models.UserProject
+	var sharedProjects []*models.SharedProjectView
+	if h.projectRepo != nil {
+		ownedProjects = h.projectRepo.ListByUser(userID)
+		sharedProjects = h.projectRepo.ListSharedWithUser(userID, h.authRepo)
+	}
+	files := h.collectUserFiles(userID, ownedProjects, sharedProjects)
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"files": files,
+		"count": len(files),
+	})
+}
+
+func (h *Handler) FileItem(w http.ResponseWriter, r *http.Request, userID, fileID string) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w)
+		return
+	}
+	if fileID == "" {
+		invalid(w, "File ID is required")
+		return
+	}
+	if h.sessionRepo == nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "File not found", nil, nil)
+		return
+	}
+
+	allDatasets := h.sessionRepo.ListAllDatasets()
+	var targetDS *models.Dataset
+	for _, ds := range allDatasets {
+		if ds.ID == fileID {
+			targetDS = ds
+			break
+		}
+	}
+	if targetDS == nil {
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "File not found", nil, nil)
+		return
+	}
+
+	_ = h.sessionRepo.DeleteDataset(targetDS.SessionID, targetDS.ID)
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"deleted": true,
+		"id":      fileID,
+	})
 }
 
 func (h *Handler) serveAvatar(w http.ResponseWriter, r *http.Request, userID string) {

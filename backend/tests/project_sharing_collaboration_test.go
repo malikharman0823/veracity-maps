@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/api"
@@ -57,7 +58,7 @@ func setupCollaborationTestServer(t *testing.T, tempDir string) (*httptest.Serve
 	gHandler := georeference.NewHandler(geoService, sessionRepo)
 	eHandler := export.NewHandler(expService, sessionRepo)
 	aHandler := auth.NewHandler(authRepo)
-	pHandler := projects.NewHandler(projRepo, sessionRepo, authRepo)
+	pHandler := projects.NewHandler(projRepo, sessionRepo, authRepo, nil, "")
 
 	router := api.NewRouter(sessionRepo, authRepo, projRepo, mw, uHandler, dHandler, gHandler, eHandler, aHandler, pHandler)
 	server := httptest.NewServer(router.BuildHandler())
@@ -92,7 +93,11 @@ func registerHelper(t *testing.T, serverURL, name, email, password string) model
 }
 
 func TestPhase2_ProjectSharingAndCollaboration(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir, err := os.MkdirTemp("", "collab-test-*")
+	if err != nil {
+		t.Fatalf("failed creating temp dir: %v", err)
+	}
+	defer cleanupTestDir(t, tempDir)
 	server, _, _ := setupCollaborationTestServer(t, tempDir)
 	defer server.Close()
 

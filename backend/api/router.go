@@ -93,22 +93,42 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		rt.profileH.VerifyEmail(w, r)
 		return
 	}
-	if rt.profileH != nil && (path == "/api/profile" || path == "/api/profile/avatar" || path == "/api/profile/password" || path == "/api/profile/email-change") {
+	if rt.profileH != nil && (strings.HasPrefix(path, "/api/profile") || strings.HasPrefix(path, "/profile")) {
 		user := GetUser(r)
 		if user == nil {
 			models.WriteError(w, 401, "UNAUTHORIZED", "Authentication required", nil, nil)
 			return
 		}
 		switch path {
-		case "/api/profile":
+		case "/api/profile", "/profile":
 			rt.profileH.Profile(w, r, user.ID)
-		case "/api/profile/avatar":
+		case "/api/profile/dashboard", "/profile/dashboard":
+			rt.profileH.Dashboard(w, r, user.ID)
+		case "/api/profile/files", "/profile/files":
+			rt.profileH.Files(w, r, user.ID)
+		case "/api/profile/avatar", "/profile/avatar":
 			rt.profileH.Avatar(w, r, user.ID)
-		case "/api/profile/password":
+		case "/api/profile/password", "/profile/password":
 			rt.profileH.Password(w, r, user.ID, GetToken(r))
-		case "/api/profile/email-change":
+		case "/api/profile/email-change", "/profile/email-change":
 			rt.profileH.EmailChange(w, r, user.ID)
+		default:
+			if strings.HasPrefix(path, "/api/profile/files/") || strings.HasPrefix(path, "/profile/files/") {
+				fileID := strings.TrimPrefix(path, "/api/profile/files/")
+				fileID = strings.TrimPrefix(fileID, "/profile/files/")
+				rt.profileH.FileItem(w, r, user.ID, fileID)
+				return
+			}
+			models.WriteError(w, 404, "NOT_FOUND", "Profile endpoint not found", nil, nil)
 		}
+		return
+	}
+	if path == "/api/auth/otp/send" || path == "/auth/otp/send" {
+		rt.authH.SendOTP(w, r)
+		return
+	}
+	if path == "/api/auth/otp/verify" || path == "/auth/otp/verify" {
+		rt.authH.VerifyOTP(w, r)
 		return
 	}
 	if path == "/api/auth/register" || path == "/auth/register" {
@@ -298,7 +318,15 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Sessions
-	if path == "/sessions" {
+	if path == "/sessions" || path == "/api/sessions" {
+		if r.Method == http.MethodGet {
+			list := rt.repo.ListSessions()
+			models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"sessions": list,
+				"total":    len(list),
+			})
+			return
+		}
 		if r.Method == http.MethodPost {
 			sess := rt.repo.CreateSession()
 			w.Header().Set("X-Session-ID", sess.ID)

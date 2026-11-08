@@ -253,7 +253,7 @@ func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repositor
 	georefHandler := georeference.NewHandler(georefService, sessionRepo)
 	exportHandler := export.NewHandler(exportService, sessionRepo)
 	authHandler := auth.NewHandler(authRepo)
-	projectsHandler := projects.NewHandler(projRepo, sessionRepo, authRepo)
+	projectsHandler := projects.NewHandler(projRepo, sessionRepo, authRepo, nil, "")
 
 	router := api.NewRouter(
 		sessionRepo,

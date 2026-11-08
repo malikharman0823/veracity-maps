@@ -11,7 +11,9 @@ type fakeMailer struct {
 	mu                     sync.Mutex
 	verificationRecipients []string
 	invitationRecipients   []string
+	otpRecipients          []string
 	verifications          []services.VerificationEmail
+	otps                   []services.OTPEmail
 	err                    error
 }
 
@@ -27,5 +29,13 @@ func (m *fakeMailer) SendInvitation(_ context.Context, message services.Invitati
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.invitationRecipients = append(m.invitationRecipients, message.To)
+	return m.err
+}
+
+func (m *fakeMailer) SendOTP(_ context.Context, message services.OTPEmail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.otpRecipients = append(m.otpRecipients, message.To)
+	m.otps = append(m.otps, message)
 	return m.err
 }

@@ -427,13 +427,7 @@ func (s *DatasetService) ResolveRenderableRasterPath(dataset *models.Dataset, va
 		return dataset.StoragePath
 	}
 
-	if variant == "enhanced" {
-		if fileExists(enhancedPNG) {
-			return enhancedPNG
-		}
-	}
-
-	// Default ("active"): respect background removal and active enhancement variant
+	// Resolve whether background removal is actively enabled
 	useTransparent := false
 	if dataset.ExtractedMetadata != nil {
 		if bg, ok := dataset.ExtractedMetadata["background_removal"].(map[string]interface{}); ok {
@@ -443,6 +437,7 @@ func (s *DatasetService) ResolveRenderableRasterPath(dataset *models.Dataset, va
 		}
 	}
 
+	// Resolve whether enhancement / AI upscaling is actively enabled
 	useEnhanced := false
 	if dataset.ExtractedMetadata != nil {
 		if enhMap, ok := dataset.ExtractedMetadata["enhancement"].(map[string]interface{}); ok {
@@ -455,9 +450,32 @@ func (s *DatasetService) ResolveRenderableRasterPath(dataset *models.Dataset, va
 			if enhState.Enabled && enhState.ActiveVariant != "original" {
 				useEnhanced = true
 			}
+		} else if enhStateVal, ok := dataset.ExtractedMetadata["enhancement"].(models.EnhancementState); ok {
+			if enhStateVal.Enabled && enhStateVal.ActiveVariant != "original" {
+				useEnhanced = true
+			}
 		}
 	}
 
+	// Explicit request for raw un-transparent enhanced output
+	if variant == "enhanced_raw" {
+		if fileExists(enhancedPNG) {
+			return enhancedPNG
+		}
+	}
+
+	// If the enhanced variant is requested, prioritize processed_transparent.png if background removal is enabled,
+	// because background removal generates processed_transparent.png from the upscaled/enhanced raster.
+	if variant == "enhanced" {
+		if useTransparent && fileExists(transparentPNG) {
+			return transparentPNG
+		}
+		if fileExists(enhancedPNG) {
+			return enhancedPNG
+		}
+	}
+
+	// Default ("active"): respect background removal and active enhancement variant
 	if useTransparent && fileExists(transparentPNG) {
 		return transparentPNG
 	}

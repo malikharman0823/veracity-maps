@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -80,6 +82,7 @@ type ProjectActivity struct {
 	Action    string    `json:"action"` // e.g., project_created, invitation_sent, invitation_accepted, etc.
 	Details   string    `json:"details"`
 	Timestamp time.Time `json:"timestamp"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // SharedProjectView represents a project shared with a user along with membership metadata.
@@ -246,4 +249,44 @@ func ValidateRegisterRequest(req *RegisterRequest) error {
 		return errors.New("password must be at most 72 bytes")
 	}
 	return nil
+}
+
+// SendOTPRequest payload to request an OTP code.
+type SendOTPRequest struct {
+	Email   string `json:"email"`
+	Name    string `json:"name,omitempty"`
+	Purpose string `json:"purpose"` // "login" | "register"
+}
+
+// VerifyOTPRequest payload to verify an OTP and authenticate.
+type VerifyOTPRequest struct {
+	Email   string `json:"email"`
+	Code    string `json:"code"`
+	Name    string `json:"name,omitempty"`
+	Purpose string `json:"purpose"` // "login" | "register"
+}
+
+// SendOTPResponse payload returned after OTP is dispatched.
+type SendOTPResponse struct {
+	Success            bool   `json:"success"`
+	Email              string `json:"email"`
+	Purpose            string `json:"purpose"`
+	ResendAfterSeconds int    `json:"resend_after_seconds"`
+	Message            string `json:"message"`
+}
+
+// GenerateNumericOTP creates a cryptographically secure 6-digit numeric OTP code.
+func GenerateNumericOTP() (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	val := binary.BigEndian.Uint32(b) % 1000000
+	return fmt.Sprintf("%06d", val), nil
+}
+
+// ValidateEmail checks basic email sanity.
+func ValidateEmail(email string) bool {
+	clean := strings.ToLower(strings.TrimSpace(email))
+	return clean != "" && strings.Contains(clean, "@") && strings.Contains(clean, ".")
 }

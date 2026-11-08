@@ -20,6 +20,7 @@ import {
   getDatasetInspection,
   readableApiError,
 } from "../api"
+import SpringCheck from "./SpringCheck"
 
 const PRESET_OPTIONS = [
   {
@@ -495,27 +496,33 @@ export default function EnhancementModal({
                       ))}
                     </div>
 
-                    <div className="pt-1 space-y-2 border-t border-neutral-200 dark:border-[#2e2e2e]">
-                      <label className="flex items-center gap-2 text-xs text-neutral-900 dark:text-white cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={adaptiveThreshold}
-                          onChange={(e) => setAdaptiveThreshold(e.target.checked)}
-                          disabled={processing}
-                          className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e]"
-                        />
-                        <span>Soft-blended adaptive thresholding (for faint scanned blueprints)</span>
-                      </label>
-                      <label className="flex items-center gap-2 text-xs text-neutral-900 dark:text-white cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={grayscale}
-                          onChange={(e) => setGrayscale(e.target.checked)}
-                          disabled={processing}
-                          className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] accent-[#3ecf8e]"
-                        />
-                        <span>Monochrome / grayscale normalization</span>
-                      </label>
+                    <div className="pt-2 space-y-2.5 border-t border-neutral-200 dark:border-[#2e2e2e]">
+                      <SpringCheck
+                        checked={adaptiveThreshold}
+                        onChange={setAdaptiveThreshold}
+                        disabled={processing}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        fontSize={12}
+                        strike="none"
+                        className="w-full"
+                        label={<span className="text-xs text-neutral-900 dark:text-white">Soft-blended adaptive thresholding (for faint scanned blueprints)</span>}
+                      />
+                      <SpringCheck
+                        checked={grayscale}
+                        onChange={setGrayscale}
+                        disabled={processing}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        fontSize={12}
+                        strike="none"
+                        className="w-full"
+                        label={<span className="text-xs text-neutral-900 dark:text-white">Monochrome / grayscale normalization</span>}
+                      />
                     </div>
                   </div>
 
@@ -549,16 +556,18 @@ export default function EnhancementModal({
                             Source image is already high resolution ({inspection?.width}×{inspection?.height} px).
                             AI upscaling is automatically skipped unless forced.
                           </p>
-                          <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium">
-                            <input
-                              type="checkbox"
-                              checked={forceUpscale}
-                              onChange={(e) => setForceUpscale(e.target.checked)}
-                              disabled={processing}
-                              className="accent-[#3ecf8e]"
-                            />
-                            <span>Force AI upscaling anyway</span>
-                          </label>
+                          <SpringCheck
+                            checked={forceUpscale}
+                            onChange={setForceUpscale}
+                            disabled={processing}
+                            fillColor="#3ecf8e"
+                            checkColor="#141414"
+                            boxSize={16}
+                            boxRadius={4}
+                            fontSize={11}
+                            strike="none"
+                            label={<span className="font-medium text-amber-700 dark:text-amber-300">Force AI upscaling anyway</span>}
+                          />
                         </div>
                       )}
 

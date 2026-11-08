@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -305,6 +307,126 @@ func (r *SessionRepository) ListDatasets(sessionID string) ([]*models.Dataset, e
 		list = append(list, ds)
 	}
 	return list, nil
+}
+
+// SessionSummary represents high-level metrics of an existing workspace session.
+type SessionSummary struct {
+	ID             string     `json:"id"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+	LastActiveAt   *time.Time `json:"last_active_at,omitempty"`
+	DatasetCount   int        `json:"dataset_count"`
+	TotalMemory    int64      `json:"total_memory"`
+	MemorySize     string     `json:"memory_size"`
+	Datasets       []string   `json:"datasets"`
+	FirstDatasetID string     `json:"first_dataset_id,omitempty"`
+	BuildingCount  int        `json:"building_count"`
+	ConfigCount    int        `json:"config_count"`
+}
+
+func formatMemoryBytes(b int64) string {
+	if b <= 0 {
+		return "0 B"
+	}
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// ListSessions returns summaries of all active and persisted workspace sessions.
+func (r *SessionRepository) ListSessions() []*SessionSummary {
+	r.mu.Lock()
+	r.hydrateAllLocked()
+	r.mu.Unlock()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	summaries := make([]*SessionSummary, 0, len(r.sessions))
+	for id, sess := range r.sessions {
+		if sess == nil {
+			continue
+		}
+		var totalMem int64
+		var dsNames []string
+		var firstDSID string
+		for dsID, ds := range sess.Datasets {
+			if ds != nil {
+				totalMem += ds.FileSize
+				dsNames = append(dsNames, ds.Filename)
+				if firstDSID == "" {
+					firstDSID = dsID
+				}
+			}
+		}
+
+		var pCreated, pActive *time.Time
+		if !sess.CreatedAt.IsZero() {
+			c := sess.CreatedAt
+			pCreated = &c
+		}
+		if !sess.LastActiveAt.IsZero() {
+			a := sess.LastActiveAt
+			pActive = &a
+		}
+
+		summaries = append(summaries, &SessionSummary{
+			ID:             id,
+			CreatedAt:      pCreated,
+			LastActiveAt:   pActive,
+			DatasetCount:   len(sess.Datasets),
+			TotalMemory:    totalMem,
+			MemorySize:     formatMemoryBytes(totalMem),
+			Datasets:       dsNames,
+			FirstDatasetID: firstDSID,
+			BuildingCount:  len(sess.Buildings),
+			ConfigCount:    len(sess.SavedConfigs),
+		})
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		var timeI, timeJ time.Time
+		if summaries[i].LastActiveAt != nil {
+			timeI = *summaries[i].LastActiveAt
+		} else if summaries[i].CreatedAt != nil {
+			timeI = *summaries[i].CreatedAt
+		}
+		if summaries[j].LastActiveAt != nil {
+			timeJ = *summaries[j].LastActiveAt
+		} else if summaries[j].CreatedAt != nil {
+			timeJ = *summaries[j].CreatedAt
+		}
+		return timeI.After(timeJ)
+	})
+	return summaries
+}
+
+// ListAllDatasets returns all unique datasets across all active or persisted sessions.
+func (r *SessionRepository) ListAllDatasets() []*models.Dataset {
+	r.mu.Lock()
+	r.hydrateAllLocked()
+	r.mu.Unlock()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var list []*models.Dataset
+	seen := make(map[string]bool)
+	for _, sess := range r.sessions {
+		for id, ds := range sess.Datasets {
+			if !seen[id] && ds != nil {
+				seen[id] = true
+				list = append(list, ds)
+			}
+		}
+	}
+	return list
 }
 
 func (r *SessionRepository) UpdateDataset(sessionID string, dataset *models.Dataset) error {
@@ -1035,7 +1157,7 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 	sess := &Session{
 		ID:            sessionID,
 		CreatedAt:     info.ModTime(),
-		LastActiveAt:  time.Now(),
+		LastActiveAt:  time.Time{}, // Unknown / not active in current runtime
 		Datasets:      make(map[string]*models.Dataset),
 		ControlPoints: make(map[string][]*models.ControlPoint),
 		Layers:        make(map[string][]*models.Layer),

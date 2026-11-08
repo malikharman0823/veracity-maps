@@ -31,3 +31,19 @@ when limited). It returns 202 after delivery, 502 on delivery failure, or 200
 without sending for an already verified email. Public
 `POST /api/auth/verify-email` consumes the mail token once. The frontend handles
 the `/verify-email?token=...` page and submits its token in the POST body.
+
+---
+
+## Passwordless Email OTP Authentication
+
+To provide a secure, modern passwordless experience, the backend implements:
+- `POST /api/auth/otp/send`: Generates a cryptographic 6-digit numeric OTP, hashes it with SHA-256, persists it in the `EmailOTPs` table with a 10-minute expiry and 60-second resend rate limit, and dispatches the code via Resend (`onboarding@resend.dev`).
+  - Request: `{ "email": "user@example.com", "purpose": "login" | "register", "name": "Optional Name" }`
+  - Response: `{ "status": "success", "data": { "email": "...", "purpose": "...", "resend_in_seconds": 60, "expires_in_seconds": 600 } }`
+- `POST /api/auth/otp/verify`: Atomically validates and consumes the single-use OTP code.
+  - Enforces max 5 attempts per code, constant-time comparison against the stored SHA-256 hash, and marks `consumed_at`.
+  - For `register`: Creates the user record with `email_verified = 1`, logs in, and issues a session bearer token.
+  - For `login`: Verifies user exists, logs in, and issues a session bearer token.
+  - Request: `{ "email": "user@example.com", "code": "123456", "purpose": "login" | "register", "name": "Optional User Name" }`
+  - Response: `{ "status": "success", "data": { "token": "...", "user": { ... } } }`
+

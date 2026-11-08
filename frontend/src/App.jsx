@@ -16,6 +16,7 @@ const WorkspacePage = lazy(() => import("./pages/WorkspacePage"))
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const RegisterPage = lazy(() => import("./pages/RegisterPage"))
 const DashboardPage = lazy(() => import("./pages/DashboardPage"))
+const ProfilePage = lazy(() => import("./pages/ProfilePage"))
 
 function DatasetWorkspaceRedirect() {
   const { id } = useParams()
@@ -52,6 +53,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
                   </ProtectedRoute>
                 }
               />

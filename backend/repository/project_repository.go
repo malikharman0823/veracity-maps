@@ -104,6 +104,13 @@ func (r *ProjectRepository) load() error {
 					if aData, aErr := os.ReadFile(actFile); aErr == nil && len(aData) > 0 {
 						var aList []*models.ProjectActivity
 						if jErr := json.Unmarshal(aData, &aList); jErr == nil {
+							for _, a := range aList {
+								if a.CreatedAt.IsZero() && !a.Timestamp.IsZero() {
+									a.CreatedAt = a.Timestamp
+								} else if a.Timestamp.IsZero() && !a.CreatedAt.IsZero() {
+									a.Timestamp = a.CreatedAt
+								}
+							}
 							r.activities[p.ID] = aList
 						}
 					}
@@ -178,6 +185,7 @@ func (r *ProjectRepository) saveActivitiesLocked(projectID string) error {
 
 func (r *ProjectRepository) logActivityLocked(projectID, userID, userName, action, details string) {
 	aidHex, _ := models.GenerateRandomHex(8)
+	now := time.Now()
 	act := &models.ProjectActivity{
 		ID:        "act_" + aidHex,
 		ProjectID: projectID,
@@ -185,7 +193,8 @@ func (r *ProjectRepository) logActivityLocked(projectID, userID, userName, actio
 		UserName:  userName,
 		Action:    action,
 		Details:   details,
-		Timestamp: time.Now(),
+		Timestamp: now,
+		CreatedAt: now,
 	}
 
 	if r.activities[projectID] == nil {

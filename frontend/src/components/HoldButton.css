@@ -1,0 +1,135 @@
+.hold-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  font-family: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  box-sizing: border-box;
+  text-decoration: none;
+  vertical-align: middle;
+  transform-origin: center center;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.15s ease;
+}
+
+.hold-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Sizing presets */
+.hold-button--sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+
+.hold-button--md {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.hold-button--lg {
+  height: 48px;
+  padding: 0 22px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+/* Base text */
+.hold-button__label-base {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+/* Fill container */
+.hold-button__fill-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+  will-change: width, height, clip-path;
+}
+
+/* Fill background */
+.hold-button__fill-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Fill label (overlaid with fill text color, perfectly aligned with base label) */
+.hold-button__label-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+
+/* Wave crest animation */
+.hold-button__wave {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: visible;
+}
+
+.hold-button__wave-svg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+
+/* Done label pop animation */
+.hold-button--done .hold-button__label-base,
+.hold-button--done .hold-button__label-fill {
+  animation: hold-button-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes hold-button-pop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+

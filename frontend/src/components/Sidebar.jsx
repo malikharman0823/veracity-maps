@@ -1,5 +1,5 @@
 import React from "react"
-import { NavLink, useNavigate } from "react-router-dom"
+import { NavLink, useNavigate, Link } from "react-router-dom"
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
@@ -90,6 +90,23 @@ export default function Sidebar() {
                   </NavLink>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
+                  <NavLink to="/profile" onClick={handleNavClick}>
+                    {({ isActive }) => (
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        className={`w-full justify-start gap-2.5 rounded-[6px] px-3 py-2 text-xs font-medium transition-all ${
+                          isActive
+                            ? "bg-[#3ecf8e] text-[#171717] font-semibold hover:bg-[#24b47e] hover:text-[#171717]"
+                            : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#242424] hover:text-neutral-900 dark:hover:text-white"
+                        }`}
+                      >
+                        <User className={`size-4 ${isActive ? "text-[#171717]" : "text-neutral-400"}`} />
+                        <span>Profile & Files</span>
+                      </SidebarMenuButton>
+                    )}
+                  </NavLink>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
                   <NavLink to="/" end onClick={handleNavClick}>
                     {({ isActive }) => (
                       <SidebarMenuButton
@@ -115,7 +132,7 @@ export default function Sidebar() {
         <SidebarFooter className="border-t border-neutral-200 dark:border-[#2e2e2e] p-3 text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-[#1c1c1c] space-y-2">
           {user && (
             <div className="pb-2 border-b border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-between">
-              <div className="flex items-center gap-2 overflow-hidden">
+              <Link to="/profile" className="flex items-center gap-2 overflow-hidden hover:opacity-80 transition-opacity">
                 <div className="size-6 rounded-full bg-[#3ecf8e]/20 text-[#171717] dark:text-[#3ecf8e] font-semibold flex items-center justify-center text-[10px] border border-[#3ecf8e]/30 shrink-0">
                   {user.name?.charAt(0) || "U"}
                 </div>
@@ -123,7 +140,7 @@ export default function Sidebar() {
                   <div className="text-[11px] font-medium text-neutral-900 dark:text-white truncate">{user.name}</div>
                   <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{user.email}</div>
                 </div>
-              </div>
+              </Link>
               <button
                 type="button"
                 onClick={logout}

@@ -36,6 +36,7 @@ import {
 } from "lucide-react"
 
 import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
+import WakeSlider from "./WakeSlider"
 import { propagateBuildingGeoreference, datasetSourceImageUrl, pdfThumbnailUrl } from "../api"
 
 
@@ -76,12 +77,9 @@ function LayerOpacitySlider({ datasetId, opacity, onUpdate }) {
   const safeOpacity = typeof opacity === "number" && Number.isFinite(opacity) ? opacity : 1
   const [localPercent, setLocalPercent] = useState(() => Math.round(safeOpacity * 100))
   const debounceTimerRef = useRef(null)
-  const isDraggingRef = useRef(false)
 
   useEffect(() => {
-    if (!isDraggingRef.current) {
-      setLocalPercent(Math.round(safeOpacity * 100))
-    }
+    setLocalPercent(Math.round(safeOpacity * 100))
   }, [safeOpacity])
 
   const commitUpdate = (val) => {
@@ -89,9 +87,7 @@ function LayerOpacitySlider({ datasetId, opacity, onUpdate }) {
     onUpdate(datasetId, { raster_opacity: floatVal })
   }
 
-  const handleInput = (event) => {
-    isDraggingRef.current = true
-    const val = Number(event.target.value)
+  const handleSliderChange = (val) => {
     setLocalPercent(val)
     const floatVal = Math.max(0, Math.min(1, val / 100))
 
@@ -103,32 +99,32 @@ function LayerOpacitySlider({ datasetId, opacity, onUpdate }) {
     clearTimeout(debounceTimerRef.current)
     debounceTimerRef.current = setTimeout(() => {
       commitUpdate(val)
-      isDraggingRef.current = false
     }, 150)
   }
 
-  const handlePointerUp = () => {
-    clearTimeout(debounceTimerRef.current)
-    commitUpdate(localPercent)
-    isDraggingRef.current = false
-  }
-
   return (
-    <div className="workspace-layer-opacity-control" onClick={(e) => e.stopPropagation()}>
-      <label>
-        <span>Raster opacity</span>
-        <strong>{localPercent}%</strong>
-      </label>
-      <input
-        type="range"
-        min="0"
-        max="100"
+    <div className="workspace-layer-opacity-control p-1" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between text-xs mb-1.5 select-none">
+        <span className="font-medium text-neutral-400">Raster opacity</span>
+        <strong className="font-mono text-neutral-800 dark:text-neutral-100">{localPercent}%</strong>
+      </div>
+      <WakeSlider
         value={localPercent}
-        onInput={handleInput}
-        onChange={handleInput}
-        onPointerUp={handlePointerUp}
-        onTouchEnd={handlePointerUp}
-        aria-label="Raster opacity"
+        onChange={handleSliderChange}
+        min={0}
+        max={100}
+        step={1}
+        bars={26}
+        height={24}
+        restHeight={6}
+        gap={2.5}
+        fillColor="#3ecf8e"
+        trackColor="#262626"
+        crestColor="#3ecf8e"
+        sensitivity={1.2}
+        reach={5}
+        glide={0.25}
+        ariaLabel="Raster opacity"
       />
     </div>
   )

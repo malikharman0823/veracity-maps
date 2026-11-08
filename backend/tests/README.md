@@ -89,6 +89,14 @@ the mail provider, preventing real external email requests.
   - `TestAPI_SingleGeoreferencePropagatesToEntireBuilding`: Verifies that georeferencing one floor in a building automatically propagates the spatial footprint, bounding box, scaled affine transform, and companion `.pgw` files across all sibling floors.
   - `TestAPI_ConsolidatePseudoBuildingsAndPropagateGeoreference`: Verifies that pseudo-buildings named from floor tokens ("Floor B1", "Floor G", "Floor 1") are consolidated into the parent building ("Building A") with all floors marked `completed` and inheriting georeferencing.
 
+### 5. `otp_auth_test.go`
+- **Purpose**: Verifies passwordless Email OTP authentication for registration and login.
+- **Key Tests**:
+  - `TestOTPRegistrationAndLoginFlow`: Covers end-to-end user registration via OTP, session token generation, user verification status, subsequent login via OTP, invalid OTP rejections, and expired OTP handling.
+  - `TestMemoryOTPRepositoryRateLimitingAndMaxAttempts`: Validates that OTP requests enforce a 60-second resend cooldown (`ErrOTPRateLimited`) and invalidate codes after 5 failed attempts (`ErrOTPMaxAttempts`).
+  - `TestMSSQLOTPRepositoryFlow`: Exercises live MSSQL OTP table persistence (`EmailOTPs`), attempt counter increments, expiry checks, and one-time consumption when a test database is provided.
+
+
 ---
 
 ## Running the Test Suite

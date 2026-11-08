@@ -93,6 +93,67 @@ func (r *MSSQLAuthRepository) Register(ctx context.Context, name, email, passwor
 	}, nil
 }
 
+func (r *MSSQLAuthRepository) RegisterWithoutPassword(ctx context.Context, name, email string) (*models.User, error) {
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	cleanName := strings.TrimSpace(name)
+
+	var count int
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM Users WHERE email = @email", sql.Named("email", cleanEmail)).Scan(&count)
+	if err != nil {
+		return nil, fmt.Errorf("failed checking existing user: %w", err)
+	}
+	if count > 0 {
+		return nil, ErrUserAlreadyExists
+	}
+
+	uid, err := models.GenerateRandomHex(16)
+	if err != nil {
+		return nil, err
+	}
+	userID := "usr_" + uid
+
+	randomPw, err := models.GenerateRandomHex(32)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := models.HashPassword(randomPw)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+
+	query := `
+		INSERT INTO Users (id, email, name, password_hash, salt, email_verified, account_status, created_at, updated_at)
+		VALUES (@id, @email, @name, @hash, @salt, 1, 'active', @created, @updated);
+	`
+	_, err = r.db.ExecContext(ctx, query,
+		sql.Named("id", userID),
+		sql.Named("email", cleanEmail),
+		sql.Named("name", cleanName),
+		sql.Named("hash", hash),
+		sql.Named("salt", ""),
+		sql.Named("created", now),
+		sql.Named("updated", now),
+	)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return nil, ErrUserAlreadyExists
+		}
+		return nil, fmt.Errorf("failed inserting user: %w", err)
+	}
+
+	return &models.User{
+		ID:            userID,
+		Email:         cleanEmail,
+		Name:          cleanName,
+		PasswordHash:  hash,
+		EmailVerified: true,
+		AccountStatus: "active",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
 func (r *MSSQLAuthRepository) Authenticate(ctx context.Context, email, password string) (*models.User, error) {
 	return authenticateSQL(ctx, r.db, email, password, false)
 }

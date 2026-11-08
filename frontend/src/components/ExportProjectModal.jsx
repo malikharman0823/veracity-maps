@@ -32,6 +32,7 @@ import {
 } from "lucide-react"
 import { datasetSourceImageUrl } from "../api"
 import { buildExportHierarchy } from "../lib/exportHierarchy"
+import SpringCheck from "./SpringCheck"
 
 export const SUGGESTED_ZOOM_LEVELS = [
   { level: 21, label: "House level", preset: "house" },
@@ -906,19 +907,20 @@ export default function ExportProjectModal({
                                   lyr.id === selectedPreviewLayerId ? "bg-[#3ecf8e]/10 text-neutral-900 dark:text-white" : "hover:bg-white dark:hover:bg-[#282828]"
                                 }`}
                               >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleLayer(lyr.id)
-                                  }}
-                                  className={`size-3.5 rounded-[3px] flex items-center justify-center border cursor-pointer ${
-                                    isLayerSelected(lyr.id) ? "bg-[#3ecf8e] border-[#3ecf8e] text-[#171717]" : "border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020]"
-                                  }`}
-                                >
-                                  {isLayerSelected(lyr.id) && <Check className="size-2 stroke-[3]" />}
-                                </button>
-                                <span className="text-xs text-neutral-800 dark:text-neutral-200 truncate">{fl.name} • {lyr.name}</span>
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <SpringCheck
+                                    checked={isLayerSelected(lyr.id)}
+                                    onChange={() => toggleLayer(lyr.id)}
+                                    boxSize={16}
+                                    boxRadius={4}
+                                    fillColor="#3ecf8e"
+                                    checkColor="#141414"
+                                    strike="none"
+                                    label=""
+                                    ariaLabel={`Select ${fl.name} ${lyr.name}`}
+                                  />
+                                  <span className="text-xs text-neutral-800 dark:text-neutral-200 truncate">{fl.name} • {lyr.name}</span>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -950,84 +952,108 @@ export default function ExportProjectModal({
                       Inclusion Settings
                     </div>
 
-                    <div className="space-y-2 text-xs">
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_base_map}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_base_map: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include base world map</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Keeps the geographic background available offline when supported.</p>
-                        </div>
-                      </label>
+                    <div className="space-y-3 text-xs">
+                      <SpringCheck
+                        checked={inclusion.include_base_map}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_base_map: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include base world map</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Keeps the geographic background available offline when supported.</p>
+                          </div>
+                        }
+                      />
 
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_raster_imagery}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_raster_imagery: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include raster floor plans and processed imagery</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves the raster layers used by your map.</p>
-                        </div>
-                      </label>
+                      <SpringCheck
+                        checked={inclusion.include_raster_imagery}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_raster_imagery: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include raster floor plans and processed imagery</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves the raster layers used by your map.</p>
+                          </div>
+                        }
+                      />
 
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_landmarks}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_landmarks: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include landmark icons and map points</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves landmark coordinates, properties, and custom icon assets.</p>
-                        </div>
-                      </label>
+                      <SpringCheck
+                        checked={inclusion.include_landmarks}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_landmarks: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include landmark icons and map points</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves landmark coordinates, properties, and custom icon assets.</p>
+                          </div>
+                        }
+                      />
 
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_control_points}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_control_points: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include shared control points and georeferencing</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves control-point coordinates and transformation parameters.</p>
-                        </div>
-                      </label>
+                      <SpringCheck
+                        checked={inclusion.include_control_points}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_control_points: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include shared control points and georeferencing</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves control-point coordinates and transformation parameters.</p>
+                          </div>
+                        }
+                      />
 
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_building_config}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_building_config: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include building and floor configuration</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves floors, floor order, and multifloor relationships.</p>
-                        </div>
-                      </label>
+                      <SpringCheck
+                        checked={inclusion.include_building_config}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_building_config: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include building and floor configuration</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Preserves floors, floor order, and multifloor relationships.</p>
+                          </div>
+                        }
+                      />
 
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={inclusion.include_original_rasters}
-                          onChange={(e) => setInclusion((p) => ({ ...p, include_original_rasters: e.target.checked }))}
-                          className="mt-0.5 size-4 rounded-[4px] text-[#24b47e] focus:ring-[#3ecf8e]"
-                        />
-                        <div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">Include original uploaded files</span>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Adds original source files for reprocessing. May increase package size.</p>
-                        </div>
-                      </label>
+                      <SpringCheck
+                        checked={inclusion.include_original_rasters}
+                        onChange={(checked) => setInclusion((p) => ({ ...p, include_original_rasters: checked }))}
+                        fillColor="#3ecf8e"
+                        checkColor="#141414"
+                        boxSize={18}
+                        boxRadius={4}
+                        strike="none"
+                        className="w-full"
+                        label={
+                          <div>
+                            <span className="font-semibold text-neutral-900 dark:text-white block">Include original uploaded files</span>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Adds original source files for reprocessing. May increase package size.</p>
+                          </div>
+                        }
+                      />
                     </div>
                   </div>
                 </>
@@ -1060,17 +1086,21 @@ export default function ExportProjectModal({
                         )}
                       </div>
                       <div className="pt-1.5 border-t border-neutral-200 dark:border-[#2e2e2e]">
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={mbtilesIncludeBasemap}
-                            onChange={(e) => setMbtilesIncludeBasemap(e.target.checked)}
-                            className="rounded-[4px] border-neutral-300 dark:border-[#2e2e2e] text-[#24b47e] focus:ring-[#3ecf8e]"
-                          />
-                          <span className="text-[11px] font-medium text-neutral-800 dark:text-neutral-200">
-                            Bundle offline base map into MBTiles (creates a standalone, self-contained map for Viewscape)
-                          </span>
-                        </label>
+                        <SpringCheck
+                          checked={mbtilesIncludeBasemap}
+                          onChange={setMbtilesIncludeBasemap}
+                          fillColor="#3ecf8e"
+                          checkColor="#141414"
+                          boxSize={18}
+                          boxRadius={4}
+                          strike="none"
+                          className="w-full"
+                          label={
+                            <span className="text-[11px] font-medium text-neutral-800 dark:text-neutral-200">
+                              Bundle offline base map into MBTiles (creates a standalone, self-contained map for Viewscape)
+                            </span>
+                          }
+                        />
                       </div>
                     </div>
 

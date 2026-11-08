@@ -2,28 +2,37 @@ package projects
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
+	"github.com/malikharman0823/veracity-maps/services"
 )
 
 type Handler struct {
-	projectRepo *repository.ProjectRepository
-	sessionRepo *repository.SessionRepository
-	authRepo    repository.AuthRepo
+	projectRepo  *repository.ProjectRepository
+	sessionRepo  *repository.SessionRepository
+	authRepo     repository.AuthRepo
+	mailer       services.Mailer
+	appPublicURL string
 }
 
 func NewHandler(
 	projectRepo *repository.ProjectRepository,
 	sessionRepo *repository.SessionRepository,
 	authRepo repository.AuthRepo,
+	mailer services.Mailer,
+	appPublicURL string,
 ) *Handler {
 	return &Handler{
-		projectRepo: projectRepo,
-		sessionRepo: sessionRepo,
-		authRepo:    authRepo,
+		projectRepo:  projectRepo,
+		sessionRepo:  sessionRepo,
+		authRepo:     authRepo,
+		mailer:       mailer,
+		appPublicURL: strings.TrimRight(appPublicURL, "/"),
 	}
 }
 
@@ -255,6 +264,31 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, projectID string
 		}
 		models.WriteError(w, http.StatusInternalServerError, "INVITE_ERROR", err.Error(), nil, nil)
 		return
+	}
+
+	// Dispatch invitation email via configured mailer
+	if h.mailer != nil {
+		projName := "Veracity Maps Project"
+		if p, _, pErr := h.projectRepo.GetByID(projectID, user.ID); pErr == nil && p != nil && p.Name != "" {
+			projName = p.Name
+		}
+		publicBase := h.appPublicURL
+		if publicBase == "" {
+			publicBase = "http://localhost:5173"
+		}
+		inviteLink := fmt.Sprintf("%s/dashboard?tab=invitations", strings.TrimRight(publicBase, "/"))
+		invMsg := services.InvitationEmail{
+			To:          cleanEmail,
+			Link:        inviteLink,
+			ProjectName: projName,
+			InviterName: user.Name,
+			Role:        string(req.Role),
+		}
+		if sendErr := h.mailer.SendInvitation(r.Context(), invMsg); sendErr != nil {
+			log.Printf("[INVITATION ERROR] Failed to deliver project invitation email to %s: %v", cleanEmail, sendErr)
+		} else {
+			log.Printf("[INVITATION SUCCESS] Dispatched project invitation email to %s for project '%s'", cleanEmail, projName)
+		}
 	}
 
 	models.WriteJSON(w, http.StatusCreated, member)
