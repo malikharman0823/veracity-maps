@@ -98,13 +98,13 @@ func GenerateFloorID() string {
 	return generateID("flr")
 }
 
-func (r *SessionRepository) CreateSession() *Session {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func isDeterministicSessionID(sessionID string) bool {
+	return strings.HasPrefix(sessionID, "map_") || strings.HasPrefix(sessionID, "proj_")
+}
 
+func newEmptySession(id string) *Session {
 	now := time.Now()
-	id := GenerateSessionID()
-	sess := &Session{
+	return &Session{
 		ID:            id,
 		CreatedAt:     now,
 		LastActiveAt:  now,
@@ -117,7 +117,16 @@ func (r *SessionRepository) CreateSession() *Session {
 		IconPoints:    make(map[string]*models.IconPoint),
 		Buildings:     make(map[string]*models.Building),
 	}
+}
+
+func (r *SessionRepository) CreateSession() *Session {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	id := GenerateSessionID()
+	sess := newEmptySession(id)
 	r.sessions[id] = sess
+	r.touchSessionLocked(sess)
 	return sess
 }
 
@@ -130,15 +139,21 @@ func (r *SessionRepository) GetSession(sessionID string) (*Session, error) {
 		return sess, nil
 	}
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if sess, exists := r.sessions[sessionID]; exists {
+		return sess, nil
+	}
 	if r.storageDir != "" {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if sess, exists := r.sessions[sessionID]; exists {
-			return sess, nil
-		}
 		if sess := r.hydrateSessionLocked(sessionID); sess != nil {
 			return sess, nil
 		}
+	}
+	if isDeterministicSessionID(sessionID) {
+		sess := newEmptySession(sessionID)
+		r.sessions[sessionID] = sess
+		r.touchSessionLocked(sess)
+		return sess, nil
 	}
 
 	return nil, ErrSessionNotFound
@@ -150,6 +165,18 @@ func (r *SessionRepository) TouchSession(sessionID string) {
 
 	if sess, exists := r.sessions[sessionID]; exists {
 		sess.LastActiveAt = time.Now()
+		return
+	}
+	if r.storageDir != "" {
+		if sess := r.hydrateSessionLocked(sessionID); sess != nil {
+			sess.LastActiveAt = time.Now()
+			return
+		}
+	}
+	if isDeterministicSessionID(sessionID) {
+		sess := newEmptySession(sessionID)
+		r.sessions[sessionID] = sess
+		r.touchSessionLocked(sess)
 	}
 }
 
@@ -224,18 +251,24 @@ func (r *SessionRepository) InsertDataset(sessionID string, dataset *models.Data
 
 func (r *SessionRepository) GetDataset(sessionID, datasetID string) (*models.Dataset, error) {
 	sess, err := r.GetSession(sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	ds, exists := sess.Datasets[datasetID]
-	if !exists {
+	if err == nil && sess != nil {
+		r.mu.RLock()
+		ds, exists := sess.Datasets[datasetID]
+		r.mu.RUnlock()
+		if exists && ds != nil {
+			return ds, nil
+		}
 		return nil, ErrDatasetNotFound
 	}
-	return ds, nil
+
+	if sessionID == "" {
+		ds, _, findErr := r.FindDataset(datasetID)
+		if findErr == nil && ds != nil {
+			return ds, nil
+		}
+	}
+
+	return nil, ErrDatasetNotFound
 }
 
 func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, string, error) {
@@ -288,9 +321,141 @@ func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, stri
 				}
 			}
 		}
+
+		// Also check durable map asset storage (<temp>/uploads/maps/<ownerUserID>/<mapID>/assets/<datasetID>)
+		mapsRoot := filepath.Join(filepath.Dir(r.storageDir), "uploads", "maps")
+		if ownerEntries, err := os.ReadDir(mapsRoot); err == nil {
+			for _, ownerEntry := range ownerEntries {
+				if !ownerEntry.IsDir() {
+					continue
+				}
+				ownerMapsDir := filepath.Join(mapsRoot, ownerEntry.Name())
+				mapEntries, err := os.ReadDir(ownerMapsDir)
+				if err != nil {
+					continue
+				}
+				for _, mapEntry := range mapEntries {
+					if !mapEntry.IsDir() {
+						continue
+					}
+					mapID := mapEntry.Name()
+					assetDir := filepath.Join(ownerMapsDir, mapID, "assets", datasetID)
+					if fi, err := os.Stat(assetDir); err == nil && fi.IsDir() {
+						sessID := mapID
+						if !strings.HasPrefix(sessID, "map_") {
+							sessID = "map_" + sessID
+						}
+						if ds := r.hydrateDurableAssetLocked(sessID, datasetID, assetDir); ds != nil {
+							return ds, sessID, nil
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil, "", ErrDatasetNotFound
+}
+
+func (r *SessionRepository) hydrateDurableAssetLocked(sessionID, dsID, assetDir string) *models.Dataset {
+	sess, exists := r.sessions[sessionID]
+	if !exists || sess == nil {
+		sess = newEmptySession(sessionID)
+		r.sessions[sessionID] = sess
+	}
+
+	var ds *models.Dataset
+	metaPath := filepath.Join(assetDir, "dataset.json")
+	if metaBytes, err := os.ReadFile(metaPath); err == nil {
+		var loaded models.Dataset
+		if json.Unmarshal(metaBytes, &loaded) == nil {
+			ds = &loaded
+		}
+	}
+	if ds == nil {
+		ds = discoverDatasetFromDir(sessionID, dsID, assetDir)
+	}
+	if ds == nil {
+		return nil
+	}
+
+	absDir, err := filepath.Abs(assetDir)
+	if err != nil {
+		absDir = assetDir
+	}
+	if ds.StoragePath == "" || !fileExistsOnDisk(ds.StoragePath) {
+		if ds.Filename != "" {
+			candidate := filepath.Join(absDir, filepath.Base(ds.Filename))
+			if fileExistsOnDisk(candidate) {
+				ds.StoragePath = candidate
+			}
+		}
+		if ds.StoragePath == "" || !fileExistsOnDisk(ds.StoragePath) {
+			if entries, err := os.ReadDir(absDir); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() {
+						ext := strings.ToLower(filepath.Ext(e.Name()))
+						if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tif" || ext == ".tiff" || ext == ".webp" {
+							ds.StoragePath = filepath.Join(absDir, e.Name())
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if ds.GeoreferencedPath != "" && !fileExistsOnDisk(ds.GeoreferencedPath) {
+		vrtCand := filepath.Join(absDir, "processed", filepath.Base(ds.GeoreferencedPath))
+		if fileExistsOnDisk(vrtCand) {
+			ds.GeoreferencedPath = vrtCand
+		} else if rootCand := filepath.Join(absDir, filepath.Base(ds.GeoreferencedPath)); fileExistsOnDisk(rootCand) {
+			ds.GeoreferencedPath = rootCand
+		}
+	}
+	if ds.ProcessedPath != "" && !fileExistsOnDisk(ds.ProcessedPath) {
+		procCand := filepath.Join(absDir, "processed", filepath.Base(ds.ProcessedPath))
+		if fileExistsOnDisk(procCand) {
+			ds.ProcessedPath = procCand
+		} else if rootCand := filepath.Join(absDir, filepath.Base(ds.ProcessedPath)); fileExistsOnDisk(rootCand) {
+			ds.ProcessedPath = rootCand
+		}
+	}
+	ds.SessionID = sessionID
+	sess.Datasets[dsID] = ds
+
+	cpPath := filepath.Join(assetDir, "control_points.json")
+	if cpBytes, err := os.ReadFile(cpPath); err == nil {
+		var cps []*models.ControlPoint
+		if json.Unmarshal(cpBytes, &cps) == nil {
+			sess.ControlPoints[dsID] = cps
+		}
+	}
+
+	layersPath := filepath.Join(assetDir, "layers.json")
+	if lyrBytes, err := os.ReadFile(layersPath); err == nil {
+		var lyrs []*models.Layer
+		if json.Unmarshal(lyrBytes, &lyrs) == nil {
+			sess.Layers[dsID] = lyrs
+		}
+	}
+
+	projPath := filepath.Join(assetDir, "project.json")
+	if projBytes, err := os.ReadFile(projPath); err == nil {
+		var proj models.MapProject
+		if json.Unmarshal(projBytes, &proj) == nil {
+			sess.MapProjects[dsID] = &proj
+		}
+	}
+
+	return ds
+}
+
+func fileExistsOnDisk(path string) bool {
+	if path == "" {
+		return false
+	}
+	fi, err := os.Stat(path)
+	return err == nil && !fi.IsDir()
 }
 
 func (r *SessionRepository) ListDatasets(sessionID string) ([]*models.Dataset, error) {
@@ -318,6 +483,7 @@ type SessionSummary struct {
 	TotalMemory    int64      `json:"total_memory"`
 	MemorySize     string     `json:"memory_size"`
 	Datasets       []string   `json:"datasets"`
+	DatasetIDs     []string   `json:"dataset_ids,omitempty"`
 	FirstDatasetID string     `json:"first_dataset_id,omitempty"`
 	BuildingCount  int        `json:"building_count"`
 	ConfigCount    int        `json:"config_count"`
@@ -355,15 +521,19 @@ func (r *SessionRepository) ListSessions() []*SessionSummary {
 		}
 		var totalMem int64
 		var dsNames []string
-		var firstDSID string
+		var dsIDs []string
 		for dsID, ds := range sess.Datasets {
 			if ds != nil {
 				totalMem += ds.FileSize
 				dsNames = append(dsNames, ds.Filename)
-				if firstDSID == "" {
-					firstDSID = dsID
-				}
+				dsIDs = append(dsIDs, dsID)
 			}
+		}
+		sort.Strings(dsNames)
+		sort.Strings(dsIDs)
+		var firstDSID string
+		if len(dsIDs) > 0 {
+			firstDSID = dsIDs[0]
 		}
 
 		var pCreated, pActive *time.Time
@@ -384,6 +554,7 @@ func (r *SessionRepository) ListSessions() []*SessionSummary {
 			TotalMemory:    totalMem,
 			MemorySize:     formatMemoryBytes(totalMem),
 			Datasets:       dsNames,
+			DatasetIDs:     dsIDs,
 			FirstDatasetID: firstDSID,
 			BuildingCount:  len(sess.Buildings),
 			ConfigCount:    len(sess.SavedConfigs),
@@ -643,18 +814,27 @@ func (r *SessionRepository) SetLayers(sessionID, datasetID string, layers []*mod
 // MapProject Operations
 func (r *SessionRepository) GetMapProject(sessionID, datasetID string) (*models.MapProject, error) {
 	sess, err := r.GetSession(sessionID)
-	if err != nil {
-		return nil, err
+	if err == nil && sess != nil {
+		r.mu.RLock()
+		project, ok := sess.MapProjects[datasetID]
+		r.mu.RUnlock()
+		if ok && project != nil {
+			return project, nil
+		}
 	}
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	project, ok := sess.MapProjects[datasetID]
-	if !ok {
-		return nil, nil
+	for _, s := range r.sessions {
+		if p, ok := s.MapProjects[datasetID]; ok && p != nil {
+			if sess != nil {
+				sess.MapProjects[datasetID] = p
+			}
+			return p, nil
+		}
 	}
-	return project, nil
+
+	return nil, nil
 }
 
 func (r *SessionRepository) SaveMapProject(sessionID string, project *models.MapProject) error {
@@ -1139,7 +1319,34 @@ func (r *SessionRepository) hydrateAllLocked() {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), "sess") {
+			if _, exists := r.sessions[entry.Name()]; exists {
+				continue
+			}
 			r.hydrateSessionLocked(entry.Name())
+		}
+	}
+}
+
+// SessionMeta stores persistent timestamps and high-level identity for a session directory.
+type SessionMeta struct {
+	ID           string    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	LastActiveAt time.Time `json:"last_active_at"`
+}
+
+func (r *SessionRepository) touchSessionLocked(sess *Session) {
+	if sess == nil {
+		return
+	}
+	sess.LastActiveAt = time.Now()
+	if r.storageDir != "" && sess.ID != "" {
+		meta := SessionMeta{
+			ID:           sess.ID,
+			CreatedAt:    sess.CreatedAt,
+			LastActiveAt: sess.LastActiveAt,
+		}
+		if metaBytes, err := json.Marshal(meta); err == nil {
+			_ = os.WriteFile(filepath.Join(r.storageDir, sess.ID, "session_meta.json"), metaBytes, 0644)
 		}
 	}
 }
@@ -1154,10 +1361,26 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 		return nil
 	}
 
+	createdAt := info.ModTime()
+	lastActiveAt := info.ModTime()
+
+	metaPath := filepath.Join(sessionDir, "session_meta.json")
+	if metaBytes, err := os.ReadFile(metaPath); err == nil {
+		var meta SessionMeta
+		if json.Unmarshal(metaBytes, &meta) == nil {
+			if !meta.CreatedAt.IsZero() {
+				createdAt = meta.CreatedAt
+			}
+			if !meta.LastActiveAt.IsZero() {
+				lastActiveAt = meta.LastActiveAt
+			}
+		}
+	}
+
 	sess := &Session{
 		ID:            sessionID,
-		CreatedAt:     info.ModTime(),
-		LastActiveAt:  time.Time{}, // Unknown / not active in current runtime
+		CreatedAt:     createdAt,
+		LastActiveAt:  lastActiveAt,
 		Datasets:      make(map[string]*models.Dataset),
 		ControlPoints: make(map[string][]*models.ControlPoint),
 		Layers:        make(map[string][]*models.Layer),
@@ -1170,6 +1393,9 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 	cfgPath := filepath.Join(sessionDir, "saved_configs.json")
 	if cfgBytes, err := os.ReadFile(cfgPath); err == nil {
+		if cfgInfo, sErr := os.Stat(cfgPath); sErr == nil && cfgInfo.ModTime().After(lastActiveAt) {
+			lastActiveAt = cfgInfo.ModTime()
+		}
 		var cfgs []*models.SavedConfig
 		if json.Unmarshal(cfgBytes, &cfgs) == nil {
 			for _, c := range cfgs {
@@ -1180,6 +1406,9 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 	ipPath := filepath.Join(sessionDir, "icon_points.json")
 	if ipBytes, err := os.ReadFile(ipPath); err == nil {
+		if ipInfo, sErr := os.Stat(ipPath); sErr == nil && ipInfo.ModTime().After(lastActiveAt) {
+			lastActiveAt = ipInfo.ModTime()
+		}
 		var ips []*models.IconPoint
 		if json.Unmarshal(ipBytes, &ips) == nil {
 			for _, ip := range ips {
@@ -1190,6 +1419,9 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 	bldPath := filepath.Join(sessionDir, "buildings.json")
 	if bldBytes, err := os.ReadFile(bldPath); err == nil {
+		if bldInfo, sErr := os.Stat(bldPath); sErr == nil && bldInfo.ModTime().After(lastActiveAt) {
+			lastActiveAt = bldInfo.ModTime()
+		}
 		var blds []*models.Building
 		if json.Unmarshal(bldBytes, &blds) == nil {
 			for _, b := range blds {
@@ -1211,6 +1443,9 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 			var ds *models.Dataset
 			metaPath := filepath.Join(dsDir, "dataset.json")
 			if metaBytes, err := os.ReadFile(metaPath); err == nil {
+				if dInfo, sErr := os.Stat(metaPath); sErr == nil && dInfo.ModTime().After(lastActiveAt) {
+					lastActiveAt = dInfo.ModTime()
+				}
 				var loaded models.Dataset
 				if json.Unmarshal(metaBytes, &loaded) == nil {
 					ds = &loaded
@@ -1223,10 +1458,19 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 			if ds != nil {
 				sess.Datasets[dsID] = ds
+				if !ds.CreatedAt.IsZero() && (createdAt.IsZero() || ds.CreatedAt.Before(createdAt)) {
+					createdAt = ds.CreatedAt
+				}
+				if !ds.UpdatedAt.IsZero() && ds.UpdatedAt.After(lastActiveAt) {
+					lastActiveAt = ds.UpdatedAt
+				}
 			}
 
 			cpPath := filepath.Join(dsDir, "control_points.json")
 			if cpBytes, err := os.ReadFile(cpPath); err == nil {
+				if cpInfo, sErr := os.Stat(cpPath); sErr == nil && cpInfo.ModTime().After(lastActiveAt) {
+					lastActiveAt = cpInfo.ModTime()
+				}
 				var cps []*models.ControlPoint
 				if json.Unmarshal(cpBytes, &cps) == nil {
 					sess.ControlPoints[dsID] = cps
@@ -1235,6 +1479,9 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 			layersPath := filepath.Join(dsDir, "layers.json")
 			if lyrBytes, err := os.ReadFile(layersPath); err == nil {
+				if lyrInfo, sErr := os.Stat(layersPath); sErr == nil && lyrInfo.ModTime().After(lastActiveAt) {
+					lastActiveAt = lyrInfo.ModTime()
+				}
 				var lyrs []*models.Layer
 				if json.Unmarshal(lyrBytes, &lyrs) == nil {
 					sess.Layers[dsID] = lyrs
@@ -1243,12 +1490,33 @@ func (r *SessionRepository) hydrateSessionLocked(sessionID string) *Session {
 
 			projPath := filepath.Join(dsDir, "project.json")
 			if projBytes, err := os.ReadFile(projPath); err == nil {
+				if prjInfo, sErr := os.Stat(projPath); sErr == nil && prjInfo.ModTime().After(lastActiveAt) {
+					lastActiveAt = prjInfo.ModTime()
+				}
 				var proj models.MapProject
 				if json.Unmarshal(projBytes, &proj) == nil {
 					sess.MapProjects[dsID] = &proj
+					if !proj.CreatedAt.IsZero() && (createdAt.IsZero() || proj.CreatedAt.Before(createdAt)) {
+						createdAt = proj.CreatedAt
+					}
+					if !proj.UpdatedAt.IsZero() && proj.UpdatedAt.After(lastActiveAt) {
+						lastActiveAt = proj.UpdatedAt
+					}
 				}
 			}
 		}
+	}
+
+	sess.CreatedAt = createdAt
+	sess.LastActiveAt = lastActiveAt
+
+	// Persist session_meta.json for instant subsequent reads
+	if metaBytes, err := json.Marshal(SessionMeta{
+		ID:           sessionID,
+		CreatedAt:    sess.CreatedAt,
+		LastActiveAt: sess.LastActiveAt,
+	}); err == nil {
+		_ = os.WriteFile(metaPath, metaBytes, 0644)
 	}
 
 	r.sessions[sessionID] = sess
@@ -1309,7 +1577,6 @@ func discoverDatasetFromDir(sessionID, dsID, dsDir string) *models.Dataset {
 		"georeference_source":  meta.GeoreferenceSource,
 		"color_interpretation": meta.ColorInterpretation,
 		"format":               strings.ToLower(meta.Driver),
-		"archive_filename":     filename,
 	}
 
 	georefStatus := "not_started"

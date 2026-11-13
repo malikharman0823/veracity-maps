@@ -205,30 +205,40 @@ func (m *SMTPMailer) send(ctx context.Context, to, subject, body, html string) e
 }
 
 func buildMIMEMessage(from, to, subject, textBody, htmlBody string) []byte {
-	boundary := fmt.Sprintf("boundary_%d", time.Now().UnixNano())
+	boundary := fmt.Sprintf("bnd_%d", time.Now().UnixNano())
+	msgID := fmt.Sprintf("<%d.%d@veracitymaps.local>", time.Now().UnixNano(), time.Now().Unix())
 	var msg bytes.Buffer
 
-	msg.WriteString(fmt.Sprintf("From: %s\r\n", from))
+	fromHeader := from
+	if !strings.Contains(from, "<") {
+		fromHeader = fmt.Sprintf("\"Veracity Maps\" <%s>", from)
+	}
+
+	msg.WriteString(fmt.Sprintf("From: %s\r\n", fromHeader))
 	msg.WriteString(fmt.Sprintf("To: %s\r\n", to))
 	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
 	msg.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
+	msg.WriteString(fmt.Sprintf("Message-ID: %s\r\n", msgID))
 	msg.WriteString("MIME-Version: 1.0\r\n")
 
 	if htmlBody != "" {
 		msg.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n\r\n", boundary))
 		msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		msg.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
-		msg.WriteString("Content-Transfer-Encoding: 7bit\r\n\r\n")
-		msg.WriteString(textBody + "\r\n\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		msg.WriteString(textBody)
+		msg.WriteString("\r\n\r\n")
 		msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
-		msg.WriteString("Content-Transfer-Encoding: 7bit\r\n\r\n")
-		msg.WriteString(htmlBody + "\r\n\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		msg.WriteString(htmlBody)
+		msg.WriteString("\r\n\r\n")
 		msg.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 	} else {
 		msg.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
-		msg.WriteString("Content-Transfer-Encoding: 7bit\r\n\r\n")
-		msg.WriteString(textBody + "\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		msg.WriteString(textBody)
+		msg.WriteString("\r\n")
 	}
 
 	return msg.Bytes()

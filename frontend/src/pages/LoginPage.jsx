@@ -1,23 +1,73 @@
 import React, { useState, useEffect } from "react"
-import { Link, useNavigate, useLocation } from "react-router-dom"
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { getMapInvitation } from "../api"
 import ThemeToggle from "../components/ThemeToggle"
 import CodeSlots from "../components/CodeSlots"
+
+function extractInviteTokenFromRedirect(redirectTarget) {
+  if (!redirectTarget || typeof redirectTarget !== "string") return ""
+  try {
+    const qIdx = redirectTarget.indexOf("?")
+    if (qIdx === -1) return ""
+    const params = new URLSearchParams(redirectTarget.slice(qIdx + 1))
+    return params.get("accept_invite") || params.get("token") || ""
+  } catch {
+    return ""
+  }
+}
 
 export default function LoginPage() {
   const { sendOtp, loginWithOtp } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = location.state?.from?.pathname || "/"
+  const [searchParams] = useSearchParams()
+
+  const redirectParam = searchParams.get("redirect") || ""
+  const fromState = location.state?.from
+    ? `${location.state.from.pathname || "/dashboard"}${location.state.from.search || ""}`
+    : ""
+  const from = redirectParam || fromState || "/dashboard"
+  const initialEmail = searchParams.get("email") || ""
 
   const [step, setStep] = useState("email") // "email" | "otp"
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState("")
   const [otpStatus, setOtpStatus] = useState("idle") // "idle" | "error" | "success"
   const [error, setError] = useState("")
   const [info, setInfo] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (initialEmail && !email) {
+      setEmail(initialEmail)
+    }
+  }, [initialEmail])
+
+  useEffect(() => {
+    const inviteToken = extractInviteTokenFromRedirect(from)
+    if (!inviteToken) return
+    let active = true
+    getMapInvitation(inviteToken)
+      .then((inv) => {
+        if (!active || !inv) return
+        if (inv.email) {
+          setEmail((prev) => prev || inv.email)
+          const mapTitle = inv.map_name ? `"${inv.map_name}"` : "this shared map"
+          setInfo((prev) => prev || `Sign in with ${inv.email} to open ${mapTitle}`)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [from])
+
+  const registerHref = `/register?${new URLSearchParams({
+    ...(email.trim() ? { email: email.trim() } : {}),
+    ...(from && from !== "/dashboard" ? { redirect: from } : {}),
+  }).toString()}`.replace(/\?$/, "")
 
   // Cooldown countdown timer
   useEffect(() => {
@@ -125,7 +175,7 @@ export default function LoginPage() {
                 <span>{error}</span>
               </div>
               {error.toLowerCase().includes("no account found") && (
-                <Link to="/register" className="text-[#24b47e] dark:text-[#3ecf8e] underline shrink-0 font-medium">
+                <Link to={registerHref} className="text-[#24b47e] dark:text-[#3ecf8e] underline shrink-0 font-medium">
                   Register
                 </Link>
               )}
@@ -144,10 +194,11 @@ export default function LoginPage() {
           {step === "email" ? (
             <form onSubmit={handleSendCode} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
+                <label htmlFor="login-email" className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
                   Email Address
                 </label>
                 <input
+                  id="login-email"
                   type="email"
                   autoComplete="email"
                   required
@@ -265,7 +316,7 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center text-xs text-neutral-500 dark:text-neutral-400">
             Don't have an account yet?{" "}
-            <Link to="/register" className="text-[#24b47e] dark:text-[#3ecf8e] hover:underline font-medium">
+            <Link to={registerHref} className="text-[#24b47e] dark:text-[#3ecf8e] hover:underline font-medium">
               Create an account
             </Link>
           </div>

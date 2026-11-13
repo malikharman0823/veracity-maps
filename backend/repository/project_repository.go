@@ -27,6 +27,7 @@ var (
 	ErrInvitationNotFound  = errors.New("invitation not found or already processed")
 	ErrCannotInviteOwner   = errors.New("cannot invite the project owner")
 	ErrCannotModifyOwner   = errors.New("cannot alter or remove project owner")
+	ErrMemberLimitReached  = errors.New("maximum member limit reached (10/10 members)")
 )
 
 type ProjectRepository struct {
@@ -162,6 +163,42 @@ func (r *ProjectRepository) saveMembersLocked(projectID string) error {
 		return err
 	}
 	return os.Rename(tmpFile, filePath)
+}
+
+// EnsureProject ensures a project entry exists (e.g. for Mapspace project folders)
+func (r *ProjectRepository) EnsureProject(id, userID, name, description string) *models.UserProject {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if p, exists := r.projects[id]; exists {
+		if name != "" {
+			p.Name = name
+		}
+		if description != "" {
+			p.Description = description
+		}
+		return p
+	}
+
+	p := &models.UserProject{
+		ID:          id,
+		UserID:      userID,
+		Name:        name,
+		Description: description,
+		DatasetIDs:  make([]string, 0),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	r.projects[id] = p
+	if _, ok := r.members[id]; !ok {
+		r.members[id] = make(map[string]*models.ProjectMember)
+	}
+	if _, ok := r.activities[id]; !ok {
+		r.activities[id] = make([]*models.ProjectActivity, 0)
+	}
+
+	_ = r.saveProjectLocked(p)
+	return p
 }
 
 func (r *ProjectRepository) saveActivitiesLocked(projectID string) error {
@@ -342,6 +379,68 @@ func (r *ProjectRepository) ListSharedWithUser(userID string, authRepo AuthRepo)
 	})
 
 	return views
+}
+
+// ListSharedByOwner returns projects owned by userID that have accepted or active collaborators.
+func (r *ProjectRepository) ListSharedByOwner(userID string, authRepo AuthRepo) []*models.SharedProjectView {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var views []*models.SharedProjectView
+	ownerName := "You (Owner)"
+	ownerEmail := ""
+	if authRepo != nil {
+		if owner, err := authRepo.GetUserByID(context.Background(), userID); err == nil && owner != nil {
+			ownerName = owner.Name
+			ownerEmail = owner.Email
+		}
+	}
+
+	for projID, members := range r.members {
+		p, exists := r.projects[projID]
+		if !exists || p.UserID != userID {
+			continue // Only owned by this user
+		}
+
+		collabCount := 0
+		var latestShared time.Time
+		for _, m := range members {
+			if m.UserID != userID && (m.InvitationStatus == models.StatusAccepted || m.InvitationStatus == models.StatusPending) {
+				collabCount++
+				if m.UpdatedAt.After(latestShared) {
+					latestShared = m.UpdatedAt
+				}
+			}
+		}
+
+		if collabCount > 0 {
+			views = append(views, &models.SharedProjectView{
+				Project:    p,
+				OwnerName:  ownerName,
+				OwnerEmail: ownerEmail,
+				Role:       models.RoleOwner,
+				SharedDate: latestShared,
+			})
+		}
+	}
+
+	sort.Slice(views, func(i, j int) bool {
+		return views[i].SharedDate.After(views[j].SharedDate)
+	})
+
+	return views
+}
+
+// GetInvitationProjectAndRole returns the project ID and role for a given invitation ID.
+func (r *ProjectRepository) GetInvitationProjectAndRole(invitationID string) (string, models.ProjectRole) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for projID, members := range r.members {
+		if m, ok := members[invitationID]; ok {
+			return projID, m.Role
+		}
+	}
+	return "", ""
 }
 
 // ListPendingInvitations returns pending invitations for a specific user ID or email.
@@ -529,6 +628,37 @@ func (r *ProjectRepository) Delete(projectID, userID string) error {
 	return nil
 }
 
+// LeaveProject allows a collaborator to leave a shared project.
+func (r *ProjectRepository) LeaveProject(projectID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	p, exists := r.projects[projectID]
+	if !exists {
+		return ErrProjectNotFound
+	}
+	if p.UserID == userID {
+		return ErrCannotModifyOwner
+	}
+
+	members, ok := r.members[projectID]
+	if !ok {
+		return ErrMemberNotFound
+	}
+
+	for id, m := range members {
+		if m.UserID == userID {
+			delete(members, id)
+			_ = r.saveMembersLocked(projectID)
+			if r.db != nil {
+				_, _ = r.db.Exec("DELETE FROM ProjectMembers WHERE project_id = @p1 AND user_id = @p2", projectID, userID)
+			}
+			return nil
+		}
+	}
+	return ErrMemberNotFound
+}
+
 // InviteMember invites a target user to a project with role (Editor or Viewer). Only Owner can invite.
 func (r *ProjectRepository) InviteMember(projectID, ownerID string, targetUser *models.User, role models.ProjectRole, inviterName string) (*models.ProjectMember, error) {
 	r.mu.Lock()
@@ -542,22 +672,34 @@ func (r *ProjectRepository) InviteMember(projectID, ownerID string, targetUser *
 		return nil, ErrForbidden
 	}
 
-	if targetUser.ID == p.UserID {
+	if targetUser.ID != "" && targetUser.ID == p.UserID {
 		return nil, ErrCannotInviteOwner
 	}
 
-	if role != models.RoleEditor && role != models.RoleViewer {
-		return nil, errors.New("invalid role: must be editor or viewer")
+	// All shared members default to editor privileges
+	if role == "" {
+		role = models.RoleEditor
 	}
 
 	if r.members[projectID] == nil {
 		r.members[projectID] = make(map[string]*models.ProjectMember)
 	}
 
+	// Cap total members (active or pending) at 10
+	activeCount := 0
+	for _, m := range r.members[projectID] {
+		if m.InvitationStatus == models.StatusAccepted || m.InvitationStatus == models.StatusPending {
+			activeCount++
+		}
+	}
+	if activeCount >= 10 {
+		return nil, ErrMemberLimitReached
+	}
+
 	// Check if already active or pending
 	cleanEmail := strings.ToLower(strings.TrimSpace(targetUser.Email))
 	for _, m := range r.members[projectID] {
-		if (m.UserID == targetUser.ID || strings.EqualFold(m.UserEmail, cleanEmail)) &&
+		if ((targetUser.ID != "" && m.UserID == targetUser.ID) || strings.EqualFold(m.UserEmail, cleanEmail)) &&
 			(m.InvitationStatus == models.StatusAccepted || m.InvitationStatus == models.StatusPending) {
 			return nil, ErrMemberAlreadyExists
 		}
@@ -737,7 +879,7 @@ func (r *ProjectRepository) RemoveMember(projectID, ownerID, memberID string, ow
 }
 
 // RespondInvitation accepts or rejects a pending invitation by the recipient.
-func (r *ProjectRepository) RespondInvitation(invitationID, userID, userName string, accept bool) error {
+func (r *ProjectRepository) RespondInvitation(invitationID, userID, userEmail, userName string, accept bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -756,7 +898,8 @@ func (r *ProjectRepository) RespondInvitation(invitationID, userID, userName str
 		return ErrInvitationNotFound
 	}
 
-	if targetMember.UserID != userID {
+	cleanEmail := strings.ToLower(strings.TrimSpace(userEmail))
+	if targetMember.UserID != userID && (cleanEmail == "" || !strings.EqualFold(targetMember.UserEmail, cleanEmail)) {
 		return ErrForbidden
 	}
 
@@ -765,10 +908,14 @@ func (r *ProjectRepository) RespondInvitation(invitationID, userID, userName str
 
 	if accept {
 		targetMember.InvitationStatus = models.StatusAccepted
+		targetMember.UserID = userID
+		if userName != "" {
+			targetMember.UserName = userName
+		}
 		_ = r.saveMembersLocked(targetProjectID)
 		r.logActivityLocked(targetProjectID, userID, userName, "invitation_accepted", fmt.Sprintf("%s accepted the invitation as %s", userName, targetMember.Role))
 		if r.db != nil {
-			_, _ = r.db.Exec("UPDATE ProjectMembers SET invitation_status = @p1, updated_at = @p2 WHERE id = @p3", string(models.StatusAccepted), now, targetMember.ID)
+			_, _ = r.db.Exec("UPDATE ProjectMembers SET invitation_status = @p1, user_id = @p2, updated_at = @p3 WHERE id = @p4", string(models.StatusAccepted), userID, now, targetMember.ID)
 		}
 	} else {
 		targetMember.InvitationStatus = models.StatusRejected

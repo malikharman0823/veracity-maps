@@ -15,7 +15,7 @@ The `upload` subpackage handles multipart file uploads, valid file type inspecti
   - `NewHandler(ds *services.DatasetService, repo *repository.SessionRepository) *Handler`: Factory constructor.
   - `UploadFile(w http.ResponseWriter, r *http.Request)`:
     - Verifies HTTP `POST`.
-    - Resolves or creates an anonymous session.
+    - Resolves or creates an anonymous session, replacing a stale session ID after a backend restart.
     - Parses multipart streams (buffer limit: 32 MB in RAM, remainder spilled to disk).
     - Extracts `file` header and delegates processing to `datasetService.HandleUpload(sessionID, header)`.
     - Formats and writes HTTP 201 JSON `UploadData` response.

@@ -3,7 +3,6 @@ import { Link } from "react-router-dom"
 import { SidebarTrigger, SidebarContext } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { User, ChevronRight } from "lucide-react"
-import EndSessionDialog from "./EndSessionDialog"
 import ThemeToggle from "./ThemeToggle"
 import { useAuth } from "../context/AuthContext"
 
@@ -23,7 +22,7 @@ export default function TopHeader({ breadcrumbs = [], actions }) {
         )}
 
         <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-neutral-500 dark:text-neutral-400 font-normal">Workspace</span>
+          <span className="text-neutral-500 dark:text-neutral-400 font-normal">Studio</span>
           <ChevronRight className="size-3 text-neutral-400 dark:text-neutral-600" />
           {breadcrumbs.map((crumb, i) => (
             <React.Fragment key={i}>
@@ -57,12 +56,11 @@ export default function TopHeader({ breadcrumbs = [], actions }) {
       <div className="flex items-center gap-2">
         {actions}
         <ThemeToggle />
-        <EndSessionDialog />
         <div className="h-4 w-px bg-neutral-200 dark:bg-[#2e2e2e] mx-1 hidden sm:block"></div>
         <Link
-          to="/profile"
+          to="/dashboard"
           className="h-8 w-8 rounded-full bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center text-neutral-600 dark:text-neutral-300 text-xs font-semibold shadow-xs hover:border-[#3ecf8e] hover:text-[#3ecf8e] transition-colors cursor-pointer"
-          title={user?.name ? `${user.name} - Profile Dashboard` : "User Profile Dashboard"}
+          title={user?.name ? `${user.name} - Personal Dashboard` : "Personal Dashboard"}
         >
           {user?.name ? user.name.charAt(0).toUpperCase() : <User className="size-4" />}
         </Link>

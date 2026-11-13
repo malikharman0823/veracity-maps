@@ -10,6 +10,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
 	"github.com/malikharman0823/veracity-maps/functions/health"
+	"github.com/malikharman0823/veracity-maps/functions/maps"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
@@ -29,6 +30,11 @@ type Router struct {
 	authH      *auth.Handler
 	projectsH  *projects.Handler
 	profileH   *profile.Handler
+	mapsH      *maps.Handler
+}
+
+func (rt *Router) SetMapsHandler(mh *maps.Handler) {
+	rt.mapsH = mh
 }
 
 func NewRouter(
@@ -123,12 +129,16 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if path == "/api/auth/otp/send" || path == "/auth/otp/send" {
+	if path == "/api/auth/otp/send" || path == "/auth/otp/send" || path == "/api/auth/send-otp" {
 		rt.authH.SendOTP(w, r)
 		return
 	}
-	if path == "/api/auth/otp/verify" || path == "/auth/otp/verify" {
+	if path == "/api/auth/otp/verify" || path == "/auth/otp/verify" || path == "/api/auth/verify-otp" {
 		rt.authH.VerifyOTP(w, r)
+		return
+	}
+	if path == "/api/auth/test-login" || path == "/auth/test-login" {
+		rt.authH.TestLogin(w, r)
 		return
 	}
 	if path == "/api/auth/register" || path == "/auth/register" {
@@ -151,6 +161,214 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 		rt.authH.Me(w, r, user)
 		return
+	}
+
+	// 1a-share. Public Share Link Endpoint (/api/share/:token)
+	if rt.mapsH != nil && (strings.HasPrefix(path, "/api/share/") || strings.HasPrefix(path, "/share/")) {
+		token := strings.TrimPrefix(path, "/api/share/")
+		token = strings.TrimPrefix(token, "/share/")
+		if token != "" {
+			rt.mapsH.ResolveShareLink(w, r, token)
+			return
+		}
+	}
+
+	// 1a-inv. Map Share Invitations Inspect/Accept/Decline (/api/map-invitations/:token[/accept|decline])
+	if rt.mapsH != nil && strings.HasPrefix(path, "/api/map-invitations/") {
+		remainder := strings.TrimPrefix(path, "/api/map-invitations/")
+		parts := strings.Split(remainder, "/")
+		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
+			rt.mapsH.GetInvitation(w, r, GetUser(r), parts[0])
+			return
+		}
+		if len(parts) >= 2 {
+			token := parts[0]
+			action := parts[1]
+			user := GetUser(r)
+			if user == nil {
+				models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+				return
+			}
+			if action == "accept" {
+				rt.mapsH.AcceptInvitation(w, r, user, token)
+				return
+			}
+			if action == "decline" {
+				rt.mapsH.DeclineInvitation(w, r, user, token)
+				return
+			}
+		}
+	}
+
+	// 1a-files. Personal User Files (/api/user/files or /api/files)
+	if rt.mapsH != nil && (path == "/api/user/files" || strings.HasPrefix(path, "/api/user/files/") || path == "/api/files" || strings.HasPrefix(path, "/api/files/")) {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		if path == "/api/user/files" || path == "/api/files" {
+			if r.Method == http.MethodGet {
+				rt.mapsH.ListUserFiles(w, r, user)
+				return
+			}
+		}
+		var fileID string
+		if strings.HasPrefix(path, "/api/user/files/") {
+			fileID = strings.TrimPrefix(path, "/api/user/files/")
+		} else {
+			fileID = strings.TrimPrefix(path, "/api/files/")
+		}
+		if fileID != "" && r.Method == http.MethodDelete {
+			rt.mapsH.DeleteUserFile(w, r, user, fileID)
+			return
+		}
+	}
+
+	// 1a-maps. Personal and Shared Map Endpoints (/api/maps)
+	if rt.mapsH != nil && (path == "/api/maps" || strings.HasPrefix(path, "/api/maps/")) {
+		if path == "/api/maps/from-configuration" {
+			user := GetUser(r)
+			if user == nil {
+				models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+				return
+			}
+			rt.mapsH.CreateMapFromConfiguration(w, r, user)
+			return
+		}
+		if path == "/api/maps" {
+			user := GetUser(r)
+			if user == nil {
+				models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+				return
+			}
+			if r.Method == http.MethodGet {
+				rt.mapsH.ListMaps(w, r, user)
+				return
+			}
+			if r.Method == http.MethodPost {
+				rt.mapsH.CreateMap(w, r, user)
+				return
+			}
+		}
+
+		sub := strings.TrimPrefix(path, "/api/maps/")
+		parts := strings.Split(sub, "/")
+		if len(parts) == 1 {
+			mapID := parts[0]
+			user := GetUser(r)
+			if user == nil {
+				models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+				return
+			}
+			if r.Method == http.MethodGet {
+				rt.mapsH.GetMap(w, r, user, mapID)
+				return
+			}
+			if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+				rt.mapsH.UpdateMap(w, r, user, mapID)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				rt.mapsH.DeleteMap(w, r, user, mapID)
+				return
+			}
+		}
+
+		if len(parts) >= 2 {
+			mapID := parts[0]
+			action := parts[1]
+
+			if action == "lock" {
+				if len(parts) == 2 {
+					if r.Method == http.MethodGet {
+						rt.mapsH.GetLock(w, r, mapID)
+						return
+					}
+					user := GetUser(r)
+					if user == nil {
+						models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+						return
+					}
+					if r.Method == http.MethodPost {
+						rt.mapsH.AcquireLock(w, r, user, mapID)
+						return
+					}
+					if r.Method == http.MethodDelete {
+						rt.mapsH.ReleaseLock(w, r, user, mapID)
+						return
+					}
+				} else if len(parts) == 3 && parts[2] == "renew" {
+					user := GetUser(r)
+					if user == nil {
+						models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+						return
+					}
+					if r.Method == http.MethodPost {
+						rt.mapsH.RenewLock(w, r, user, mapID)
+						return
+					}
+				}
+			}
+
+			user := GetUser(r)
+			if user == nil {
+				models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+				return
+			}
+
+			if action == "save" && r.Method == http.MethodPost {
+				rt.mapsH.SaveMapConfig(w, r, user, mapID)
+				return
+			}
+			if action == "revisions" {
+				if len(parts) == 2 && r.Method == http.MethodGet {
+					rt.mapsH.ListRevisions(w, r, user, mapID)
+					return
+				}
+				if len(parts) == 4 && parts[3] == "restore" && r.Method == http.MethodPost {
+					rt.mapsH.RestoreRevision(w, r, user, mapID, parts[2])
+					return
+				}
+			}
+			if action == "invitations" && r.Method == http.MethodPost {
+				rt.mapsH.InviteToMap(w, r, user, mapID)
+				return
+			}
+			if action == "shares" {
+				if len(parts) == 2 && r.Method == http.MethodGet {
+					rt.mapsH.ListShares(w, r, user, mapID)
+					return
+				}
+				if len(parts) == 3 {
+					shareID := parts[2]
+					if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+						rt.mapsH.UpdateSharePermission(w, r, user, mapID, shareID)
+						return
+					}
+					if r.Method == http.MethodDelete {
+						rt.mapsH.RevokeShare(w, r, user, mapID, shareID)
+						return
+					}
+				}
+			}
+			if action == "share-links" {
+				if len(parts) == 2 {
+					if r.Method == http.MethodPost {
+						rt.mapsH.CreateShareLink(w, r, user, mapID)
+						return
+					}
+					if r.Method == http.MethodGet {
+						rt.mapsH.ListShareLinks(w, r, user, mapID)
+						return
+					}
+				}
+				if len(parts) == 3 && r.Method == http.MethodDelete {
+					rt.mapsH.RevokeShareLink(w, r, user, mapID, parts[2])
+					return
+				}
+			}
+		}
 	}
 
 	// 1b. User Projects (Dashboard, Ownership, Sharing & Collaboration)
@@ -254,6 +472,11 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				rt.projectsH.ListActivities(w, r, projectID, user.ID)
 				return
 			}
+
+			if sub == "leave" && (r.Method == http.MethodPost || r.Method == http.MethodDelete) {
+				rt.projectsH.Leave(w, r, projectID, user.ID)
+				return
+			}
 		}
 
 		if len(parts) == 3 && parts[1] == "members" {
@@ -306,7 +529,7 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			action := parts[1] // "accept" or "reject"
 			if r.Method == http.MethodPost {
 				accept := (action == "accept")
-				err := rt.projRepo.RespondInvitation(invitationID, user.ID, user.Name, accept)
+				err := rt.projRepo.RespondInvitation(invitationID, user.ID, user.Email, user.Name, accept)
 				if err == nil {
 					models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "accepted": accept, "type": "project"})
 					return
@@ -318,6 +541,24 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Sessions
+	if path == "/api/workspace/session/start" || path == "/workspace/session/start" || path == "/api/workspace/session" || path == "/workspace/session" {
+		sess := rt.repo.CreateSession()
+		w.Header().Set("X-Session-ID", sess.ID)
+		models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"session_id": sess.ID,
+			"created_at": sess.CreatedAt,
+		})
+		return
+	}
+	if path == "/api/workspace/session/end" || path == "/workspace/session/end" {
+		sid := GetSessionID(r)
+		if sid != "" {
+			rt.repo.DeleteSession(sid)
+		}
+		models.WriteJSON(w, http.StatusOK, map[string]bool{"ended": true})
+		return
+	}
+
 	if path == "/sessions" || path == "/api/sessions" {
 		if r.Method == http.MethodGet {
 			list := rt.repo.ListSessions()
@@ -419,58 +660,13 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(parts) >= 2 && parts[1] == "configs" {
-			sid := parts[0]
-			if len(parts) == 2 {
-				if r.Method == http.MethodGet {
-					cfgs, err := rt.repo.ListSavedConfigs(sid)
-					if err != nil {
-						models.WriteError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found", nil, nil)
-						return
-					}
-					models.WriteJSON(w, http.StatusOK, cfgs)
-					return
-				}
-				if r.Method == http.MethodPost {
-					var cfg models.SavedConfig
-					if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-						models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid config JSON", nil, nil)
-						return
-					}
-					saved, err := rt.repo.SaveConfig(sid, &cfg)
-					if err != nil {
-						models.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error(), nil, nil)
-						return
-					}
-					models.WriteJSON(w, http.StatusCreated, saved)
-					return
-				}
-			}
-			if len(parts) == 3 {
-				configID := parts[2]
-				if r.Method == http.MethodGet {
-					cfg, err := rt.repo.GetSavedConfig(sid, configID)
-					if err != nil {
-						models.WriteError(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config not found", nil, nil)
-						return
-					}
-					models.WriteJSON(w, http.StatusOK, cfg)
-					return
-				}
-				if r.Method == http.MethodDelete {
-					err := rt.repo.DeleteSavedConfig(sid, configID)
-					if err != nil {
-						models.WriteError(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config not found", nil, nil)
-						return
-					}
-					models.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
-					return
-				}
-			}
+			models.WriteError(w, http.StatusGone, "SESSION_CONFIGS_RETIRED", "Session-only saved configurations are retired; save to the persistent map library", nil, nil)
+			return
 		}
 	}
 
 	// 3. Uploads & Project Reopen
-	if path == "/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" {
+	if path == "/upload" || path == "/api/upload" || path == "/datasets/import-zip" || path == "/api/datasets/import" {
 		rt.uploadH.UploadFile(w, r)
 		return
 	}

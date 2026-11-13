@@ -3,12 +3,55 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"testing"
 
 	"github.com/malikharman0823/veracity-maps/repository"
 )
+
+func TestSessionSavedConfigEndpointsAreRetired(t *testing.T) {
+	server, _, tempDir := createTestServer(t)
+	defer server.Close()
+	defer cleanupTestDir(t, tempDir)
+
+	response, err := server.Client().Post(server.URL+"/sessions", "application/json", nil)
+	if err != nil {
+		t.Fatalf("create session request failed: %v", err)
+	}
+	var created struct {
+		Data struct {
+			SessionID string `json:"session_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		t.Fatalf("decode session response: %v", err)
+	}
+	response.Body.Close()
+
+	payload := bytes.NewBufferString(`{"name":"legacy-only","primary_dataset_id":"ds_legacy"}`)
+	response, err = server.Client().Post(server.URL+"/sessions/"+created.Data.SessionID+"/configs", "application/json", payload)
+	if err != nil {
+		t.Fatalf("session config request failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusGone {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("session config status = %d, want 410; body=%s", response.StatusCode, body)
+	}
+	var result struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode retired endpoint response: %v", err)
+	}
+	if result.Error.Code != "SESSION_CONFIGS_RETIRED" {
+		t.Fatalf("error code = %q, want SESSION_CONFIGS_RETIRED", result.Error.Code)
+	}
+}
 
 func TestAPI_WorkspaceAndIcons(t *testing.T) {
 	server, _, tempDir := createTestServer(t)
@@ -222,60 +265,4 @@ func TestAPI_WorkspaceAndIcons(t *testing.T) {
 		}
 	}
 
-	// 10. Test Saved Configurations API: POST, GET list, DELETE
-	cfgPayload, _ := json.Marshal(map[string]interface{}{
-		"name":               "My Saved Campus Map",
-		"primary_dataset_id": datasetID,
-		"members":            []string{datasetID},
-	})
-	cfgReq, _ := http.NewRequest("POST", server.URL+"/sessions/"+sessionID+"/configs", bytes.NewReader(cfgPayload))
-	cfgReq.Header.Set("Content-Type", "application/json")
-	cfgResp, err := client.Do(cfgReq)
-	if err != nil {
-		t.Fatalf("failed saving config: %v", err)
-	}
-	defer cfgResp.Body.Close()
-	if cfgResp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected 201 Created from saving config, got %d", cfgResp.StatusCode)
-	}
-	var cfgRes struct {
-		Data struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	_ = json.NewDecoder(cfgResp.Body).Decode(&cfgRes)
-	createdCfg := cfgRes.Data
-	if createdCfg.ID == "" || createdCfg.Name != "My Saved Campus Map" {
-		t.Fatalf("unexpected saved config: %+v", createdCfg)
-	}
-
-	// List saved configs
-	listCfgReq, _ := http.NewRequest("GET", server.URL+"/sessions/"+sessionID+"/configs", nil)
-	listCfgResp, err := client.Do(listCfgReq)
-	if err != nil {
-		t.Fatalf("failed listing saved configs: %v", err)
-	}
-	defer listCfgResp.Body.Close()
-	var listRes struct {
-		Data []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	_ = json.NewDecoder(listCfgResp.Body).Decode(&listRes)
-	if len(listRes.Data) != 1 {
-		t.Fatalf("expected 1 saved config, got %d", len(listRes.Data))
-	}
-
-	// Delete saved config
-	delCfgReq, _ := http.NewRequest("DELETE", server.URL+"/sessions/"+sessionID+"/configs/"+createdCfg.ID, nil)
-	delCfgResp, err := client.Do(delCfgReq)
-	if err != nil {
-		t.Fatalf("failed deleting saved config: %v", err)
-	}
-	delCfgResp.Body.Close()
-	if delCfgResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK from deleting saved config, got %d", delCfgResp.StatusCode)
-	}
 }

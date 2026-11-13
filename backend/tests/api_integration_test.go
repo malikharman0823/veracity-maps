@@ -21,6 +21,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/maps"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -71,8 +72,12 @@ func createTestServer(t *testing.T) (*httptest.Server, *repository.SessionReposi
 	eh := export.NewHandler(expService, repo)
 	ah := auth.NewHandler(authRepo)
 	ph := projects.NewHandler(projRepo, repo, authRepo, nil, "")
+	mapRepo := repository.NewMemoryMapRepository()
+	uh.SetMapRepo(mapRepo)
+	mapsH := maps.NewHandler(mapRepo, nil, "")
 
 	router := api.NewRouter(repo, authRepo, projRepo, mw, uh, dh, gh, eh, ah, ph)
+	router.SetMapsHandler(mapsH)
 	server := httptest.NewServer(router.BuildHandler())
 
 	return server, repo, tempDir
@@ -95,6 +100,41 @@ func createTestPNG(width, height int) []byte {
 	var buf bytes.Buffer
 	_ = png.Encode(&buf, img)
 	return buf.Bytes()
+}
+
+func TestAPI_UploadRecoversFromStaleSession(t *testing.T) {
+	server, repo, tempDir := createTestServer(t)
+	defer server.Close()
+	defer cleanupTestDir(t, tempDir)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "floorplan.png")
+	_, _ = part.Write(createTestPNG(100, 100))
+	_ = writer.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Session-ID", "sess_stale")
+
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("upload request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected stale session recovery with status 201, got %d: %s", resp.StatusCode, raw)
+	}
+
+	recoveredSessionID := resp.Header.Get("X-Session-ID")
+	if recoveredSessionID == "" || recoveredSessionID == "sess_stale" {
+		t.Fatalf("expected a new session ID, got %q", recoveredSessionID)
+	}
+	if _, err := repo.GetSession(recoveredSessionID); err != nil {
+		t.Fatalf("expected recovered session to exist: %v", err)
+	}
 }
 
 func TestAPI_CompleteWorkflow(t *testing.T) {

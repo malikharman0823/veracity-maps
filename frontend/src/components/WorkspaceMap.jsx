@@ -364,10 +364,8 @@ export default function WorkspaceMap({
       .filter((m) => Boolean(
         m.is_building_floor ||
         m.building_name ||
-        m.floor_level !== undefined ||
         m.dataset?.extracted_metadata?.is_building_floor ||
-        m.dataset?.extracted_metadata?.building_name ||
-        m.dataset?.extracted_metadata?.floor_level !== undefined
+        m.dataset?.extracted_metadata?.building_name
       ))
       .map((m) => {
         const lvl = m.floor_level ?? m.dataset?.extracted_metadata?.floor_level ?? 0
@@ -461,6 +459,7 @@ export default function WorkspaceMap({
       bearing: Number.isFinite(savedCamera?.bearing) ? savedCamera.bearing : 0,
       pitch: Number.isFinite(savedCamera?.pitch) ? savedCamera.pitch : 0,
       maxZoom: 22,
+      trackResize: true,
     })
     map.addControl(new NavigationControl({ showCompass: true }), "bottom-right")
 
@@ -525,6 +524,19 @@ export default function WorkspaceMap({
 
     map.on("load", () => {
       setReady(true)
+      try {
+        map.resize()
+      } catch {}
+      setTimeout(() => {
+        try {
+          map.resize()
+        } catch {}
+      }, 150)
+      setTimeout(() => {
+        try {
+          map.resize()
+        } catch {}
+      }, 500)
     })
 
     map.on("error", (e) => {
@@ -642,6 +654,53 @@ export default function WorkspaceMap({
       map.remove()
     }
   }, [])
+
+  // Auto-resize MapLibre GL to fill 100% of the canvas whenever container dimensions change
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleResize = () => {
+      if (mapRef.current) {
+        try {
+          mapRef.current.resize()
+        } catch {}
+      }
+    }
+
+    const resizeObserver = new ResizeObserver(handleResize)
+    resizeObserver.observe(container)
+    if (container.parentElement) {
+      resizeObserver.observe(container.parentElement)
+    }
+    if (document.body) {
+      resizeObserver.observe(document.body)
+    }
+    window.addEventListener("resize", handleResize)
+
+    handleResize()
+    const timer1 = setTimeout(handleResize, 50)
+    const timer2 = setTimeout(handleResize, 150)
+    const timer3 = setTimeout(handleResize, 350)
+    const timer4 = setTimeout(handleResize, 750)
+    const timer5 = setTimeout(handleResize, 1500)
+    const interval = setInterval(handleResize, 400)
+    const stopInterval = setTimeout(() => clearInterval(interval), 3000)
+    const raf = requestAnimationFrame(handleResize)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer1)
+      clearTimeout(timer2)
+      clearTimeout(timer3)
+      clearTimeout(timer4)
+      clearTimeout(timer5)
+      clearInterval(interval)
+      clearTimeout(stopInterval)
+      window.removeEventListener("resize", handleResize)
+      resizeObserver.disconnect()
+    }
+  }, [ready])
 
   // Synchronize manifest map boundaries and zoom limits
   useEffect(() => {
@@ -1302,7 +1361,7 @@ export default function WorkspaceMap({
   }
 
   return (
-    <div className="workspace-map-canvas relative w-full h-full">
+    <div className="workspace-map-canvas w-full h-full overflow-hidden">
       <div ref={containerRef} className="workspace-map w-full h-full" />
       <MapCoordinates coordinate={coordinate} />
 

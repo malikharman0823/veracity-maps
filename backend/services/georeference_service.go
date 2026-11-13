@@ -442,9 +442,9 @@ func inferBuildingFromDataset(ds *models.Dataset, existingRealBuildings []*model
 		}
 	}
 
-	// 3. Match against existing real buildings
+	// 3. Match against existing real buildings (excluding generic names)
 	for _, rb := range existingRealBuildings {
-		if rb.Name != "" && !IsFloorName(rb.Name) {
+		if rb.Name != "" && !IsFloorName(rb.Name) && !isGenericBuildingName(rb.Name) {
 			cleanRb := strings.ToLower(strings.ReplaceAll(rb.Name, " ", ""))
 			cleanFn := strings.ToLower(strings.ReplaceAll(fn, " ", ""))
 			if strings.Contains(cleanFn, cleanRb) {
@@ -456,12 +456,29 @@ func inferBuildingFromDataset(ds *models.Dataset, existingRealBuildings []*model
 	if fn != "" {
 		base := strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
 		clean := strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " ")
-		if !IsFloorName(clean) && len(clean) > 0 {
-			return strings.Title(strings.ToLower(clean))
+		if !IsFloorName(clean) && !isGenericBuildingName(clean) && len(clean) > 1 {
+			// Only treat filename as building name if dataset came from an archive or folder hierarchy
+			if ds.ExtractedMetadata != nil {
+				if archFn, ok := ds.ExtractedMetadata["archive_filename"].(string); ok && archFn != "" {
+					return strings.Title(strings.ToLower(clean))
+				}
+				if archEntry, ok := ds.ExtractedMetadata["archive_entry"].(string); ok && archEntry != "" {
+					return strings.Title(strings.ToLower(clean))
+				}
+			}
 		}
 	}
 
-	return "Building 1"
+	return ""
+}
+
+func isGenericBuildingName(str string) bool {
+	lower := strings.ToLower(strings.TrimSpace(str))
+	clean := strings.TrimRight(lower, " 0123456789()_-")
+	return clean == "image" || clean == "images" || clean == "photo" || clean == "picture" ||
+		clean == "map" || clean == "layer" || clean == "raster" || clean == "source" ||
+		clean == "upload" || clean == "scan" || clean == "download" || clean == "screenshot" ||
+		clean == "blueprint" || clean == "plan" || clean == "floorplan"
 }
 
 func inferFloorDetails(ds *models.Dataset) (int, string) {
@@ -569,6 +586,9 @@ func ConsolidateSessionBuildings(repo *repository.SessionRepository, store *stor
 					}
 
 					targetName := inferBuildingFromDataset(ds, realBuildings)
+					if targetName == "" || isGenericBuildingName(targetName) {
+						continue
+					}
 					var targetBld *models.Building
 					for _, rb := range realBuildings {
 						if strings.EqualFold(rb.Name, targetName) {

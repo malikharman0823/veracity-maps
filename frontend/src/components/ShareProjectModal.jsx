@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react"
+import { Share2, Copy, Check } from "lucide-react"
 import {
   listProjectMembers,
   shareProject,
-  updateProjectMemberRole,
   removeProjectMember,
   listProjectActivities,
 } from "../api"
@@ -44,9 +44,17 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
 
   // Invite form
   const [email, setEmail] = useState("")
-  const [role, setRole] = useState("viewer")
   const [inviting, setInviting] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState("")
+  const [copiedLink, setCopiedLink] = useState(false)
+
+  const shareUrl = `${window.location.origin}/workspace?project=${encodeURIComponent(project.id)}`
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2500)
+  }
 
   const loadData = async () => {
     try {
@@ -71,32 +79,22 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
 
   const handleInvite = async (e) => {
     e.preventDefault()
-    if (!email.trim()) return
+    if (!email.trim() || members.length >= 10) return
 
     setInviting(true)
     setError("")
     setInviteSuccess("")
     try {
-      await shareProject(project.id, email.trim(), role)
+      const targetEmail = email.trim()
+      await shareProject(project.id, targetEmail, "editor")
       setEmail("")
-      setInviteSuccess("Invitation sent successfully!")
+      setInviteSuccess(`Invitation dispatched to ${targetEmail} via email! Collaborators can accept via their email link or Invitations tab.`)
       await loadData()
-      setTimeout(() => setInviteSuccess(""), 4000)
+      setTimeout(() => setInviteSuccess(""), 5000)
     } catch (err) {
       setError(err.response?.data?.error?.message || "Failed to send invitation")
     } finally {
       setInviting(false)
-    }
-  }
-
-  const handleRoleChange = async (memberId, newRole) => {
-    try {
-      await updateProjectMemberRole(project.id, memberId, newRole)
-      setMembers((prev) =>
-        prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
-      )
-    } catch (err) {
-      alert("Failed to update role: " + (err.response?.data?.error?.message || err.message))
     }
   }
 
@@ -122,13 +120,14 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
         <div className="flex items-start justify-between gap-4 mb-4 pb-3 border-b border-neutral-200 dark:border-[#2e2e2e]">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 uppercase tracking-wider">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 uppercase tracking-wider flex items-center gap-1">
+                <Share2 className="w-3 h-3" />
                 Collaborate
               </span>
-              <h2 className="text-lg font-bold text-neutral-900 dark:text-white tracking-tight">Share "{project.name}"</h2>
+              <h2 className="text-lg font-bold text-neutral-900 dark:text-white tracking-tight">Share Workspace "{project.name}"</h2>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-              Invite registered users to view or edit this project and its GIS layers.
+              Collaborate on this workspace and its maps with your team. Up to 10 members allowed. All collaborators have editor privileges.
             </p>
           </div>
           <button
@@ -141,6 +140,33 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
           </button>
         </div>
 
+        {/* Direct Workspace Link Bar */}
+        <div className="mb-4 p-3 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider">
+              Shareable Workspace Link
+            </label>
+            <span className="text-[10px] text-neutral-400">Direct access URL</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={shareUrl}
+              onFocus={(e) => e.target.select()}
+              className="flex-1 px-3 py-1.5 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-700 dark:text-neutral-300 font-mono text-xs focus:outline-none select-all"
+            />
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 text-xs font-semibold transition-colors shrink-0 cursor-pointer shadow-2xs"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-[#3ecf8e]" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedLink ? "Copied!" : "Copy Link"}</span>
+            </button>
+          </div>
+        </div>
+
         {/* Tab Selector */}
         <div className="flex items-center gap-2 mb-4">
           <button
@@ -151,7 +177,7 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
                 : "bg-neutral-100 dark:bg-[#171717] text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white border border-neutral-200 dark:border-[#2e2e2e]"
             }`}
           >
-            Collaborators ({members.length})
+            Collaborators ({members.length}/10)
           </button>
           <button
             onClick={() => setActiveTab("activities")}
@@ -181,34 +207,37 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
           <>
             {/* Invite Form */}
             <form onSubmit={handleInvite} className="mb-5 p-3 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
-              <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
-                Invite by Registered Email
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="collaborator@organization.com"
-                  className="flex-1 px-3 py-1.5 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#3ecf8e] focus:border-[#3ecf8e]"
-                />
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="px-2.5 py-1.5 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#3ecf8e] focus:border-[#3ecf8e]"
-                >
-                  <option value="viewer">Viewer (Read-only)</option>
-                  <option value="editor">Editor (Can edit & upload)</option>
-                </select>
-                <button
-                  type="submit"
-                  disabled={inviting || !email.trim()}
-                  className="px-3.5 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 cursor-pointer shadow-xs"
-                >
-                  {inviting ? "Inviting..." : "Send Invite"}
-                </button>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider">
+                  Invite Collaborator by Email
+                </label>
+                <span className={`text-[11px] font-mono font-medium ${members.length >= 10 ? 'text-red-500 font-bold' : 'text-neutral-400'}`}>
+                  {members.length} / 10 Members
+                </span>
               </div>
+              {members.length >= 10 ? (
+                <div className="p-2.5 rounded-[6px] bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs">
+                  Maximum member limit reached (10/10 members). Remove an existing collaborator to invite new members.
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="collaborator@organization.com"
+                    className="flex-1 px-3 py-1.5 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#3ecf8e] focus:border-[#3ecf8e]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={inviting || !email.trim() || members.length >= 10}
+                    className="px-3.5 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 cursor-pointer shadow-xs"
+                  >
+                    {inviting ? "Inviting..." : "Send Invite"}
+                  </button>
+                </div>
+              )}
             </form>
 
             {/* Member List */}
@@ -253,17 +282,12 @@ export default function ShareProjectModal({ project, isOpen, onClose }) {
 
                       <div className="flex items-center gap-2 shrink-0">
                         {isOwner ? (
-                          <span className="text-xs text-neutral-400 italic pr-2">Full Access</span>
+                          <span className="text-xs text-neutral-400 italic pr-2">Owner</span>
                         ) : (
                           <>
-                            <select
-                              value={m.role}
-                              onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                              className="px-2 py-1 rounded-[6px] bg-white dark:bg-[#202020] border border-neutral-300 dark:border-[#2e2e2e] text-neutral-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#3ecf8e]"
-                            >
-                              <option value="viewer">Viewer</option>
-                              <option value="editor">Editor</option>
-                            </select>
+                            <span className="text-[10px] px-2 py-0.5 rounded-[4px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 font-semibold uppercase">
+                              Editor
+                            </span>
                             <button
                               onClick={() => handleRemove(m)}
                               title={isPending ? "Cancel Invitation" : "Remove Collaborator"}

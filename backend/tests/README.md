@@ -12,6 +12,8 @@ Located in [`backend/tests/`](file:///c:/Users/harma/OneDrive/Desktop/veracity-m
 
 The `tests` package houses the automated test suites for the Veracity Maps Go backend, spanning unit tests, regression suites, concurrency testing, and end-to-end API matrix execution.
 
+`personal_maps_and_sharing_test.go` covers durable map creation, session deletion, logout/token revocation, login and reopen, shared-editor authorship on the same map, and the current editor's `saved_maps` listing after that editor saves a shared revision. `api_workspace_test.go` verifies session-only saved-config endpoints return `410 SESSION_CONFIGS_RETIRED`. Repository and service package tests separately cover atomic asset/revision updates, safe dataset-tree promotion, and compensating cleanup. Live MSSQL transaction acceptance requires `MSSQL_TEST_CONNECTION_STRING` and is reported separately when unavailable.
+
 `profile_test.go` covers profile fields/name edits, authentication and validation,
 password verification and session revocation, rollback on revocation failure,
 hashed expiring/single-use email verification, email rotation/conflicts/delivery
@@ -107,8 +109,16 @@ The shared `cleanupTestDir(t, path)` helper beside `createTestServer` uses
 
 From the `backend/` directory:
 ```powershell
-go test -v -count=1 ./tests/...
+go test -v -count=1 ./...
 ```
+
+The root `test-all.ps1` runner uses this package-wide command so command,
+database-compatibility, repository, and service tests run alongside the HTTP
+matrix. It then runs the frontend Node test suite, whose API contract checks
+reject hardcoded async API stubs, missing backend route families, and unencoded
+dynamic path parameters. The runner also builds the production frontend,
+enforces explicit JavaScript chunk budgets, and runs the public authentication
+and protected-route flow in desktop and mobile Chromium through Playwright.
 
 `mssql_multi_user_test.go` reads only `MSSQL_TEST_CONNECTION_STRING` for live SQL
 tests. Supply a dedicated test database: these tests apply migrations and write

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -13,6 +14,21 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+type UserContextKeyType string
+
+const UserContextKey UserContextKeyType = "user"
+
+// GetUserFromContext retrieves the authenticated user from the context if present.
+func GetUserFromContext(ctx context.Context) *User {
+	if ctx == nil {
+		return nil
+	}
+	if val, ok := ctx.Value(UserContextKey).(*User); ok {
+		return val
+	}
+	return nil
+}
 
 // User represents a registered system user.
 type User struct {

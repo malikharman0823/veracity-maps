@@ -1,22 +1,74 @@
 import React, { useState, useEffect } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { getMapInvitation } from "../api"
 import ThemeToggle from "../components/ThemeToggle"
 import CodeSlots from "../components/CodeSlots"
+
+function extractInviteTokenFromRedirect(redirectTarget) {
+  if (!redirectTarget || typeof redirectTarget !== "string") return ""
+  try {
+    const qIdx = redirectTarget.indexOf("?")
+    if (qIdx === -1) return ""
+    const params = new URLSearchParams(redirectTarget.slice(qIdx + 1))
+    return params.get("accept_invite") || params.get("token") || ""
+  } catch {
+    return ""
+  }
+}
 
 export default function RegisterPage() {
   const { sendOtp, registerWithOtp } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+
+  const redirectParam = searchParams.get("redirect") || ""
+  const fromState = location.state?.from
+    ? `${location.state.from.pathname || "/dashboard"}${location.state.from.search || ""}`
+    : ""
+  const redirectTo = redirectParam || fromState || "/dashboard"
+  const initialEmail = searchParams.get("email") || ""
 
   const [step, setStep] = useState("details") // "details" | "otp"
   const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState("")
   const [otpStatus, setOtpStatus] = useState("idle") // "idle" | "error" | "success"
   const [error, setError] = useState("")
   const [info, setInfo] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (initialEmail && !email) {
+      setEmail(initialEmail)
+    }
+  }, [initialEmail])
+
+  useEffect(() => {
+    const inviteToken = extractInviteTokenFromRedirect(redirectTo)
+    if (!inviteToken) return
+    let active = true
+    getMapInvitation(inviteToken)
+      .then((inv) => {
+        if (!active || !inv) return
+        if (inv.email) {
+          setEmail((prev) => prev || inv.email)
+          const mapTitle = inv.map_name ? `"${inv.map_name}"` : "this shared map"
+          setInfo((prev) => prev || `Register with ${inv.email} to open ${mapTitle}`)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [redirectTo])
+
+  const loginHref = `/login?${new URLSearchParams({
+    ...(email.trim() ? { email: email.trim() } : {}),
+    ...(redirectTo && redirectTo !== "/dashboard" ? { redirect: redirectTo } : {}),
+  }).toString()}`.replace(/\?$/, "")
 
   // Cooldown countdown timer
   useEffect(() => {
@@ -71,7 +123,7 @@ export default function RegisterPage() {
       await registerWithOtp(name.trim(), email.trim().toLowerCase(), finalCode)
       setOtpStatus("success")
       setTimeout(() => {
-        navigate("/dashboard", { replace: true })
+        navigate(redirectTo, { replace: true })
       }, 700)
     } catch (err) {
       const msg = err.response?.data?.error?.message || "Invalid or expired code. Please try again."
@@ -126,7 +178,7 @@ export default function RegisterPage() {
                 <span>{error}</span>
               </div>
               {error.toLowerCase().includes("already exists") && (
-                <Link to="/login" className="text-[#24b47e] dark:text-[#3ecf8e] underline shrink-0 font-medium">
+                <Link to={loginHref} className="text-[#24b47e] dark:text-[#3ecf8e] underline shrink-0 font-medium">
                   Sign In
                 </Link>
               )}
@@ -145,10 +197,11 @@ export default function RegisterPage() {
           {step === "details" ? (
             <form onSubmit={handleSendCode} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
+                <label htmlFor="register-name" className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
                   Full Name
                 </label>
                 <input
+                  id="register-name"
                   type="text"
                   autoComplete="name"
                   required
@@ -161,10 +214,11 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
+                <label htmlFor="register-email" className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-2">
                   Email Address
                 </label>
                 <input
+                  id="register-email"
                   type="email"
                   autoComplete="email"
                   required
@@ -281,7 +335,7 @@ export default function RegisterPage() {
 
           <div className="mt-6 text-center text-xs text-neutral-500 dark:text-neutral-400">
             Already have an account?{" "}
-            <Link to="/login" className="text-[#24b47e] dark:text-[#3ecf8e] hover:underline font-medium">
+            <Link to={loginHref} className="text-[#24b47e] dark:text-[#3ecf8e] hover:underline font-medium">
               Sign in
             </Link>
           </div>

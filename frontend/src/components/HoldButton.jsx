@@ -2,18 +2,18 @@ import React, { useState, useRef, useEffect, useCallback } from "react"
 import "./HoldButton.css"
 
 export default function HoldButton({
-  children = "Hold to confirm",
-  doneLabel = "Done",
-  backgroundColor = "#27272a",
-  fillColor = "#05f800",
-  textColor = "#f5f5f5",
-  fillTextColor = "#000000",
+  children = "Hold to delete",
+  doneLabel = "Deleted",
+  backgroundColor = "#1e1e22",
+  fillColor = "#ef4444",
+  textColor = "#f87171",
+  fillTextColor = "#ffffff",
   size = "md",
-  radius = 14,
+  radius = 10,
   fillDirection = "right",
-  holdTime = 2000,
+  holdTime = 1000,
   releaseTime = 200,
-  pressScale = 0.97,
+  pressScale = 0.96,
   wave = true,
   waveAmplitude = 6,
   glow = true,
@@ -34,12 +34,15 @@ export default function HoldButton({
   const startProgressRef = useRef(0)
   const isHeldRef = useRef(false)
   const resetTimerRef = useRef(null)
+  const executeTimerRef = useRef(null)
+  const [waveOffset, setWaveOffset] = useState(0)
 
-  // Clean up any ongoing frame or timer on unmount
+  // Clean up timers & animation frames on unmount
   useEffect(() => {
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
+      if (executeTimerRef.current) clearTimeout(executeTimerRef.current)
     }
   }, [])
 
@@ -50,21 +53,29 @@ export default function HoldButton({
 
     if (navigator.vibrate) {
       try {
-        navigator.vibrate(40)
+        navigator.vibrate([30, 40, 50])
       } catch {
         // Ignore haptics errors
       }
     }
 
+    // Give the user 450ms to see and feel the "Deleted" state and pop animation
+    // before executing the onHold callback which might unmount this component
     if (onHold) {
-      onHold()
+      executeTimerRef.current = setTimeout(() => {
+        try {
+          onHold()
+        } catch (err) {
+          console.error("HoldButton onHold error:", err)
+        }
+      }, 450)
     }
 
     if (resetAfter > 0) {
       resetTimerRef.current = setTimeout(() => {
         setStatus("idle")
         setProgress(0)
-      }, resetAfter)
+      }, resetAfter + 450)
     }
   }, [onHold, resetAfter])
 
@@ -73,9 +84,22 @@ export default function HoldButton({
       if (disabled || status === "done") return
       if (e && e.button !== undefined && e.button !== 0) return // Left click only
 
+      // Capture pointer so moving cursor slightly doesn't abort
+      if (e && e.currentTarget && e.currentTarget.setPointerCapture && e.pointerId !== undefined) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId)
+        } catch {
+          // Pointer capture may fail on certain synthetic events
+        }
+      }
+
       if (resetTimerRef.current) {
         clearTimeout(resetTimerRef.current)
         resetTimerRef.current = null
+      }
+      if (executeTimerRef.current) {
+        clearTimeout(executeTimerRef.current)
+        executeTimerRef.current = null
       }
 
       isHeldRef.current = true
@@ -96,8 +120,11 @@ export default function HoldButton({
 
         let nextProgress =
           timeNeeded > 0
-            ? startProgressRef.current + (elapsed / holdTime)
+            ? startProgressRef.current + elapsed / holdTime
             : 1
+
+        // Animate wave crest offset continuously
+        setWaveOffset((prev) => (prev + 3) % 40)
 
         if (nextProgress >= 1) {
           finishHold()
@@ -112,42 +139,54 @@ export default function HoldButton({
     [disabled, status, progress, holdTime, finishHold]
   )
 
-  const stopHolding = useCallback(() => {
-    if (!isHeldRef.current || status === "done") return
+  const stopHolding = useCallback(
+    (e) => {
+      if (!isHeldRef.current || status === "done") return
 
-    isHeldRef.current = false
-    setStatus("idle")
-
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current)
-    }
-
-    const releaseStart = performance.now()
-    const releaseProgressStart = progress
-
-    const animateRelease = (now) => {
-      const elapsed = now - releaseStart
-      const frac = Math.min(1, elapsed / releaseTime)
-      const current = releaseProgressStart * (1 - frac)
-
-      setProgress(Math.max(0, current))
-
-      if (frac < 1 && !isHeldRef.current) {
-        animFrameRef.current = requestAnimationFrame(animateRelease)
-      } else {
-        setProgress(0)
+      // Release pointer capture
+      if (e && e.currentTarget && e.currentTarget.releasePointerCapture && e.pointerId !== undefined) {
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        } catch {
+          // Ignore release errors
+        }
       }
-    }
 
-    animFrameRef.current = requestAnimationFrame(animateRelease)
-  }, [status, progress, releaseTime])
+      isHeldRef.current = false
+      setStatus("idle")
+
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current)
+      }
+
+      const releaseStart = performance.now()
+      const releaseProgressStart = progress
+
+      const animateRelease = (now) => {
+        const elapsed = now - releaseStart
+        const frac = Math.min(1, elapsed / releaseTime)
+        const current = releaseProgressStart * (1 - frac)
+
+        setProgress(Math.max(0, current))
+
+        if (frac < 1 && !isHeldRef.current) {
+          animFrameRef.current = requestAnimationFrame(animateRelease)
+        } else {
+          setProgress(0)
+        }
+      }
+
+      animFrameRef.current = requestAnimationFrame(animateRelease)
+    },
+    [status, progress, releaseTime]
+  )
 
   // Keyboard handlers
   const handleKeyDown = (e) => {
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault()
       if (!isHeldRef.current) {
-        startHolding()
+        startHolding(e)
       }
     }
   }
@@ -155,41 +194,35 @@ export default function HoldButton({
   const handleKeyUp = (e) => {
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault()
-      stopHolding()
+      stopHolding(e)
     }
-  }
-
-  // Calculate fill styles based on direction
-  const getFillStyle = () => {
-    const pct = `${(progress * 100).toFixed(2)}%`
-    switch (fillDirection) {
-      case "left":
-        return { right: 0, width: pct, top: 0, bottom: 0 }
-      case "up":
-        return { bottom: 0, height: pct, left: 0, right: 0 }
-      case "down":
-        return { top: 0, height: pct, left: 0, right: 0 }
-      case "right":
-      default:
-        return { left: 0, width: pct, top: 0, bottom: 0 }
-    }
-  }
-
-  // Wave path generator
-  const getWavePath = () => {
-    const amp = waveAmplitude
-    const w = 12
-    return `M 0,0 Q ${w},${amp} 0,${amp * 2} T 0,${amp * 4} T 0,${amp * 6} T 0,${amp * 8} V 200 H 0 Z`
   }
 
   const isHolding = status === "holding"
   const isDone = status === "done"
 
   const scale = isHolding ? pressScale : 1
+  const pct = (progress * 100).toFixed(2)
+
+  // Build clip-path based on fillDirection
+  const getClipPath = () => {
+    switch (fillDirection) {
+      case "left":
+        return `inset(0 0 0 ${100 - parseFloat(pct)}%)`
+      case "up":
+        return `inset(${100 - parseFloat(pct)}% 0 0 0)`
+      case "down":
+        return `inset(0 0 ${100 - parseFloat(pct)}% 0)`
+      case "right":
+      default:
+        return `inset(0 ${100 - parseFloat(pct)}% 0 0)`
+    }
+  }
+
   const glowStyle =
     glow && (isHolding || isDone)
       ? {
-          boxShadow: `0 0 ${isDone ? 24 : 16}px ${fillColor}66, inset 0 0 12px ${fillColor}33`,
+          boxShadow: `0 0 ${isDone ? 22 : 14}px ${fillColor}77, inset 0 0 10px ${fillColor}33`,
         }
       : {}
 
@@ -201,13 +234,14 @@ export default function HoldButton({
       type={type}
       disabled={disabled}
       title={title}
-      aria-label={typeof currentLabel === "string" ? currentLabel : "Hold Button"}
+      aria-label={typeof currentLabel === "string" ? currentLabel : "Hold to Delete"}
       onPointerDown={startHolding}
       onPointerUp={stopHolding}
       onPointerLeave={stopHolding}
       onPointerCancel={stopHolding}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
+      onContextMenu={(e) => e.preventDefault()}
       className={`hold-button hold-button--${size} ${
         isDone ? "hold-button--done" : ""
       } ${isHolding ? "hold-button--holding" : ""} ${className}`}
@@ -219,68 +253,62 @@ export default function HoldButton({
         ...style,
       }}
     >
-      {/* Base text layer */}
+      {/* 1. Base Layer (underneath) */}
       <span
-        className="hold-button__label-base"
+        className="hold-button__layer hold-button__layer--base"
         style={{
           color: textColor,
         }}
       >
-        {icon}
-        {currentLabel}
+        {icon && <span className="hold-button__icon">{icon}</span>}
+        <span className="hold-button__text">{currentLabel}</span>
       </span>
 
-      {/* Progress fill layer */}
-      <div
-        className="hold-button__fill-container"
+      {/* 2. Fill Layer (pixel-perfect overlay revealed via clip-path) */}
+      <span
+        className="hold-button__layer hold-button__layer--fill"
         style={{
-          ...getFillStyle(),
-          borderRadius: `${radius}px`,
+          backgroundColor: fillColor,
+          color: fillTextColor,
+          clipPath: getClipPath(),
+          WebkitClipPath: getClipPath(),
         }}
+        aria-hidden="true"
       >
-        <div
-          className="hold-button__fill-bg"
-          style={{
-            backgroundColor: fillColor,
-          }}
-        />
+        {icon && <span className="hold-button__icon">{icon}</span>}
+        <span className="hold-button__text">{currentLabel}</span>
 
-        {/* Wave crest */}
-        {wave && progress > 0.02 && progress < 0.98 && (
+        {/* 3. Wave Crest along leading progress edge */}
+        {wave && progress > 0.01 && progress < 0.99 && (
           <div
-            className="hold-button__wave"
+            className="hold-button__wave-crest"
             style={{
-              right: fillDirection === "right" ? "-6px" : undefined,
-              left: fillDirection === "left" ? "-6px" : undefined,
+              left: `${pct}%`,
             }}
           >
             <svg
               className="hold-button__wave-svg"
-              viewBox="0 0 20 80"
+              viewBox="0 0 16 80"
               preserveAspectRatio="none"
               style={{
+                transform: `translateY(${waveOffset - 20}px)`,
                 fill: fillColor,
-                opacity: 0.85,
               }}
             >
-              <path d={getWavePath()} />
+              <path
+                d={`M 0,0 Q ${waveAmplitude},10 0,20 T 0,40 T 0,60 T 0,80 T 0,100 T 0,120 V 120 H 16 V 0 Z`}
+              />
             </svg>
           </div>
         )}
+      </span>
 
-        {/* Overlaid text layer with fillTextColor */}
-        <span
-          className="hold-button__label-fill"
-          style={{
-            color: fillTextColor,
-            width: buttonRef.current ? `${buttonRef.current.offsetWidth}px` : "100%",
-          }}
-        >
-          {icon}
-          {currentLabel}
+      {/* 4. Completion ripple checkmark / pulse */}
+      {isDone && (
+        <span className="hold-button__done-badge" style={{ color: fillTextColor }}>
+          ✓
         </span>
-      </div>
+      )}
     </button>
   )
 }
-

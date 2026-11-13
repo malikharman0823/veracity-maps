@@ -3,12 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   attachWorkspaceDataset,
   detachWorkspaceDataset,
+  ensureDatasetSession,
   getWorkspace,
   getWorkspaceRecords,
   patchWorkspaceMember,
   patchWorkspaceState,
   readableApiError,
 } from "../api"
+import { loadDatasetWorkspace } from "../lib/sessionLoading"
 
 
 const DEFAULT_FILTERS = {
@@ -35,12 +37,23 @@ export default function useWorkspace(primaryDatasetId) {
   const mutationChainRef = useRef(Promise.resolve())
 
   const loadManifest = useCallback(async (signal) => {
-    const next = await getWorkspace(primaryDatasetId, signal)
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      setManifest(null)
+      return null
+    }
+    const next = await loadDatasetWorkspace({
+      datasetId: primaryDatasetId,
+      ensureSession: ensureDatasetSession,
+      loadWorkspace: (datasetId) => getWorkspace(datasetId, signal),
+    })
     setManifest(next)
     return next
   }, [primaryDatasetId])
 
   const refreshRecords = useCallback(async (signal) => {
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      return null
+    }
     setRecordsLoading(true)
     try {
       const next = await getWorkspaceRecords(primaryDatasetId, filters, signal)
@@ -57,6 +70,9 @@ export default function useWorkspace(primaryDatasetId) {
   }, [filters, primaryDatasetId])
 
   const refreshMapRecords = useCallback(async (signal) => {
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      return []
+    }
     const collected = []
     let page = 1
     let pages = 1
@@ -75,18 +91,25 @@ export default function useWorkspace(primaryDatasetId) {
   }, [primaryDatasetId])
 
   useEffect(() => {
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      setManifest(null)
+      setLoading(false)
+      setError(null)
+      return
+    }
     const controller = new AbortController()
     setLoading(true)
     setError(null)
     loadManifest(controller.signal)
       .catch((requestError) => {
         if (requestError.code !== "ERR_CANCELED") {
+          setManifest(null)
           setError(readableApiError(requestError, "Unable to load the dataset workspace."))
         }
       })
       .finally(() => setLoading(false))
     return () => controller.abort()
-  }, [loadManifest])
+  }, [primaryDatasetId, loadManifest])
 
   useEffect(() => {
     if (!manifest) return undefined
@@ -189,24 +212,34 @@ export default function useWorkspace(primaryDatasetId) {
       .catch(() => undefined)
   }, [primaryDatasetId])
 
-  const attachDataset = useCallback((datasetId) => runMutation(
-    async () => {
-      try {
-        return await attachWorkspaceDataset(primaryDatasetId, datasetId)
-      } catch (requestError) {
-        if (requestError?.response?.status === 409) {
-          return await getWorkspace(primaryDatasetId)
+  const attachDataset = useCallback((datasetId) => {
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      return Promise.resolve(null)
+    }
+    return runMutation(
+      async () => {
+        try {
+          return await attachWorkspaceDataset(primaryDatasetId, datasetId)
+        } catch (requestError) {
+          if (requestError?.response?.status === 409) {
+            return await getWorkspace(primaryDatasetId)
+          }
+          throw requestError
         }
-        throw requestError
-      }
-    },
-    "Unable to attach the dataset.",
-  ), [primaryDatasetId, runMutation])
+      },
+      "Unable to attach the dataset.",
+    )
+  }, [primaryDatasetId, runMutation])
 
-  const detachDataset = useCallback((datasetId) => runMutation(
-    () => detachWorkspaceDataset(primaryDatasetId, datasetId),
-    "Unable to detach the dataset.",
-  ), [primaryDatasetId, runMutation])
+  const detachDataset = useCallback((datasetId) => {
+    if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+      return Promise.resolve(null)
+    }
+    return runMutation(
+      () => detachWorkspaceDataset(primaryDatasetId, datasetId),
+      "Unable to detach the dataset.",
+    )
+  }, [primaryDatasetId, runMutation])
 
   const retrySave = useCallback(() => {
     setError(null)

@@ -1,0 +1,33 @@
+{
+  "id": "proj_ds_7855d8a3595d9f3c4e291f7f95e0d1d1",
+  "dataset_id": "ds_7855d8a3595d9f3c4e291f7f95e0d1d1",
+  "name": "images",
+  "configuration": {
+    "active_view": "database",
+    "camera": {
+      "bearing": 0,
+      "latitude": 27.893081741778317,
+      "longitude": 76.0375989243031,
+      "pitch": 0,
+      "zoom": 5.869798351357957
+    },
+    "members": [
+      {
+        "building_name": "",
+        "control_points_visible": true,
+        "dataset_id": "ds_7855d8a3595d9f3c4e291f7f95e0d1d1",
+        "floor_label": "Ground Floor",
+        "floor_level": 0,
+        "icon_points_visible": true,
+        "is_building_floor": false,
+        "name": "images.png",
+        "raster_opacity": 1,
+        "raster_visible": true,
+        "sort_order": 0,
+        "visible": true
+      }
+    ]
+  },
+  "created_at": "2026-11-13T11:33:31.9416245+05:30",
+  "updated_at": "2026-11-13T11:34:09.4867973+05:30"
+}

@@ -22,6 +22,7 @@ graph TD
         Router[HTTP Router & Route Dispatcher]
         Repo[(In-Memory Session Repository)]
         Storage[(Per-Session Temporary Disk Storage)]
+        MSSQL[(MSSQL Users, Maps, Assets & Revisions)]
         GIS[GIS Least-Squares Transform Engine]
         Exporter[MTMAP & VRT Export Engine]
         ZipInspector[Multi-Dataset Archive Inspector]
@@ -36,6 +37,7 @@ graph TD
     Router --> Client
     Router --> Repo
     Router --> Storage
+    Router --> MSSQL
     Router --> GIS
     Router --> Exporter
     Router --> ZipInspector
@@ -44,7 +46,7 @@ graph TD
 ### Technology Stack
 - **Backend**: Go (`go1.22+`), standard library (`net/http`, `image`, `archive/zip`, `crypto/rand`, `math`), Python GIS bridge (`backend/.venv`) for GDAL, OpenCV image enhancement, Real-ESRGAN ONNX upscaling, PyMuPDF vector/raster extraction, ezdxf CAD parsing, and PaddleOCR label recognition.
 - **Frontend**: React 19, Vite 7, TailwindCSS 4, MapLibre GL JS 6, Lucide Icons.
-- **Persistence**: Zero external database. State is managed via an in-memory session repository (`SessionRepository`) with atomic read/write locks, combined with isolated temporary disk workspaces (`temp/sessions/<session_id>/`). Portable datasets export to genuine SQLite 3 MBTiles 1.3 databases.
+- **Persistence**: Temporary GIS processing uses the in-memory `SessionRepository` and isolated `temp/sessions/<session_id>/` workspaces. Authenticated users, maps, sharing grants, durable asset locations, and immutable map revisions are stored in MSSQL. Portable datasets export to genuine SQLite 3 MBTiles 1.3 databases.
 - **GIS Engine**: Pure-Go implementation of 2-point similarity and 3-to-10-point affine least-squares regression, native TIFF header decoder, world file parsing/generation (`.pgw`, `.jgw`, `.wld`, `.tfw`), GDAL VRT XML generation, GDAL Lanczos/Cubic raster overviews and MBTiles 1.3 generation, and universal OpenCV/PaddleOCR image pipelines.
 
 ---
@@ -142,6 +144,8 @@ The script:
 
 ## 4. Session Storage & Lifecycle Architecture
 
+Saved maps are not session records. A successful save promotes referenced dataset files to `storage/uploads/maps/<owner_id>/<map_id>/assets/<asset_id>/` and atomically commits the map, asset locations, and revision in MSSQL. Ending a GIS session or logging out does not delete these records. Editors append revisions to the same shared map; viewers and download-only recipients cannot save.
+
 - **Session Directories**:
   ```text
   backend/temp/sessions/<session_id>/
@@ -177,6 +181,17 @@ Set-Location backend
 go run main.go
 ```
 The backend initializes on `http://localhost:8000`. Startup diagnostics display available storage paths and GDAL CLI detection status.
+`MSSQL_CONNECTION_STRING` is required outside isolated tests. Startup fails closed when MSSQL is unavailable so a map save is never acknowledged only in process memory.
+
+Legacy `saved_configs.json` files are migration input only. Preview eligible promotions first, then apply explicitly:
+
+```powershell
+Set-Location backend
+go run ./cmd/promote-session-configs -source .\temp\sessions
+go run ./cmd/promote-session-configs -source .\temp\sessions -apply
+```
+
+The command preserves source JSON, requires one unambiguous asset owner, and records idempotency in `Legacy_Config_Promotions`.
 
 ### 2. Start the React Frontend
 In a separate terminal from the workspace root:
@@ -190,7 +205,7 @@ The development server starts on `http://localhost:5173`.
 
 ## 6. Running Tests & Automated Checks
 
-To run the complete automated test suite (Go formatting, `go vet`, unit tests, building/floor tests, multi-dataset zip inspection/import tests, icon points tests, and frontend production build verification):
+To run the complete automated test suite (Go formatting, `go vet`, every Go package test, the full HTTP API matrix, frontend unit/API-contract tests, production build and bundle-budget verification, plus rendered desktop/mobile Chromium checks):
 
 ```powershell
 # From the workspace root:
@@ -201,7 +216,12 @@ Or run individual targeted commands:
 - **Backend Unit & Integration Tests:**
   ```powershell
   Set-Location backend
-  go test -v -count=1 ./tests/...
+  go test -v -count=1 ./...
+  ```
+- **Frontend Unit & API Contract Tests:**
+  ```powershell
+  Set-Location frontend
+  cmd.exe /c "npm.cmd test"
   ```
 - **Backend Static Analysis:**
   ```powershell
@@ -213,6 +233,13 @@ Or run individual targeted commands:
   ```powershell
   Set-Location frontend
   cmd.exe /c "npm.cmd run build"
+  cmd.exe /c "npm.cmd run test:bundle"
+  ```
+- **Rendered Browser Tests:**
+  ```powershell
+  Set-Location frontend
+  cmd.exe /c "npx.cmd playwright install chromium"
+  cmd.exe /c "npm.cmd run test:e2e"
   ```
 
 ---

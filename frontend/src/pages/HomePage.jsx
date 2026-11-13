@@ -7,8 +7,8 @@ import {
   importProjectFolder,
   importDatasetZip,
   uploadDataset,
-  listSavedConfigs,
-  deleteSavedConfig,
+  listMaps,
+  deleteMap,
   ensureActiveSession,
 } from "../api"
 import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
@@ -46,9 +46,12 @@ import {
   ArrowUpRight,
 } from "lucide-react"
 import { loadSessionResources } from "../lib/sessionLoading"
+import { canDeleteSavedMap, resolveSavedMaps } from "../lib/savedMaps"
+import { useAuth } from "../context/AuthContext"
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const replacementInputRef = useRef(null)
 
   // Upload state
@@ -65,10 +68,9 @@ export default function HomePage() {
   // Session dataset catalog state
   const [datasets, setDatasets] = useState([])
   const [loading, setLoading] = useState(true)
-  const [savedConfigs, setSavedConfigs] = useState([])
-  const [loadingConfigs, setLoadingConfigs] = useState(true)
-  const [configToDelete, setConfigToDelete] = useState(null)
-  const [deletingConfig, setDeletingConfig] = useState(false)
+  const [savedMaps, setSavedMaps] = useState([])
+  const [mapToDelete, setMapToDelete] = useState(null)
+  const [deletingMap, setDeletingMap] = useState(false)
   const [importing, setImporting] = useState(false)
   const [datasetToDelete, setDatasetToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -85,36 +87,34 @@ export default function HomePage() {
       .finally(() => setLoading(false))
   }
 
-  const loadConfigs = () => {
-    setLoadingConfigs(true)
-    return listSavedConfigs()
-      .then(setSavedConfigs)
+  const loadSavedMaps = () => {
+    return listMaps()
+      .then((data) => setSavedMaps(resolveSavedMaps(data)))
       .catch((err) => {
-        console.warn("Unable to load saved configurations:", err)
+        console.warn("Unable to load saved maps:", err)
       })
-      .finally(() => setLoadingConfigs(false))
   }
 
   useEffect(() => {
     loadSessionResources({
       ensureSession: ensureActiveSession,
-      loadResources: [loadDatasets, loadConfigs],
+      loadResources: [loadDatasets, loadSavedMaps],
     }).catch((err) => {
       console.warn("Unable to initialize the session dashboard:", err)
     })
   }, [])
 
-  async function handleDeleteConfig(cfg) {
-    if (!cfg || deletingConfig) return
-    setDeletingConfig(true)
+  async function handleDeleteMap(mapItem) {
+    if (!mapItem || deletingMap) return
+    setDeletingMap(true)
     try {
-      await deleteSavedConfig(null, cfg.id)
-      setSavedConfigs((prev) => prev.filter((c) => c.id !== cfg.id))
-      setConfigToDelete(null)
+      await deleteMap(mapItem.id)
+      setSavedMaps((prev) => prev.filter((item) => item.id !== mapItem.id))
+      setMapToDelete(null)
     } catch (err) {
-      console.error("Failed to delete saved config:", err)
+      console.error("Failed to delete saved map:", err)
     } finally {
-      setDeletingConfig(false)
+      setDeletingMap(false)
     }
   }
 
@@ -368,14 +368,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Saved Map Configurations in this Session (if any exist) */}
-          {savedConfigs.length > 0 && (
+          {/* Persistent saved maps (if any exist) */}
+          {savedMaps.length > 0 && (
             <div className="pt-8 border-t border-neutral-200 dark:border-[#2e2e2e] space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Bookmark className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
                   <h2 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-white">
-                    Saved Configurations ({savedConfigs.length})
+                    Saved Maps ({savedMaps.length})
                   </h2>
                 </div>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
@@ -384,7 +384,7 @@ export default function HomePage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {savedConfigs.map((cfg) => (
+                {savedMaps.map((cfg) => (
                   <div
                     key={cfg.id}
                     className="group relative bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e] dark:hover:border-[#3ecf8e] rounded-[12px] p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
@@ -400,31 +400,27 @@ export default function HomePage() {
                               {cfg.name}
                             </h3>
                             <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
-                              {cfg.members?.length || 1} layer(s) attached
+                              {cfg.asset_count || 0} asset(s) attached
                             </span>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setConfigToDelete(cfg)}
-                          className="size-7 rounded-[4px] text-neutral-400 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                          title="Delete saved configuration"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
+                        {canDeleteSavedMap(cfg, user) && (
+                          <button
+                            type="button"
+                            onClick={() => setMapToDelete(cfg)}
+                            className="size-7 rounded-[4px] text-neutral-400 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                            title="Delete saved map"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
                       </div>
 
                       <div className="mt-2 py-2 px-2.5 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-[11px] text-neutral-500 dark:text-neutral-400 space-y-1">
                         <div className="flex justify-between items-center">
-                          <span>Primary:</span>
-                          <span className="font-mono text-neutral-800 dark:text-neutral-200 text-[10px]">{cfg.primary_dataset_id?.slice(0, 14)}…</span>
+                          <span>Revision:</span>
+                          <span className="font-mono text-neutral-800 dark:text-neutral-200 text-[10px]">{cfg.revision_number || 1}</span>
                         </div>
-                        {cfg.configuration?.active_view && (
-                          <div className="flex justify-between items-center">
-                            <span>Default View:</span>
-                            <span className="uppercase text-[9px] font-semibold tracking-wider text-[#24b47e] dark:text-[#3ecf8e]">{cfg.configuration.active_view}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -434,7 +430,7 @@ export default function HomePage() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => navigate(`/datasets/${cfg.primary_dataset_id}/workspace?view=map`)}
+                        onClick={() => navigate(`/maps/${cfg.id}/edit?view=map`)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                       >
                         <span>Open Map</span>
@@ -576,43 +572,43 @@ export default function HomePage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Saved Configuration Confirmation Dialog */}
+      {/* Delete Saved Map Confirmation Dialog */}
       <AlertDialog
-        open={Boolean(configToDelete)}
-        onOpenChange={(open) => !open && setConfigToDelete(null)}
+		open={Boolean(mapToDelete)}
+		onOpenChange={(open) => !open && setMapToDelete(null)}
       >
         <AlertDialogContent className="rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white shadow-xl max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base font-semibold text-neutral-900 dark:text-white">
-              Delete Saved Configuration?
+			  Delete Saved Map?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
               Are you sure you want to remove{" "}
               <strong className="text-neutral-900 dark:text-white">
-                {configToDelete?.name}
+				{mapToDelete?.name}
               </strong>
-              ? The underlying datasets will remain available in your session.
+              ? This removes its persistent revision history. Temporary session datasets are unaffected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-4 gap-2">
             <AlertDialogCancel
-              disabled={deletingConfig}
+			disabled={deletingMap}
               className="rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs text-neutral-700 dark:text-neutral-300"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => handleDeleteConfig(configToDelete)}
-              disabled={deletingConfig}
+			onClick={() => handleDeleteMap(mapToDelete)}
+			disabled={deletingMap}
               className="rounded-[6px] bg-red-600 hover:bg-red-500 text-white text-xs font-medium cursor-pointer"
             >
-              {deletingConfig ? (
+			  {deletingMap ? (
                 <>
                   <Loader2 className="size-3.5 mr-1.5 animate-spin" />
                   <span>Deleting…</span>
                 </>
               ) : (
-                <span>Delete Configuration</span>
+                <span>Delete Map</span>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

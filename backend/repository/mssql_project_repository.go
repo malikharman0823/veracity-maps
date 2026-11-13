@@ -336,6 +336,16 @@ func (r *MSSQLProjectRepository) ShareProject(projectID, targetEmail, invitedBy 
 		return nil, ErrCannotInviteOwner
 	}
 
+	if role == "" || role == models.RoleViewer {
+		role = models.RoleEditor
+	}
+
+	var totalMembers int
+	err = r.db.QueryRow("SELECT COUNT(*) FROM ProjectMembers WHERE project_id = @p1 AND (invitation_status = 'accepted' OR invitation_status = 'pending')", projectID).Scan(&totalMembers)
+	if err == nil && totalMembers >= 10 {
+		return nil, ErrMemberLimitReached
+	}
+
 	var existingCount int
 	err = r.db.QueryRow("SELECT COUNT(*) FROM ProjectMembers WHERE project_id = @p1 AND user_id = @p2", projectID, targetUser.ID).Scan(&existingCount)
 	if err == nil && existingCount > 0 {
@@ -442,6 +452,23 @@ func (r *MSSQLProjectRepository) RemoveMember(projectID, memberID string) error 
 	_, err = r.db.Exec("DELETE FROM ProjectMembers WHERE project_id = @p1 AND id = @p2", projectID, memberID)
 	if err != nil {
 		return fmt.Errorf("failed removing member: %w", err)
+	}
+	return nil
+}
+
+func (r *MSSQLProjectRepository) LeaveProject(projectID, userID string) error {
+	var roleStr string
+	err := r.db.QueryRow("SELECT role FROM ProjectMembers WHERE project_id = @p1 AND user_id = @p2", projectID, userID).Scan(&roleStr)
+	if err != nil {
+		return ErrMemberNotFound
+	}
+	if roleStr == string(models.RoleOwner) {
+		return ErrCannotModifyOwner
+	}
+
+	_, err = r.db.Exec("DELETE FROM ProjectMembers WHERE project_id = @p1 AND user_id = @p2", projectID, userID)
+	if err != nil {
+		return fmt.Errorf("failed leaving project: %w", err)
 	}
 	return nil
 }

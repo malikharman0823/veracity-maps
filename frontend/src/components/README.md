@@ -13,7 +13,7 @@ This directory contains the primary React UI components for layout navigation, r
 | **`TopHeader.jsx`** | Sticky top bar providing breadcrumb navigation, active workspace indicators, and the session termination dialog trigger. |
 | **`Sidebar.jsx`** | Application navigation menu displaying the Veracity Maps branding, active view links, and quick upload CTA. |
 | **`WorkspaceMap.jsx`** | Primary MapLibre GL map view. Manages raster layers, coordinate transformations, elevator/floor filtering, and dynamic layer opacity. |
-| **`WorkspaceLayerPanel.jsx`** | Draggable side drawer displaying active raster layers, opacity sliders (`0%–100%`), visibility toggles, and multi-floor sorting. |
+| **`WorkspaceLayerPanel.jsx`** | Draggable side drawer displaying active raster layers, visibility toggles, multi-floor sorting, and one-at-a-time collapsible layer settings with opacity and raster tools. |
 | **`WorkspaceTable.jsx`** | TanStack React Table implementation displaying active datasets with sorting, status badges, thumbnail previews, and action buttons. |
 | **`SourceImagePane.jsx`** | High-resolution image canvas used on the georeferencing page for interactive ground control point pixel placement. |
 | **`ReferenceMap.jsx`** | Interactive MapLibre GL reference map for georeferencing. Supports Google Maps `Lat, Lng` / DMS / URL / Plus Code search with target pin marker, 1-click draft pairing, ambiguous Lat/Lng swap, preview raster overlay, and `focusTarget` camera synchronization. |

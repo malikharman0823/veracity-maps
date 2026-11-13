@@ -4,7 +4,13 @@ Located in [`frontend/src/lib/`](file:///c:/Users/harma/OneDrive/Desktop/veracit
 
 `floorSelection.js` applies controlled workspace floor state and restores visibility for matching floor members without feeding the selection back through the map callback.
 
-`sessionLoading.js` waits for active-session recovery before starting session-scoped dashboard requests, normalizes saved-configuration API payloads, and maps workspace members to the dataset-ID list required by the saved-config API.
+`sessionLoading.js` waits for active-session recovery before starting temporary GIS requests and maps workspace members to dataset IDs for persistent map commits.
+
+`mapConfigPersistence.js` selects the durable save operation: existing owned/shared map workspaces append a revision, while standalone dataset workspaces create a personal map and return its canonical `/maps/:id/edit` navigation target. It never calls session saved-config endpoints.
+
+`savedMaps.js` reads the API's `saved_maps` view and limits destructive controls to maps owned by the signed-in user.
+
+`apiContract.test.js` audits every Axios wrapper in `api.js`: exported async API stubs are forbidden, each HTTP call must match a backend route family, and dynamic URL path values must use `encodeURIComponent`.
 
 This directory contains utility functions and pure helper logic supporting UI styling and navigation.
 

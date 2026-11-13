@@ -83,7 +83,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	models.WriteJSON(w, http.StatusOK, DatasetListResponse{Datasets: datasets})
 }
 
-func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
+func (h *Handler) resolveDatasetAndSession(r *http.Request, _ http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
 	sessionID := models.GetSessionID(r)
 	if sessionID != "" {
 		if sess, err := h.repo.GetSession(sessionID); err == nil && sess != nil {
@@ -91,16 +91,28 @@ func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWrite
 			if err == nil && dataset != nil {
 				return dataset, sessionID, nil
 			}
+
+			// If this is a map or project studio session (starts with map_ or proj_),
+			// allow adopting previously uploaded personal files or assets into the session:
+			if strings.HasPrefix(sessionID, "map_") || strings.HasPrefix(sessionID, "proj_") {
+				if foundDs, foundSess, fErr := h.datasetService.FindDataset(datasetID); fErr == nil && foundDs != nil {
+					_ = h.repo.InsertDataset(sessionID, foundDs)
+					if cps, cpErr := h.repo.ListControlPoints(foundSess, datasetID); cpErr == nil && len(cps) > 0 {
+						_ = h.repo.SetControlPoints(sessionID, datasetID, cps)
+					}
+					return foundDs, sessionID, nil
+				}
+			}
+
 			return nil, "", repository.ErrDatasetNotFound
 		}
 	}
 
+	// Fallback only if no session ID was supplied in the request (e.g. standalone deep-link).
+	// Never emit X-Session-ID response header, which would hijack the client's active session.
 	dataset, foundSess, err := h.datasetService.FindDataset(datasetID)
 	if err != nil || dataset == nil {
 		return nil, "", repository.ErrDatasetNotFound
-	}
-	if foundSess != "" && w != nil {
-		w.Header().Set("X-Session-ID", foundSess)
 	}
 	return dataset, foundSess, nil
 }

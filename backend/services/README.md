@@ -4,6 +4,8 @@ Located in [`backend/services/`](file:///c:/Users/harma/OneDrive/Desktop/veracit
 
 The `services` package contains the core business logic of Veracity Maps, coordinating between storage managers, session repositories, GIS solvers, and archive packagers.
 
+`map_configuration_service.go` is the single durable save coordinator. It validates authenticated ownership/access, copies complete dataset trees from temporary session storage into map-owned storage, verifies primary file size, and calls one repository transaction for asset paths plus the immutable revision. A failed commit removes only directories created by that attempt. `CreatePersonalMapFromConfiguration` creates revision 1 for a standalone workspace; `SaveExistingMapConfiguration` appends to the same owned or editor-shared map.
+
 `Mailer` separates delivery from profile handlers. `VerificationEmail` and
 `InvitationEmail` contain `To` and the already-built `Link`.
 `NewSMTPMailer(host, port, user, pass, from)` uses the standard Go `net/smtp` package

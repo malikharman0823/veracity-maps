@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -36,6 +37,15 @@ func NewHandler(
 	}
 }
 
+func (h *Handler) ensureProjectExists(ctx context.Context, projectID, userID string) {
+	if h.projectRepo == nil {
+		return
+	}
+	if _, _, err := h.projectRepo.GetByID(projectID, userID); err == nil {
+		return
+	}
+}
+
 // List handles GET /api/projects (owned projects)
 func (h *Handler) List(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != http.MethodGet {
@@ -54,7 +64,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request, userID string) {
 	})
 }
 
-// ListShared handles GET /api/projects/shared (projects shared with user)
+// ListShared handles GET /api/projects/shared (projects shared with user or shared by user with collaborators)
 func (h *Handler) ListShared(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != http.MethodGet {
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
@@ -66,9 +76,19 @@ func (h *Handler) ListShared(w http.ResponseWriter, r *http.Request, userID stri
 		views = make([]*models.SharedProjectView, 0)
 	}
 
+	sharedByMe := h.projectRepo.ListSharedByOwner(userID, h.authRepo)
+	if sharedByMe == nil {
+		sharedByMe = make([]*models.SharedProjectView, 0)
+	}
+
+	allShared := append([]*models.SharedProjectView{}, views...)
+	allShared = append(allShared, sharedByMe...)
+
 	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"shared_projects": views,
-		"total":           len(views),
+		"shared_projects": allShared,
+		"shared_with_me":  views,
+		"shared_by_me":    sharedByMe,
+		"total":           len(allShared),
 	})
 }
 
@@ -103,7 +123,7 @@ func (h *Handler) RespondInvitation(w http.ResponseWriter, r *http.Request, invi
 		return
 	}
 
-	err := h.projectRepo.RespondInvitation(invitationID, user.ID, user.Name, req.Accept)
+	err := h.projectRepo.RespondInvitation(invitationID, user.ID, user.Email, user.Name, req.Accept)
 	if err != nil {
 		if err == repository.ErrInvitationNotFound {
 			models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Invitation not found or expired", nil, nil)
@@ -157,6 +177,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, projectID, userID 
 		return
 	}
 
+	h.ensureProjectExists(r.Context(), projectID, userID)
 	p, role, err := h.projectRepo.GetByID(projectID, userID)
 	if err != nil {
 		if err == repository.ErrUnauthorized {
@@ -219,12 +240,39 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, projectID, user
 	models.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
+// Leave handles POST /api/projects/{id}/leave or DELETE /api/projects/{id}/leave
+func (h *Handler) Leave(w http.ResponseWriter, r *http.Request, projectID, userID string) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
+		return
+	}
+
+	err := h.projectRepo.LeaveProject(projectID, userID)
+	if err != nil {
+		if err == repository.ErrCannotModifyOwner {
+			models.WriteError(w, http.StatusBadRequest, "CANNOT_LEAVE_OWN_PROJECT", "Owner cannot leave project; delete it instead", nil, nil)
+			return
+		}
+		if err == repository.ErrMemberNotFound || err == repository.ErrProjectNotFound {
+			// Project or membership is already removed; return success so collaborator UI clears
+			models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "left": true})
+			return
+		}
+		models.WriteError(w, http.StatusInternalServerError, "LEAVE_ERROR", err.Error(), nil, nil)
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true, "left": true})
+}
+
 // Share handles POST /api/projects/{id}/share (Owner invites collaborator)
 func (h *Handler) Share(w http.ResponseWriter, r *http.Request, projectID string, user *models.User) {
 	if r.Method != http.MethodPost {
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
 		return
 	}
+
+	h.ensureProjectExists(r.Context(), projectID, user.ID)
 
 	var req models.ShareProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -238,14 +286,24 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, projectID string
 		return
 	}
 
-	targetUser, err := h.authRepo.FindUserByEmail(r.Context(), cleanEmail)
-	if err != nil {
-		models.WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "No registered user found with that email address", nil, nil)
+	if strings.EqualFold(user.Email, cleanEmail) {
+		models.WriteError(w, http.StatusBadRequest, "CANNOT_INVITE_OWNER", "Cannot invite yourself to your own project", nil, nil)
 		return
 	}
 
-	if req.Role != models.RoleEditor && req.Role != models.RoleViewer {
-		req.Role = models.RoleViewer
+	targetUser, err := h.authRepo.FindUserByEmail(r.Context(), cleanEmail)
+	if err != nil || targetUser == nil {
+		// Allow inviting unregistered users; they will claim the pending invitation upon registration/login
+		targetUser = &models.User{
+			ID:    "",
+			Email: cleanEmail,
+			Name:  cleanEmail,
+		}
+	}
+
+	// Default to editor if role not specified
+	if req.Role == "" {
+		req.Role = models.RoleEditor
 	}
 
 	member, err := h.projectRepo.InviteMember(projectID, user.ID, targetUser, req.Role, user.Name)
@@ -260,6 +318,10 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, projectID string
 		}
 		if err == repository.ErrMemberAlreadyExists {
 			models.WriteError(w, http.StatusConflict, "COLLABORATOR_EXISTS", "User already has active or pending access to this project", nil, nil)
+			return
+		}
+		if err == repository.ErrMemberLimitReached {
+			models.WriteError(w, http.StatusBadRequest, "MEMBER_LIMIT_REACHED", "Maximum member limit reached (10/10 members)", nil, nil)
 			return
 		}
 		models.WriteError(w, http.StatusInternalServerError, "INVITE_ERROR", err.Error(), nil, nil)
@@ -301,6 +363,7 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request, projectID,
 		return
 	}
 
+	h.ensureProjectExists(r.Context(), projectID, userID)
 	members, err := h.projectRepo.ListMembers(projectID, userID)
 	if err != nil {
 		if err == repository.ErrUnauthorized {
@@ -324,6 +387,7 @@ func (h *Handler) UpdateMemberRole(w http.ResponseWriter, r *http.Request, proje
 		return
 	}
 
+	h.ensureProjectExists(r.Context(), projectID, user.ID)
 	var req models.UpdateMemberRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid request body", nil, nil)
@@ -358,6 +422,7 @@ func (h *Handler) RemoveMember(w http.ResponseWriter, r *http.Request, projectID
 		return
 	}
 
+	h.ensureProjectExists(r.Context(), projectID, user.ID)
 	err := h.projectRepo.RemoveMember(projectID, user.ID, memberID, user.Name)
 	if err != nil {
 		if err == repository.ErrForbidden {
@@ -386,6 +451,16 @@ func (h *Handler) ListActivities(w http.ResponseWriter, r *http.Request, project
 		return
 	}
 
+	if strings.HasPrefix(projectID, "msp_") {
+		// Mapspace IDs do not have direct project activity logs; return clean empty list
+		models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"activities": []*models.ProjectActivity{},
+			"total":      0,
+		})
+		return
+	}
+
+	h.ensureProjectExists(r.Context(), projectID, userID)
 	activities, err := h.projectRepo.ListActivities(projectID, userID)
 	if err != nil {
 		if err == repository.ErrUnauthorized {

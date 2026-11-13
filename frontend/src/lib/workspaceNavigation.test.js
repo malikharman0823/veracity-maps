@@ -10,6 +10,13 @@ test("accepts a local dataset workspace return", () => {
   )
 })
 
+test("accepts a map studio edit return", () => {
+  assert.equal(
+    safeWorkspaceReturn("/maps/map_123/edit?datasetId=ds_1&view=map", "ds_1"),
+    "/maps/map_123/edit?datasetId=ds_1&view=map",
+  )
+})
+
 test("rejects external and unrelated returns", () => {
   const fallback = "/datasets/secondary/workspace?view=database"
   assert.equal(safeWorkspaceReturn("https://example.com/datasets/x/workspace", "secondary"), fallback)

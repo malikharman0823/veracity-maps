@@ -38,6 +38,7 @@ import {
 import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
 import WakeSlider from "./WakeSlider"
 import { propagateBuildingGeoreference, datasetSourceImageUrl, pdfThumbnailUrl } from "../api"
+import { nextExpandedLayerId } from "../lib/layerPanelState"
 
 
 const SUBLAYER_ICONS = {
@@ -850,6 +851,8 @@ function SortableMember({
   records = [],
   selectedDatasetId,
   selectedKind,
+  settingsOpen,
+  onToggleSettings,
   onSelect,
   onUpdate,
   onDetach,
@@ -859,7 +862,6 @@ function SortableMember({
   onOpenAnnotations,
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   const sortable = useSortable({ id: member.dataset_id })
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
@@ -926,93 +928,111 @@ function SortableMember({
         <div className="workspace-layer-menu-wrap">
           <button
             type="button"
-            className="workspace-layer-menu"
-            aria-label={`Actions for ${member.name}`}
-            onClick={() => setMenuOpen((value) => !value)}
+            className={`workspace-layer-menu${settingsOpen ? " is-active" : ""}`}
+            aria-label={`${settingsOpen ? "Collapse" : "Expand"} settings for ${member.name}`}
+            aria-expanded={settingsOpen}
+            onClick={onToggleSettings}
           >
             <MoreHorizontal />
           </button>
-          {menuOpen && (
-            <div className="workspace-layer-popover">
-              <LayerOpacitySlider
-                datasetId={member.dataset_id}
-                opacity={member.raster_opacity}
-                onUpdate={onUpdate}
-              />
-              {member.dataset?.georeference_status !== "completed" && (
-                <button
-                  type="button"
-                  className="workspace-layer-feature-btn text-amber-600"
-                  onClick={() => {
-                    const returnTo = window.location.pathname + window.location.search
-                    window.location.href = `/datasets/${member.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
-                  }}
-                >
-                  <MapPin />
-                  <span>Georeference Layer</span>
-                </button>
-              )}
-              {onOpenEnhancement && (
-                <button
-                  type="button"
-                  className="workspace-layer-feature-btn"
-                  onClick={() => {
-                    onOpenEnhancement(member)
-                    setMenuOpen(false)
-                  }}
-                >
-                  <Wand2 />
-                  <span>Enhance &amp; Upscale</span>
-                </button>
-              )}
-              {onOpenAnnotations && (
-                <button
-                  type="button"
-                  className="workspace-layer-feature-btn"
-                  onClick={() => {
-                    onOpenAnnotations(member)
-                    setMenuOpen(false)
-                  }}
-                >
-                  <ScanText />
-                  <span>OCR &amp; Vector Labels</span>
-                </button>
-              )}
-              <button
-                type="button"
-                className="workspace-layer-feature-btn"
-                onClick={() => {
-                  if (onOpenTransform) onOpenTransform(member)
-                  setMenuOpen(false)
-                }}
-              >
-                <Move />
-                <span>Transform Raster</span>
-              </button>
-              <button
-                type="button"
-                className="workspace-layer-feature-btn"
-                onClick={() => {
-                  if (onOpenBgRemoval) onOpenBgRemoval(member)
-                  setMenuOpen(false)
-                }}
-              >
-                <Sparkles />
-                <span>Remove Background</span>
-              </button>
-              {!member.is_primary && (
-                <button
-                  type="button"
-                  className="workspace-danger-action"
-                  onClick={() => onDetach(member)}
-                >
-                  <Trash2 /> Detach dataset
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
+
+      {settingsOpen && (
+        <section className="workspace-layer-settings" aria-label={`Settings for ${member.name}`}>
+          <div className="workspace-layer-settings-header">
+            <span>Layer settings</span>
+            <button type="button" onClick={onToggleSettings}>
+              <ChevronDown /> Collapse
+            </button>
+          </div>
+          <LayerOpacitySlider
+            datasetId={member.dataset_id}
+            opacity={member.raster_opacity}
+            onUpdate={onUpdate}
+          />
+          <div className="workspace-layer-settings-actions">
+            {member.dataset?.georeference_status !== "completed" && (
+              <button
+                type="button"
+                className="workspace-layer-feature-btn text-amber-600"
+                title="Georeference layer"
+                onClick={() => {
+                  const returnTo = window.location.pathname + window.location.search
+                  window.location.href = `/datasets/${member.dataset_id}/georeference?returnTo=${encodeURIComponent(returnTo)}`
+                }}
+              >
+                <MapPin />
+                <span>Georeference</span>
+              </button>
+            )}
+            {onOpenEnhancement && (
+              <button
+                type="button"
+                className="workspace-layer-feature-btn"
+                title="Enhance and upscale"
+                onClick={() => {
+                  onOpenEnhancement(member)
+                  onToggleSettings()
+                }}
+              >
+                <Wand2 />
+                <span>Enhance</span>
+              </button>
+            )}
+            {onOpenAnnotations && (
+              <button
+                type="button"
+                className="workspace-layer-feature-btn"
+                title="OCR and vector labels"
+                onClick={() => {
+                  onOpenAnnotations(member)
+                  onToggleSettings()
+                }}
+              >
+                <ScanText />
+                <span>OCR labels</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="workspace-layer-feature-btn"
+              title="Transform raster"
+              onClick={() => {
+                if (onOpenTransform) onOpenTransform(member)
+                onToggleSettings()
+              }}
+            >
+              <Move />
+              <span>Transform</span>
+            </button>
+            <button
+              type="button"
+              className="workspace-layer-feature-btn"
+              title="Remove raster background"
+              onClick={() => {
+                if (onOpenBgRemoval) onOpenBgRemoval(member)
+                onToggleSettings()
+              }}
+            >
+              <Sparkles />
+              <span>Background</span>
+            </button>
+          </div>
+          {!member.is_primary && (
+            <button
+              type="button"
+              className="workspace-danger-action workspace-layer-settings-danger"
+              onClick={() => {
+                onToggleSettings()
+                onDetach(member)
+              }}
+            >
+              <Trash2 /> Detach dataset
+            </button>
+          )}
+        </section>
+      )}
 
       {expanded && (
         <div className="workspace-sublayers">
@@ -1096,6 +1116,7 @@ export default function WorkspaceLayerPanel({
   onToggleIsolateActiveFloor,
 }) {
   const [bgRemovalMember, setBgRemovalMember] = useState(null)
+  const [openSettingsId, setOpenSettingsId] = useState(null)
   const [localFloorFilter, setLocalFloorFilter] = useState("active")
   const floorFilter = onToggleIsolateActiveFloor
     ? (isolateActiveFloor ? "active" : "all")
@@ -1152,8 +1173,12 @@ export default function WorkspaceLayerPanel({
       const archFn = member.dataset?.extracted_metadata?.archive_filename || member.archive_filename || ""
       const mName = (member.name || member.dataset?.filename || "").trim()
 
+      const isArchiveName = (str) => {
+        const s = (str || "").toLowerCase()
+        return s.endsWith(".zip") || s.endsWith(".tar") || s.endsWith(".tar.gz") || s.endsWith(".tgz")
+      }
       const isPdfMember = docType === "pdf" || srcFn.toLowerCase().endsWith(".pdf") || mName.toLowerCase().endsWith(".pdf")
-      const isZipMember = Boolean(archFn) || srcFn.toLowerCase().endsWith(".zip") || mName.toLowerCase().endsWith(".zip")
+      const isZipMember = isArchiveName(archFn) || isArchiveName(srcFn) || isArchiveName(mName)
 
       if (isPdfMember) {
         const pdfKey = `pdf_${srcDocId || srcFn || "document.pdf"}`
@@ -1333,6 +1358,10 @@ export default function WorkspaceLayerPanel({
                     records={records}
                     selectedDatasetId={selectedDatasetId}
                     selectedKind={selectedKind}
+                    settingsOpen={openSettingsId === member.dataset_id}
+                    onToggleSettings={() => {
+                      setOpenSettingsId((currentId) => nextExpandedLayerId(currentId, member.dataset_id))
+                    }}
                     onSelect={onSelect}
                     onUpdate={onUpdate}
                     onDetach={onDetach}

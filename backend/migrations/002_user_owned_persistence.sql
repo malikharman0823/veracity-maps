@@ -48,18 +48,21 @@ CREATE UNIQUE INDEX UX_ProjectInvitations_PendingInvitee ON ProjectInvitations(p
     WHERE status = 'pending' AND invitee_key IS NOT NULL;
 CREATE UNIQUE INDEX UX_ProjectInvitations_TokenHash ON ProjectInvitations(token_hash) WHERE token_hash IS NOT NULL;
 
-CREATE TABLE Maps (
-    id NVARCHAR(64) NOT NULL PRIMARY KEY,
-    project_id NVARCHAR(64) NOT NULL,
-    map_name NVARCHAR(255) NOT NULL,
-    map_configuration NVARCHAR(MAX) NOT NULL CONSTRAINT CK_Maps_ConfigJSON CHECK (ISJSON(map_configuration) = 1),
-    created_by NVARCHAR(64) NOT NULL,
-    created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
-    updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
-    CONSTRAINT FK_Maps_Project FOREIGN KEY (project_id) REFERENCES Projects(id) ON DELETE CASCADE,
-    CONSTRAINT FK_Maps_Creator FOREIGN KEY (created_by) REFERENCES Users(id)
-);
-CREATE INDEX IX_Maps_ProjectID ON Maps(project_id);
+IF OBJECT_ID(N'dbo.Maps', N'U') IS NULL
+BEGIN
+    CREATE TABLE Maps (
+        id NVARCHAR(64) NOT NULL PRIMARY KEY,
+        project_id NVARCHAR(64) NOT NULL,
+        map_name NVARCHAR(255) NOT NULL,
+        map_configuration NVARCHAR(MAX) NOT NULL CONSTRAINT CK_Maps_ConfigJSON CHECK (ISJSON(map_configuration) = 1),
+        created_by NVARCHAR(64) NOT NULL,
+        created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+        CONSTRAINT FK_Maps_Project FOREIGN KEY (project_id) REFERENCES Projects(id) ON DELETE CASCADE,
+        CONSTRAINT FK_Maps_Creator FOREIGN KEY (created_by) REFERENCES Users(id)
+    );
+    CREATE INDEX IX_Maps_ProjectID ON Maps(project_id);
+END;
 
 CREATE TABLE Uploads (
     id NVARCHAR(64) NOT NULL PRIMARY KEY,

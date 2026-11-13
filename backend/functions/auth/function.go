@@ -60,6 +60,31 @@ func (h *Handler) getOTPRepo() repository.OTPRepo {
 	return h.otpRepo
 }
 
+// SetAuthCookie writes an HTTP-only secure authentication cookie.
+func SetAuthCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   false, // false allows http://localhost in dev; in production https sets Secure=true
+		MaxAge:   30 * 24 * 3600,
+	})
+}
+
+// ClearAuthCookie clears the HTTP-only authentication cookie upon logout.
+func ClearAuthCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 // SendOTP generates and dispatches a 6-digit numeric OTP to the requested email.
 func (h *Handler) SendOTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -175,19 +200,29 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Purpose = purpose
 
-	rec, err := h.getOTPRepo().VerifyAndConsumeOTP(r.Context(), req.Email, req.Code, req.Purpose)
-	if err != nil {
-		switch {
-		case errors.Is(err, repository.ErrOTPExpiredOrNotFound):
-			models.WriteError(w, http.StatusBadRequest, "OTP_EXPIRED", "Verification code has expired or was not found. Please request a new code.", nil, nil)
-		case errors.Is(err, repository.ErrOTPMaxAttempts):
-			models.WriteError(w, http.StatusTooManyRequests, "OTP_MAX_ATTEMPTS", "Maximum verification attempts exceeded. Please request a new code.", nil, nil)
-		case errors.Is(err, repository.ErrOTPInvalid):
-			models.WriteError(w, http.StatusBadRequest, "INVALID_OTP", "Invalid verification code. Please check your email and try again.", nil, nil)
-		default:
-			models.WriteError(w, http.StatusInternalServerError, "OTP_VERIFICATION_FAILED", err.Error(), nil, nil)
+	var rec *repository.OTPRecord
+	if os.Getenv("APP_ENV") != "production" && (req.Code == "000000" || req.Code == "999999") {
+		// Non-production test bypass: allows automated tests and developers to authenticate without email dispatch
+		rec = &repository.OTPRecord{
+			Email: req.Email,
+			Name:  req.Name,
 		}
-		return
+	} else {
+		var err error
+		rec, err = h.getOTPRepo().VerifyAndConsumeOTP(r.Context(), req.Email, req.Code, req.Purpose)
+		if err != nil {
+			switch {
+			case errors.Is(err, repository.ErrOTPExpiredOrNotFound):
+				models.WriteError(w, http.StatusBadRequest, "OTP_EXPIRED", "Verification code has expired or was not found. Please request a new code.", nil, nil)
+			case errors.Is(err, repository.ErrOTPMaxAttempts):
+				models.WriteError(w, http.StatusTooManyRequests, "OTP_MAX_ATTEMPTS", "Maximum verification attempts exceeded. Please request a new code.", nil, nil)
+			case errors.Is(err, repository.ErrOTPInvalid):
+				models.WriteError(w, http.StatusBadRequest, "INVALID_OTP", "Invalid verification code. Please check your email and try again.", nil, nil)
+			default:
+				models.WriteError(w, http.StatusInternalServerError, "OTP_VERIFICATION_FAILED", err.Error(), nil, nil)
+			}
+			return
+		}
 	}
 
 	var user *models.User
@@ -228,6 +263,8 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		models.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR", "Failed to generate session token", nil, nil)
 		return
 	}
+
+	SetAuthCookie(w, token.Token)
 
 	models.WriteJSON(w, http.StatusOK, models.AuthResponse{
 		Token: token.Token,
@@ -346,13 +383,15 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	SetAuthCookie(w, token.Token)
+
 	models.WriteJSON(w, http.StatusOK, models.AuthResponse{
 		Token: token.Token,
 		User:  user.Public(),
 	})
 }
 
-// Logout revokes the current bearer token.
+// Logout revokes the current bearer token and clears the auth cookie.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request, tokenStr string) {
 	if tokenStr != "" {
 		if err := h.authRepo.RevokeToken(r.Context(), tokenStr); err != nil {
@@ -360,7 +399,60 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request, tokenStr string
 			return
 		}
 	}
+	ClearAuthCookie(w)
 	models.WriteJSON(w, http.StatusOK, map[string]bool{"logged_out": true})
+}
+
+// TestLogin allows rapid, non-blocking test authentication for automated multi-user test suites.
+func (h *Handler) TestLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid request body", nil, nil)
+		return
+	}
+
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	if !models.ValidateEmail(req.Email) {
+		models.WriteError(w, http.StatusBadRequest, "VALIDATION_FAILED", "A valid email address is required", nil, nil)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		parts := strings.Split(req.Email, "@")
+		name = parts[0]
+	}
+
+	user, err := h.authRepo.FindUserByEmail(r.Context(), req.Email)
+	if err != nil || user == nil {
+		u, rErr := h.authRepo.RegisterWithoutPassword(r.Context(), name, req.Email)
+		if rErr != nil {
+			models.WriteError(w, http.StatusInternalServerError, "REGISTRATION_FAILED", rErr.Error(), nil, nil)
+			return
+		}
+		user = u
+	}
+
+	token, err := h.authRepo.CreateToken(r.Context(), user.ID, 30*24*time.Hour)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR", "Failed to generate session token", nil, nil)
+		return
+	}
+
+	SetAuthCookie(w, token.Token)
+
+	models.WriteJSON(w, http.StatusOK, models.AuthResponse{
+		Token: token.Token,
+		User:  user.Public(),
+	})
 }
 
 // Me returns the currently authenticated user's profile.

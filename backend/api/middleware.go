@@ -16,7 +16,6 @@ type contextKey string
 
 const (
 	SessionIDContextKey contextKey = "session_id"
-	UserContextKey      contextKey = "user"
 	TokenContextKey     contextKey = "token"
 )
 
@@ -40,8 +39,12 @@ func (m *Middleware) CORS(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-ID, X-Auth-Token")
-		w.Header().Set("Access-Control-Expose-Headers", "X-Session-ID, Content-Disposition")
+		allowedHeaders := "Content-Type, Authorization, X-Session-ID, X-Auth-Token, X-Project-Id, X-Map-Id, Accept, Origin"
+		if reqHeaders := r.Header.Get("Access-Control-Request-Headers"); reqHeaders != "" {
+			allowedHeaders = allowedHeaders + ", " + reqHeaders
+		}
+		w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
+		w.Header().Set("Access-Control-Expose-Headers", "X-Session-ID, Content-Disposition, X-Project-Id, X-Map-Id")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if r.Method == http.MethodOptions {
@@ -73,7 +76,7 @@ func (m *Middleware) Session(next http.Handler) http.Handler {
 		if tokenStr != "" && m.authRepo != nil {
 			user, err := m.authRepo.ValidateToken(r.Context(), tokenStr)
 			if err == nil && user != nil {
-				ctx := context.WithValue(r.Context(), UserContextKey, user)
+				ctx := context.WithValue(r.Context(), models.UserContextKey, user)
 				ctx = context.WithValue(ctx, TokenContextKey, tokenStr)
 				r = r.WithContext(ctx)
 			}
@@ -98,8 +101,11 @@ func (m *Middleware) Recovery(next http.Handler) http.Handler {
 	})
 }
 
-// ExtractBearerToken parses Authorization: Bearer <token> or X-Auth-Token or query param token
+// ExtractBearerToken parses Authorization: Bearer <token> or X-Auth-Token or auth_token cookie or query param token
 func ExtractBearerToken(r *http.Request) string {
+	if c, err := r.Cookie("auth_token"); err == nil && c != nil && strings.TrimSpace(c.Value) != "" {
+		return strings.TrimSpace(c.Value)
+	}
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
 		parts := strings.SplitN(authHeader, " ", 2)
@@ -115,7 +121,7 @@ func ExtractBearerToken(r *http.Request) string {
 
 // GetUser returns the authenticated User from context if present.
 func GetUser(r *http.Request) *models.User {
-	if val, ok := r.Context().Value(UserContextKey).(*models.User); ok {
+	if val, ok := r.Context().Value(models.UserContextKey).(*models.User); ok {
 		return val
 	}
 	return nil

@@ -1,0 +1,109 @@
+{
+  "id": "ds_7855d8a3595d9f3c4e291f7f95e0d1d1",
+  "session_id": "sess_6bcc85bbd13834867404c59c327700bc",
+  "filename": "images.png",
+  "file_size": 3705,
+  "content_type": "image/png",
+  "file_hash": "be0d2bec23add6e572632d68844491e6684b2fa0105d519b82df119a2dbff36a",
+  "storage_path": "C:\\Users\\harma\\OneDrive\\Desktop\\veracity-maps\\backend\\storage\\uploads\\maps\\usr_3f1a5217536c17f950d8abc251e45644\\map_7a39c61e7445b51a\\assets\\ds_7855d8a3595d9f3c4e291f7f95e0d1d1\\images.png",
+  "georeferenced_path": "C:\\Users\\harma\\OneDrive\\Desktop\\veracity-maps\\backend\\storage\\uploads\\maps\\usr_3f1a5217536c17f950d8abc251e45644\\map_7a39c61e7445b51a\\assets\\ds_7855d8a3595d9f3c4e291f7f95e0d1d1\\processed\\georeferenced.vrt",
+  "processed_path": "C:\\Users\\harma\\OneDrive\\Desktop\\veracity-maps\\backend\\storage\\uploads\\maps\\usr_3f1a5217536c17f950d8abc251e45644\\map_7a39c61e7445b51a\\assets\\ds_7855d8a3595d9f3c4e291f7f95e0d1d1\\processed\\georeferenced.vrt",
+  "georeference_status": "completed",
+  "tile_status": "not_started",
+  "extracted_metadata": {
+    "bands": 3,
+    "bounds": {
+      "max_x": 77.34301883387494,
+      "max_y": 28.842718476471656,
+      "min_x": 74.67268426265065,
+      "min_y": 26.961528155843265
+    },
+    "building_name": "",
+    "color_depth_bits": 24,
+    "color_interpretation": [
+      "Palette"
+    ],
+    "compression": "none",
+    "content": {
+      "classification": "categorical_raster",
+      "has_embedded_text": false,
+      "has_raster": true,
+      "has_vector": false
+    },
+    "crs": "EPSG:4326",
+    "dpi": null,
+    "dpi_x": 0,
+    "dpi_y": 0,
+    "driver": "PNG",
+    "dtype": "uint8",
+    "floor_label": "Ground Floor",
+    "floor_level": 0,
+    "format": "png",
+    "georeference_source": "control_points",
+    "has_alpha": false,
+    "height": 158,
+    "is_building_floor": false,
+    "native_crs": "",
+    "quality": {
+      "blur_score": 4800.21,
+      "blur_status": "sharp",
+      "contrast_score": 78.71,
+      "dynamic_range": 255,
+      "is_grayscale_like": true,
+      "noise_estimate": 0,
+      "recommended_resampling": "nearest",
+      "text_annotation_density": 0.7191,
+      "text_density_level": "high"
+    },
+    "recommendation": {
+      "is_high_resolution": false,
+      "ocr_recommended": false,
+      "reason": "Categorical/paletted raster detected; preserve exact pixel classes with nearest-neighbour resampling.",
+      "recommended_preset": "none",
+      "suggested_upscale": 1,
+      "upscale_recommended": false
+    },
+    "resolution": null,
+    "transform": [
+      0.011304772786184025,
+      0.0005160860961275215,
+      74.67268426265065,
+      0.0003967060279754797,
+      -0.011331295191278512,
+      28.75187279606527
+    ],
+    "width": 229
+  },
+  "map_layer": {
+    "bounds": {
+      "max_x": 77.34301883387494,
+      "max_y": 28.842718476471656,
+      "min_x": 74.67268426265065,
+      "min_y": 26.961528155843265
+    },
+    "bounds_crs": "EPSG:4326",
+    "coordinates": [
+      [
+        74.67268426265065,
+        28.75187279606527
+      ],
+      [
+        77.2614772306868,
+        28.842718476471656
+      ],
+      [
+        77.34301883387494,
+        27.05237383624965
+      ],
+      [
+        74.75422586583879,
+        26.961528155843265
+      ]
+    ],
+    "id": "lyr_ds_7855d8a3595d9f3c4e291f7f95e0d1d1",
+    "name": "images.png",
+    "type": "raster"
+  },
+  "created_at": "2026-11-13T11:33:31.850534+05:30",
+  "updated_at": "2026-11-13T11:34:04.2858771+05:30"
+}

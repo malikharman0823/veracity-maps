@@ -389,7 +389,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Uploaded Files */}
           <div
             onClick={() => setActiveTab("files")}
@@ -436,31 +436,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Workspace Sessions */}
-          <div
-            onClick={() => setActiveTab("sessions")}
-            className={`p-5 rounded-xl border transition-all cursor-pointer ${
-              activeTab === "sessions"
-                ? "bg-[#3ecf8e]/10 border-[#3ecf8e]/40 shadow-xs"
-                : "bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-neutral-700"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Sessions
-              </span>
-              <div className="size-8 rounded-lg bg-cyan-500/15 text-cyan-500 flex items-center justify-center">
-                <History className="size-4" />
-              </div>
-            </div>
-            <div className="mt-3 text-2xl font-bold text-neutral-900 dark:text-white">
-              {stats.total_sessions || sessionsList.length}
-            </div>
-            <div className="mt-1 text-[11px] text-[#10b981] dark:text-[#3ecf8e] font-medium">
-              Click to view & switch
-            </div>
-          </div>
-
           {/* Owned Projects */}
           <div
             onClick={() => setActiveTab("projects")}
@@ -472,7 +447,7 @@ export default function ProfilePage() {
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Owned Projects
+                Personal Maps
               </span>
               <div className="size-8 rounded-lg bg-blue-500/15 text-blue-500 flex items-center justify-center">
                 <FolderKanban className="size-4" />
@@ -482,7 +457,7 @@ export default function ProfilePage() {
               {stats.total_projects}
             </div>
             <div className="mt-1 text-[11px] text-neutral-500">
-              Personal workspaces
+              Personal (Only You)
             </div>
           </div>
 
@@ -497,7 +472,7 @@ export default function ProfilePage() {
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Shared & Invites
+                Shared Maps
               </span>
               <div className="size-8 rounded-lg bg-purple-500/15 text-purple-500 flex items-center justify-center">
                 <Users className="size-4" />
@@ -514,7 +489,7 @@ export default function ProfilePage() {
             <div className="mt-1 text-[11px] text-neutral-500">
               {stats.pending_invitations > 0
                 ? `${stats.pending_invitations} awaiting response`
-                : "Collaborative projects"}
+                : "Collaborative Mapspaces"}
             </div>
           </div>
         </div>
@@ -534,17 +509,6 @@ export default function ProfilePage() {
               Uploaded Files & Maps ({dashboardData?.files?.length || 0})
             </button>
             <button
-              onClick={() => setActiveTab("sessions")}
-              className={`pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === "sessions"
-                  ? "border-[#3ecf8e] text-[#10b981] dark:text-[#3ecf8e]"
-                  : "border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-              }`}
-            >
-              <History className="size-4" />
-              Previous Sessions ({sessionsList.length})
-            </button>
-            <button
               onClick={() => setActiveTab("projects")}
               className={`pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 shrink-0 ${
                 activeTab === "projects"
@@ -553,7 +517,7 @@ export default function ProfilePage() {
               }`}
             >
               <FolderKanban className="size-4" />
-              My Projects ({dashboardData?.projects?.length || 0})
+              My Maps ({dashboardData?.projects?.length || 0})
             </button>
             <button
               onClick={() => setActiveTab("shared")}
@@ -564,7 +528,7 @@ export default function ProfilePage() {
               }`}
             >
               <Users className="size-4" />
-              Shared With Me ({dashboardData?.shared_projects?.length || 0})
+              Shared Maps ({dashboardData?.shared_projects?.length || 0})
             </button>
             {stats.pending_invitations > 0 && (
               <button
@@ -792,163 +756,23 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* Tab 2: Workspace Sessions */}
-        {activeTab === "sessions" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
-                  <History className="size-4 text-[#10b981] dark:text-[#3ecf8e]" />
-                  Previous Workspace Sessions ({sessionsList.length})
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  Switch between working map sessions, view allocated file memory, and reopen previous workspaces.
-                </p>
-              </div>
-              <button
-                onClick={fetchProfileData}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-neutral-200 dark:border-[#2e2e2e] rounded-md hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors cursor-pointer"
-              >
-                <RefreshCw className="size-3.5" />
-                Refresh
-              </button>
-            </div>
-
-            {sessionsList.length === 0 ? (
-              <div className="bg-white dark:bg-[#1c1c1c] border border-neutral-200 dark:border-[#2e2e2e] rounded-xl p-10 text-center space-y-3">
-                <History className="size-8 text-neutral-400 mx-auto" />
-                <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">No workspace sessions found</h4>
-                <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-                  Sessions are initialized when maps are uploaded or projects are opened.
-                </p>
-                <Link
-                  to="/"
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-[#3ecf8e] text-[#141414] hover:bg-[#24b47e] transition-colors"
-                >
-                  <Compass className="size-3.5" />
-                  Start New Session
-                </Link>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sessionsList.map((sess) => {
-                  const isActive = sess.id === currentSessionId
-                  return (
-                    <div
-                      key={sess.id}
-                      className={`bg-white dark:bg-[#1c1c1c] border rounded-xl p-5 space-y-4 flex flex-col justify-between transition-all ${
-                        isActive
-                          ? "border-[#3ecf8e] ring-2 ring-[#3ecf8e]/20"
-                          : "border-neutral-200 dark:border-[#2e2e2e] hover:border-neutral-300 dark:hover:border-neutral-700"
-                      }`}
-                    >
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-neutral-900 dark:text-white">
-                              {sess.id}
-                            </span>
-                            {isActive && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#3ecf8e]/15 text-[#10b981] dark:text-[#3ecf8e] border border-[#3ecf8e]/30">
-                                Active
-                              </span>
-                            )}
-                          </div>
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-[#282828] text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-[#383838]">
-                            {sess.memory_size || "0 B"}
-                          </span>
-                        </div>
-
-                        <div className="space-y-1.5 text-xs text-neutral-600 dark:text-neutral-400">
-                          <div className="flex items-center justify-between">
-                            <span className="text-neutral-400">Datasets:</span>
-                            <span className="font-medium text-neutral-900 dark:text-white">
-                              {sess.dataset_count}
-                            </span>
-                          </div>
-                          {sess.datasets && sess.datasets.length > 0 && (
-                            <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-full">
-                              Files: {sess.datasets.slice(0, 3).join(", ")}
-                              {sess.datasets.length > 3 ? "..." : ""}
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <span className="text-neutral-400">File Memory:</span>
-                            <span className="font-mono font-medium text-neutral-800 dark:text-neutral-200">
-                              {sess.memory_size}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="pt-3 border-t border-neutral-100 dark:border-[#282828] space-y-3">
-                        <div className="space-y-0.5 text-[10px] text-neutral-400">
-                          <div>Created: {formatDateTime(sess.created_at, "----")}</div>
-                          <div>Last Active: {isActive ? (formatDateTime(sess.last_active_at, "----") !== "----" ? formatDateTime(sess.last_active_at, "----") : "Just now") : formatDateTime(sess.last_active_at, "----")}</div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => switchSession(sess.id, sess.first_dataset_id)}
-                            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                              isActive
-                                ? "bg-[#3ecf8e]/15 text-[#10b981] dark:text-[#3ecf8e] border border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/25"
-                                : "bg-[#3ecf8e] hover:bg-[#24b47e] text-[#141414] shadow-xs"
-                            }`}
-                          >
-                            <Compass className="size-3.5" />
-                            {isActive ? "Continue Workspace" : "Open"}
-                          </button>
-
-                          <HoldButton
-                            doneLabel="Deleted"
-                            backgroundColor="#27272a"
-                            fillColor="#dc2626"
-                            textColor="#ef4444"
-                            fillTextColor="#ffffff"
-                            size="sm"
-                            radius={6}
-                            fillDirection="right"
-                            holdTime={1600}
-                            releaseTime={200}
-                            pressScale={0.97}
-                            wave
-                            waveAmplitude={4}
-                            glow
-                            resetAfter={1000}
-                            onHold={() => handleDeleteSession(sess.id)}
-                            className="shrink-0 text-xs px-2.5 h-[34px]"
-                            title="Hold to delete this session"
-                          >
-                            Hold to delete
-                          </HoldButton>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 3: Owned Projects */}
+        {/* Tab 2: Owned Maps */}
         {activeTab === "projects" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                  My Projects ({dashboardData?.projects?.length || 0})
+                  My Maps ({dashboardData?.projects?.length || 0})
                 </h3>
                 <p className="text-xs text-neutral-500">
-                  Projects created and owned by your account
+                  Maps created and owned by your account
                 </p>
               </div>
               <Link
                 to="/dashboard"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-neutral-200 dark:border-[#2e2e2e] rounded-md hover:bg-neutral-100 dark:hover:bg-[#282828] transition-colors"
               >
-                Project Manager
+                Maps Dashboard
                 <ExternalLink className="size-3" />
               </Link>
             </div>
@@ -956,15 +780,15 @@ export default function ProfilePage() {
             {(dashboardData?.projects || []).length === 0 ? (
               <div className="bg-white dark:bg-[#1c1c1c] border border-neutral-200 dark:border-[#2e2e2e] rounded-xl p-10 text-center space-y-3">
                 <FolderKanban className="size-8 text-neutral-400 mx-auto" />
-                <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">No projects created yet</h4>
+                <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">No maps created yet</h4>
                 <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-                  Create a project to bundle aerial imagery, historic maps, and control points.
+                  Create a map to bundle floor plans, aerial imagery, and georeferenced layers.
                 </p>
                 <Link
                   to="/dashboard"
                   className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-[#3ecf8e] text-[#141414] hover:bg-[#24b47e] transition-colors"
                 >
-                  Create Project
+                  Create Map
                 </Link>
               </div>
             ) : (
@@ -1010,15 +834,15 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* Tab 4: Shared Projects */}
+        {/* Tab 4: Shared Maps */}
         {activeTab === "shared" && (
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                Projects Shared With You ({dashboardData?.shared_projects?.length || 0})
+                Maps Shared With You ({dashboardData?.shared_projects?.length || 0})
               </h3>
               <p className="text-xs text-neutral-500">
-                Workspaces where colleagues invited you as an editor or viewer
+                Maps where colleagues invited you as an editor
               </p>
             </div>
 

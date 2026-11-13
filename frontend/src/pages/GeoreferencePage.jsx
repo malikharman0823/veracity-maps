@@ -22,8 +22,8 @@ import {
 import { safeWorkspaceReturn } from "../lib/workspaceNavigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ArrowLeft, MapPin, X } from "lucide-react"
-import EndSessionDialog from "../components/EndSessionDialog"
 
 function overlayCoordinates(parameters, imageSize) {
   if (!parameters) return null
@@ -585,6 +585,7 @@ export default function GeoreferencePage() {
     <main className="min-h-[calc(100vh-44px)] bg-[#ffffff] dark:bg-[#1c1c1c] text-[#171717] dark:text-[#ffffff] p-3 phone:p-5 transition-colors">
       <div className="mx-auto flex max-w-canvas flex-col gap-3">
         <header className="flex min-h-[72px] flex-wrap items-center gap-2.5 rounded-[12px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] px-4 py-3 sm:px-6 shadow-xs text-neutral-900 dark:text-white">
+          <SidebarTrigger className="text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282828] rounded-[6px] transition-colors shrink-0" />
           <Link
             className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white font-medium transition-colors shrink-0 mr-2 group"
             to={returnTo}
@@ -680,7 +681,6 @@ export default function GeoreferencePage() {
           >
             {savingConfig ? "Saving…" : "Save Georeference"}
           </Button>
-          <EndSessionDialog />
         </header>
 
         {directPanelOpen && (

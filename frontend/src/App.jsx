@@ -1,11 +1,10 @@
-import React, { Suspense, lazy, useEffect } from "react"
+import React, { Suspense, lazy } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom"
 
 import DashboardLayout from "./components/DashboardLayout"
 import ProtectedRoute from "./components/ProtectedRoute"
 import { AuthProvider } from "./context/AuthContext"
 import { ThemeProvider } from "./context/ThemeContext"
-import { ensureActiveSession } from "./api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 const HomePage = lazy(() => import("./pages/HomePage"))
@@ -24,12 +23,6 @@ function DatasetWorkspaceRedirect() {
 }
 
 export default function App() {
-  useEffect(() => {
-    ensureActiveSession().catch((err) => {
-      console.warn("Session check failed:", err)
-    })
-  }, [])
-
   return (
     <ThemeProvider>
       <TooltipProvider>
@@ -43,77 +36,44 @@ export default function App() {
               }
             >
               <Routes>
-              {/* Public Auth Routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
+                {/* Public Auth Routes */}
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
 
-              {/* Protected User Dashboard */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <ProfilePage />
-                  </ProtectedRoute>
-                }
-              />
+                {/* All Protected Routes Share the Global Navigation Sidebar */}
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/upload" element={<Navigate to="/" replace />} />
 
-              {/* Protected Workspace Layout Routes */}
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route path="/" element={<HomePage />} />
-                <Route path="/upload" element={<Navigate to="/" replace />} />
-              </Route>
+                  {/* Canonical Shared Workspace Map Editor Routes */}
+                  <Route path="/maps/:mapId/edit" element={<WorkspacePage />} />
+                  <Route path="/maps/:mapId" element={<WorkspacePage />} />
 
-              {/* Protected Dataset and Georeferencing Routes */}
-              <Route
-                path="/datasets/:id"
-                element={
-                  <ProtectedRoute>
-                    <DatasetWorkspaceRedirect />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/datasets/:id/legacy"
-                element={
-                  <ProtectedRoute>
-                    <DatasetPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/datasets/:id/workspace"
-                element={
-                  <ProtectedRoute>
-                    <WorkspacePage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/datasets/:id/georeference"
-                element={
-                  <ProtectedRoute>
-                    <GeoreferencePage />
-                  </ProtectedRoute>
-                }
-              />
+                  {/* Project and Mapspace Independent Map Editor Routes */}
+                  <Route path="/projects/:projectId/maps/:mapId/edit" element={<WorkspacePage />} />
+                  <Route path="/projects/:projectId/maps/:mapId" element={<WorkspacePage />} />
+                  <Route path="/mapspaces/:mapspaceId/maps/:mapId/edit" element={<WorkspacePage />} />
+                  <Route path="/mapspaces/:mapspaceId/maps/:mapId" element={<WorkspacePage />} />
+                  <Route path="/workspace" element={<WorkspacePage />} />
 
-              {/* Fallback */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+                  {/* Protected Dataset and Georeferencing Routes */}
+                  <Route path="/datasets/:id" element={<DatasetWorkspaceRedirect />} />
+                  <Route path="/datasets/:id/legacy" element={<DatasetPage />} />
+                  <Route path="/datasets/:id/workspace" element={<WorkspacePage />} />
+                  <Route path="/datasets/:id/georeference" element={<GeoreferencePage />} />
+                </Route>
+
+                {/* Fallback */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
           </Suspense>
         </BrowserRouter>
       </AuthProvider>

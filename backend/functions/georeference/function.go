@@ -30,6 +30,14 @@ func (h *Handler) resolveDatasetAndSession(r *http.Request, w http.ResponseWrite
 			if err == nil && dataset != nil {
 				return dataset, sessionID, nil
 			}
+			if foundDs, foundSess, fErr := h.repo.FindDataset(datasetID); fErr == nil && foundDs != nil {
+				dsCopy := *foundDs
+				_ = h.repo.InsertDataset(sessionID, &dsCopy)
+				if cps, cpErr := h.repo.ListControlPoints(foundSess, datasetID); cpErr == nil && len(cps) > 0 {
+					_ = h.repo.SetControlPoints(sessionID, datasetID, cps)
+				}
+				return &dsCopy, sessionID, nil
+			}
 			return nil, "", repository.ErrDatasetNotFound
 		}
 	}

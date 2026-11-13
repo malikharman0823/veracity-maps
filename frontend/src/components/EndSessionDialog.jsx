@@ -88,13 +88,13 @@ export default function EndSessionDialog({ trigger, onEnded, className = "" }) {
           <HoldButton
             doneLabel="Session Ended"
             backgroundColor="#27272a"
-            fillColor="#dc2626"
+            fillColor="#05f800"
             textColor="#f5f5f5"
-            fillTextColor="#ffffff"
+            fillTextColor="#000000"
             size="sm"
-            radius={6}
+            radius={14}
             fillDirection="right"
-            holdTime={1500}
+            holdTime={2000}
             releaseTime={200}
             pressScale={0.97}
             wave

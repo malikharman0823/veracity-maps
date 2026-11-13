@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
+	_ "github.com/microsoft/go-mssqldb/sharedmemory"
 )
 
 // InitDB connects to Microsoft SQL Server 2022 using the provided connection string.

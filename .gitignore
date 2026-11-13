@@ -39,6 +39,8 @@ Desktop.ini
 # Vite Cache
 .vite/
 frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
 
 .vercel
 

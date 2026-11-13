@@ -35,16 +35,16 @@ export default function FloorTraversalOverlay({
   const buildingsMap = useMemo(() => {
     const bldMap = new Map()
     members.forEach((m) => {
+      const explicitBuildingName = (m.building_name || m.dataset?.extracted_metadata?.building_name || "").trim()
+      const resolvedBld = resolveBuildingName(m, members, buildings)
       const isFloor = Boolean(
         m.is_building_floor ||
-        m.building_name ||
-        m.floor_level !== undefined ||
         m.dataset?.extracted_metadata?.is_building_floor ||
-        m.dataset?.extracted_metadata?.building_name ||
-        m.dataset?.extracted_metadata?.floor_level !== undefined
+        explicitBuildingName ||
+        resolvedBld
       )
       if (isFloor) {
-        let bName = resolveBuildingName(m, members, buildings) || "Building 1"
+        let bName = resolvedBld || explicitBuildingName || "Building 1"
         if (!bldMap.has(bName)) {
           bldMap.set(bName, new Map())
         }

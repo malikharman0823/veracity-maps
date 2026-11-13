@@ -147,7 +147,16 @@ func (h *Handler) getOrCreateProject(sessionID, datasetID string) (*models.MapPr
 						addedIDs := make(map[string]bool)
 						order := 0
 
-						if matchedBld != nil {
+						isGenericBld := func(bName string) bool {
+							lower := strings.ToLower(strings.TrimSpace(bName))
+							clean := strings.TrimRight(lower, " 0123456789()_-")
+							return clean == "image" || clean == "images" || clean == "photo" || clean == "picture" ||
+								clean == "map" || clean == "layer" || clean == "raster" || clean == "source" ||
+								clean == "upload" || clean == "scan" || clean == "download" || clean == "screenshot" ||
+								clean == "blueprint" || clean == "plan" || clean == "floorplan"
+						}
+
+						if matchedBld != nil && !isGenericBld(matchedBld.Name) {
 							for _, fl := range matchedBld.Floors {
 								for _, dID := range fl.DatasetIDs {
 									if !addedIDs[dID] {
@@ -544,13 +553,19 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 	rawMembers := normalizeRawMembers(cfg)
 
 	existingMemberIDs := make(map[string]bool)
+	dedupedMembers := make([]interface{}, 0, len(rawMembers))
 	for _, rm := range rawMembers {
 		if m, ok := rm.(map[string]interface{}); ok {
 			if dID, ok := m["dataset_id"].(string); ok && dID != "" {
+				if existingMemberIDs[dID] {
+					continue
+				}
 				existingMemberIDs[dID] = true
+				dedupedMembers = append(dedupedMembers, rm)
 			}
 		}
 	}
+	rawMembers = dedupedMembers
 
 	var matchedBld *models.Building
 	if buildings, err := h.repo.ListBuildings(sessionID); err == nil {
@@ -572,8 +587,17 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 	}
 
+	isGenericBld := func(bName string) bool {
+		lower := strings.ToLower(strings.TrimSpace(bName))
+		clean := strings.TrimRight(lower, " 0123456789()_-")
+		return clean == "image" || clean == "images" || clean == "photo" || clean == "picture" ||
+			clean == "map" || clean == "layer" || clean == "raster" || clean == "source" ||
+			clean == "upload" || clean == "scan" || clean == "download" || clean == "screenshot" ||
+			clean == "blueprint" || clean == "plan" || clean == "floorplan"
+	}
+
 	addedAny := false
-	if matchedBld != nil {
+	if matchedBld != nil && !isGenericBld(matchedBld.Name) {
 		for _, fl := range matchedBld.Floors {
 			for _, dID := range fl.DatasetIDs {
 				if !existingMemberIDs[dID] {
@@ -676,6 +700,8 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 		}
 		ensureDatasetMapLayer(ds)
 		memberCopy["dataset"] = ds
+		memberCopy["georeference_status"] = ds.GeoreferenceStatus
+		memberCopy["is_georeferenced"] = ds.GeoreferenceStatus == "completed" || ds.MapLayer != nil
 		if memberCopy["bounds"] == nil && ds.ExtractedMetadata != nil {
 			memberCopy["bounds"] = ds.ExtractedMetadata["bounds"]
 		}
@@ -988,13 +1014,74 @@ func (h *Handler) buildEnrichedManifest(sessionID string, project *models.MapPro
 	return outManifest
 }
 
+func (h *Handler) adoptDatasetIntoSession(targetSessionID, sourceSessionID string, ds *models.Dataset) {
+	if ds == nil || targetSessionID == "" || targetSessionID == sourceSessionID {
+		return
+	}
+	dsCopy := *ds
+	_ = h.repo.InsertDataset(targetSessionID, &dsCopy)
+	if sourceSessionID != "" {
+		if cps, cpErr := h.repo.ListControlPoints(sourceSessionID, ds.ID); cpErr == nil && len(cps) > 0 {
+			_ = h.repo.SetControlPoints(targetSessionID, ds.ID, cps)
+		}
+		if existingIPs, _ := h.repo.ListIconPoints(targetSessionID, ds.ID, ""); len(existingIPs) == 0 {
+			if ips, ipErr := h.repo.ListIconPoints(sourceSessionID, ds.ID, ""); ipErr == nil {
+				for _, ip := range ips {
+					if ip != nil {
+						ipCopy := *ip
+						_, _ = h.repo.CreateIconPoint(targetSessionID, &ipCopy)
+					}
+				}
+			}
+		}
+	}
+}
+
+func (h *Handler) resolveOrAdoptWorkspaceDataset(r *http.Request, w http.ResponseWriter, datasetID string) (*models.Dataset, string, error) {
+	ds, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err == nil && ds != nil {
+		return ds, sessionID, nil
+	}
+
+	reqSessionID := models.GetSessionID(r)
+	if reqSessionID != "" {
+		if sess, sErr := h.repo.GetSession(reqSessionID); sErr == nil && sess != nil {
+			if foundDs, foundSess, fErr := h.datasetService.FindDataset(datasetID); fErr == nil && foundDs != nil {
+				h.adoptDatasetIntoSession(reqSessionID, foundSess, foundDs)
+				if foundSess != "" && foundSess != reqSessionID {
+					if existingProj, _ := h.repo.GetMapProject(reqSessionID, datasetID); existingProj == nil {
+						if srcProj, pErr := h.repo.GetMapProject(foundSess, datasetID); pErr == nil && srcProj != nil {
+							projCopy := *srcProj
+							_ = h.repo.SaveMapProject(reqSessionID, &projCopy)
+							for _, rm := range normalizeRawMembers(srcProj.Configuration) {
+								if m, ok := rm.(map[string]interface{}); ok {
+									if memID, _ := m["dataset_id"].(string); memID != "" && memID != datasetID {
+										if _, gErr := h.repo.GetDataset(reqSessionID, memID); gErr != nil {
+											if memDs, memSess, mErr := h.datasetService.FindDataset(memID); mErr == nil && memDs != nil {
+												h.adoptDatasetIntoSession(reqSessionID, memSess, memDs)
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				return foundDs, reqSessionID, nil
+			}
+		}
+	}
+
+	return nil, "", err
+}
+
 func (h *Handler) GetWorkspace(w http.ResponseWriter, r *http.Request, datasetID string) {
 	if r.Method != http.MethodGet {
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is supported", nil, nil)
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, datasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
@@ -1020,7 +1107,7 @@ func (h *Handler) AttachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, primaryDatasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, primaryDatasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
 		return
@@ -1036,6 +1123,16 @@ func (h *Handler) AttachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 
 	memberDataset, err := h.repo.GetDataset(sessionID, req.DatasetID)
 	if err != nil {
+		if foundDs, foundSess, fErr := h.datasetService.FindDataset(req.DatasetID); fErr == nil && foundDs != nil {
+			_ = h.repo.InsertDataset(sessionID, foundDs)
+			if cps, cpErr := h.repo.ListControlPoints(foundSess, req.DatasetID); cpErr == nil && len(cps) > 0 {
+				_ = h.repo.SetControlPoints(sessionID, req.DatasetID, cps)
+			}
+			memberDataset = foundDs
+			err = nil
+		}
+	}
+	if err != nil || memberDataset == nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Target member dataset not found", nil, nil)
 		return
 	}
@@ -1086,7 +1183,7 @@ func (h *Handler) PatchWorkspaceMember(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, primaryDatasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, primaryDatasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Primary dataset not found", nil, nil)
 		return
@@ -1133,7 +1230,7 @@ func (h *Handler) DetachWorkspaceMember(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, primaryDatasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, primaryDatasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Primary dataset not found", nil, nil)
 		return
@@ -1168,7 +1265,7 @@ func (h *Handler) PatchWorkspaceState(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, primaryDatasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, primaryDatasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Primary dataset not found", nil, nil)
 		return
@@ -1201,7 +1298,7 @@ func (h *Handler) GetWorkspaceRecords(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 
-	_, sessionID, err := h.resolveDatasetAndSession(r, w, primaryDatasetID)
+	_, sessionID, err := h.resolveOrAdoptWorkspaceDataset(r, w, primaryDatasetID)
 	if err != nil {
 		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Primary dataset not found", nil, nil)
 		return

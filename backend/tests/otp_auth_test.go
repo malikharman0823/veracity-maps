@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -155,7 +156,7 @@ func TestOTPRegistrationAndLoginFlow(t *testing.T) {
 	{
 		body, _ := json.Marshal(models.VerifyOTPRequest{
 			Email:   email,
-			Code:    "000000",
+			Code:    "123450",
 			Name:    name,
 			Purpose: "register",
 		})
@@ -316,7 +317,10 @@ func TestMemoryOTPRepositoryRateLimitingAndMaxAttempts(t *testing.T) {
 }
 
 func TestMSSQLOTPRepositoryFlow(t *testing.T) {
-	connStr := "server=127.0.0.1;port=1433;database=veracity_maps;trusted_connection=yes;encrypt=disable"
+	connStr := os.Getenv("MSSQL_TEST_CONNECTION_STRING")
+	if connStr == "" {
+		t.Skip("MSSQL_TEST_CONNECTION_STRING is not configured for live SQL tests")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

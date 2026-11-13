@@ -48,7 +48,6 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react"
-import EndSessionDialog from "../components/EndSessionDialog"
 
 export default function DatasetPage() {
   const { id } = useParams()
@@ -574,8 +573,6 @@ export default function DatasetPage() {
           >
             <Trash2 className="size-4" />
           </Button>
-
-          <EndSessionDialog />
         </div>
       </header>
 

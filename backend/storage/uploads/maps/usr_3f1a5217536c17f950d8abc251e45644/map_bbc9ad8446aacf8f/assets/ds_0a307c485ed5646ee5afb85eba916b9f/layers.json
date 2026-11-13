@@ -1,0 +1,16 @@
+[
+  {
+    "id": "lyr_fd15bb15ab6c26eb9ba1f7d3a13409be",
+    "dataset_id": "ds_0a307c485ed5646ee5afb85eba916b9f",
+    "name": "images.png",
+    "type": "raster",
+    "visible": true,
+    "opacity": 1,
+    "bounds": [
+      74.71049645922244,
+      26.793481868607376,
+      77.78278582069586,
+      28.634218228049498
+    ]
+  }
+]

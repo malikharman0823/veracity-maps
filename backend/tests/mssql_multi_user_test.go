@@ -214,6 +214,58 @@ func TestMigrationsRollbackFailedFile(t *testing.T) {
 	}
 }
 
+func TestMSSQLSharedMapIncludesInviterIdentity(t *testing.T) {
+	database := getTestMSSQLDB(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	ownerID := "usr_owner_" + suffix
+	recipientID := "usr_recipient_" + suffix
+	mapID := "map_shared_" + suffix
+	shareID := "share_" + suffix
+
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(ctx, `DELETE FROM dbo.Map_Shares WHERE id = @p1;`, shareID)
+		_, _ = database.ExecContext(ctx, `DELETE FROM dbo.Maps WHERE id = @p1;`, mapID)
+		_, _ = database.ExecContext(ctx, `DELETE FROM dbo.Users WHERE id IN (@p1, @p2);`, ownerID, recipientID)
+	})
+
+	now := time.Now().UTC()
+	for _, user := range []struct{ id, email, name string }{
+		{ownerID, "owner-" + suffix + "@example.com", "Alice Inviter"},
+		{recipientID, "recipient-" + suffix + "@example.com", "Bob Recipient"},
+	} {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO dbo.Users (id, email, name, password_hash, salt, created_at, updated_at)
+			VALUES (@p1, @p2, @p3, 'test-hash', 'test-salt', @p4, @p4);
+		`, user.id, user.email, user.name, now); err != nil {
+			t.Fatalf("insert test user: %v", err)
+		}
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO dbo.Maps (id, owner_user_id, name, map_name, map_configuration, revision_number, created_by, created_at, updated_at)
+		VALUES (@p1, @p2, 'Shared Floorplan', 'Shared Floorplan', '{}', 1, @p2, @p3, @p3);
+	`, mapID, ownerID, now); err != nil {
+		t.Fatalf("insert shared test map: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO dbo.Map_Shares (id, map_id, user_id, permission, shared_by, created_at, updated_at)
+		VALUES (@p1, @p2, @p3, 'editor', @p4, @p5, @p5);
+	`, shareID, mapID, recipientID, ownerID, now); err != nil {
+		t.Fatalf("insert shared-map grant: %v", err)
+	}
+
+	maps, err := repository.NewMSSQLMapRepository(database).ListSharedWithMe(ctx, recipientID)
+	if err != nil {
+		t.Fatalf("list shared maps: %v", err)
+	}
+	if len(maps) != 1 {
+		t.Fatalf("shared map count = %d, want 1", len(maps))
+	}
+	if maps[0].SharedBy != ownerID || maps[0].SharedByName != "Alice Inviter" {
+		t.Fatalf("shared map inviter = %q (%q), want Alice Inviter (%q)", maps[0].SharedByName, maps[0].SharedBy, ownerID)
+	}
+}
+
 func setupMSSQLServer(t *testing.T, sqlDB *sql.DB) (*httptest.Server, *repository.AuthRepository, *repository.ProjectRepository) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{

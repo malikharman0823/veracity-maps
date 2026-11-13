@@ -17,6 +17,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/maps"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
@@ -31,22 +32,27 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
-	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 5*time.Second)
+	dbTimeout := 1200 * time.Millisecond
+	if cfg.Environment == "production" {
+		dbTimeout = 5 * time.Second
+	}
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), dbTimeout)
 	sqlDB, err := db.InitDB(startupCtx, cfg.MSSQLConnStr)
 
 	var authRepo repository.AuthRepo
 	var otpRepo repository.OTPRepo
 	var profileRepo repository.ProfileRepo
+	var mapRepo repository.MapRepo
 
 	if err != nil {
 		cancelStartup()
 		if cfg.Environment == "production" {
-			log.Fatal("Failed to connect to MSSQL; check database availability and configuration (connection details withheld)")
+			log.Fatal("Failed to connect to MSSQL; durable authentication and map persistence are required (connection details withheld)")
 		}
 		log.Println("==================================================================")
 		log.Println(" [DEV NOTICE] MSSQL Server TCP connection (port 1433) is offline.")
 		log.Println(" [DEV NOTICE] Automatically running in local development mode.")
-		log.Println(" [DEV NOTICE] SMTP Email OTP delivery and workspaces are ACTIVE.")
+		log.Println(" [DEV NOTICE] SMTP Email OTP delivery and personal maps are ACTIVE.")
 		log.Println("==================================================================")
 
 		memAuth, authErr := repository.NewAuthRepository("storage")
@@ -56,6 +62,7 @@ func main() {
 		authRepo = memAuth
 		otpRepo = repository.NewMemoryOTPRepository()
 		profileRepo = repository.NewMemoryProfileRepository(memAuth)
+		mapRepo = repository.NewMemoryMapRepository()
 	} else {
 		defer sqlDB.Close()
 		if err := db.RunMigrations(startupCtx, sqlDB, "migrations"); err != nil {
@@ -66,6 +73,7 @@ func main() {
 		authRepo = repository.NewMSSQLAuthRepository(sqlDB)
 		otpRepo = repository.NewMSSQLOTPRepository(sqlDB)
 		profileRepo = repository.NewMSSQLProfileRepository(sqlDB)
+		mapRepo = repository.NewMSSQLMapRepository(sqlDB)
 	}
 
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
@@ -91,6 +99,7 @@ func main() {
 	exportService := services.NewExportService(repo, sm)
 
 	uploadHandler := upload.NewHandler(datasetService, repo, sm)
+	uploadHandler.SetMapRepo(mapRepo)
 	datasetsHandler := datasets.NewHandler(datasetService, repo)
 	georefHandler := georeference.NewHandler(georefService, repo)
 	exportHandler := export.NewHandler(exportService, repo)
@@ -112,6 +121,8 @@ func main() {
 	projectsHandler := projects.NewHandler(projRepo, repo, authRepo, mailer, cfg.AppPublicURL)
 	profileHandler := profile.NewHandler(profileRepo, mailer, "storage", cfg.AppPublicURL)
 	profileHandler.SetRepositories(repo, projRepo, authRepo)
+	mapsHandler := maps.NewHandler(mapRepo, mailer, cfg.AppPublicURL)
+	mapsHandler.SetConfigurationService(services.NewMapConfigurationService(mapRepo, cfg.UploadDir, cfg.SessionStorageDir))
 
 	router := api.NewRouter(
 		repo,
@@ -126,6 +137,7 @@ func main() {
 		projectsHandler,
 		profileHandler,
 	)
+	router.SetMapsHandler(mapsHandler)
 
 	// Background session cleaner
 	go func() {

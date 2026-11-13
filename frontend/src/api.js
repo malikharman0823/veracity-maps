@@ -1,5 +1,6 @@
 import axios from "axios"
-import { normalizeSavedConfigs } from "./lib/sessionLoading"
+import { findDatasetSessionId, isBackendSessionId } from "./lib/sessionLoading"
+import { syncUploadSession } from "./lib/uploadSession"
 
 function requiredSetting(name) {
   const value = import.meta.env[name]
@@ -43,10 +44,8 @@ export function clearAuthToken() {
 export function getActiveSessionId() {
   try {
     return (
-      localStorage.getItem(SESSION_STORAGE_KEY) ||
       sessionStorage.getItem(SESSION_STORAGE_KEY) ||
-      localStorage.getItem("maptiler_active_session_id") ||
-      sessionStorage.getItem("maptiler_active_session_id") ||
+      localStorage.getItem(SESSION_STORAGE_KEY) ||
       null
     )
   } catch {
@@ -57,11 +56,11 @@ export function getActiveSessionId() {
 export function setActiveSessionId(sessionId) {
   try {
     if (sessionId) {
-      localStorage.setItem(SESSION_STORAGE_KEY, sessionId)
       sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId)
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId)
     } else {
-      localStorage.removeItem(SESSION_STORAGE_KEY)
       sessionStorage.removeItem(SESSION_STORAGE_KEY)
+      localStorage.removeItem(SESSION_STORAGE_KEY)
     }
   } catch {
     // Local storage access error fallback
@@ -69,10 +68,12 @@ export function setActiveSessionId(sessionId) {
 }
 
 export function clearActiveSessionId() {
+  lastVerifiedSessionId = null
+  lastVerifiedAt = 0
   setActiveSessionId(null)
 }
 
-const client = axios.create({ baseURL: API_URL, timeout: 30_000 })
+const client = axios.create({ baseURL: API_URL, timeout: 30_000, withCredentials: true })
 
 client.interceptors.request.use((config) => {
   const sid = getActiveSessionId()
@@ -88,10 +89,8 @@ client.interceptors.request.use((config) => {
 
 client.interceptors.response.use(
   (response) => {
-    const returnedSid = response.headers?.["x-session-id"]
-    if (returnedSid && returnedSid !== getActiveSessionId()) {
-      setActiveSessionId(returnedSid)
-    }
+    // Note: Never silently overwrite active session from arbitrary response headers,
+    // which causes cross-tab contamination when switching maps or workspaces.
     return response
   },
   (error) => {
@@ -135,6 +134,15 @@ export async function registerUser(name, email, password) {
 
 export async function loginUser(email, password) {
   const response = await client.post("/api/auth/login", { email, password })
+  const data = response.data.data
+  if (data?.token) {
+    setAuthToken(data.token)
+  }
+  return data
+}
+
+export async function testLogin(email, name = "") {
+  const response = await client.post("/api/auth/test-login", { email, name })
   const data = response.data.data
   if (data?.token) {
     setAuthToken(data.token)
@@ -190,6 +198,11 @@ export async function deleteUserProject(projectId) {
 export async function listSharedProjects() {
   const response = await client.get("/api/projects/shared")
   return response.data.data?.shared_projects || []
+}
+
+export async function leaveSharedProject(projectId) {
+  const response = await client.post(`/api/projects/${encodeURIComponent(projectId)}/leave`)
+  return response.data.data
 }
 
 export async function listUserInvitations() {
@@ -266,13 +279,45 @@ export async function createSession() {
 export async function getSession(sessionId) {
   const sid = sessionId || getActiveSessionId()
   if (!sid) return null
-  const response = await client.get(`/sessions/${encodeURIComponent(sid)}`)
-  return response.data.data
+  try {
+    const response = await client.get(`/sessions/${encodeURIComponent(sid)}`, {
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+    })
+    if (response.status === 404) {
+      return null
+    }
+    return response.data.data
+  } catch {
+    return null
+  }
 }
 
 export async function listSessions() {
   const response = await client.get("/sessions")
   return response.data.data?.sessions || []
+}
+
+export async function ensureDatasetSession(datasetId) {
+  const existing = getActiveSessionId()
+  if (existing && isBackendSessionId(existing) && lastVerifiedSessionId === existing && Date.now() - lastVerifiedAt < 30_000) {
+    return existing
+  }
+  if (!datasetId) return ensureActiveSession()
+
+  try {
+    const sessions = await listSessions()
+    const sessionId = findDatasetSessionId(sessions, datasetId)
+    if (sessionId && isBackendSessionId(sessionId)) {
+      setActiveSessionId(sessionId)
+      lastVerifiedSessionId = sessionId
+      lastVerifiedAt = Date.now()
+      return sessionId
+    }
+  } catch {
+    // Fall back to active session
+  }
+
+  return ensureActiveSession()
 }
 
 export function switchSession(sessionId, targetDatasetId = null) {
@@ -326,8 +371,15 @@ export async function saveSessionMapConfig(sessionId, configuration) {
 }
 
 let ensureSessionPromise = null
+let lastVerifiedSessionId = null
+let lastVerifiedAt = 0
 
 export async function ensureActiveSession() {
+  const current = getActiveSessionId()
+  if (current && isBackendSessionId(current) && lastVerifiedSessionId === current && Date.now() - lastVerifiedAt < 30_000) {
+    return current
+  }
+
   if (ensureSessionPromise) {
     return ensureSessionPromise
   }
@@ -335,16 +387,28 @@ export async function ensureActiveSession() {
   ensureSessionPromise = (async () => {
     const existing = getActiveSessionId()
     if (existing) {
-      try {
-        const info = await getSession(existing)
-        if (info && info.session_id) {
-          return info.session_id
-        }
-      } catch {
+      if (!isBackendSessionId(existing)) {
         clearActiveSessionId()
+      } else {
+        try {
+          const info = await getSession(existing)
+          if (info && (info.session_id || info.id)) {
+            const validId = info.session_id || info.id
+            lastVerifiedSessionId = validId
+            lastVerifiedAt = Date.now()
+            return validId
+          }
+          clearActiveSessionId()
+        } catch {
+          clearActiveSessionId()
+        }
       }
     }
     const created = await createSession()
+    if (created?.session_id) {
+      lastVerifiedSessionId = created.session_id
+      lastVerifiedAt = Date.now()
+    }
     return created.session_id
   })().finally(() => {
     ensureSessionPromise = null
@@ -365,23 +429,37 @@ export async function getDataset(datasetId, signal) {
   return response.data.data
 }
 
-export async function uploadDataset(file, onUploadProgress) {
+export async function uploadDataset(file, onUploadProgress, projectId, mapId) {
   const body = new FormData()
   body.append("file", file)
+  if (projectId) body.append("project_id", projectId)
+  if (mapId) body.append("map_id", mapId)
+  const headers = {}
+  if (projectId) headers["X-Project-Id"] = projectId
+  if (mapId) headers["X-Map-Id"] = mapId
   const response = await client.post("/upload", body, {
+    headers,
     onUploadProgress,
     timeout: 10 * 60_000,
   })
+  syncUploadSession(response, setActiveSessionId)
   return response.data.data
 }
 
-export async function importDatasetZip(file, onUploadProgress) {
+export async function importDatasetZip(file, onUploadProgress, projectId, mapId) {
   const body = new FormData()
   body.append("file", file)
+  if (projectId) body.append("project_id", projectId)
+  if (mapId) body.append("map_id", mapId)
+  const headers = {}
+  if (projectId) headers["X-Project-Id"] = projectId
+  if (mapId) headers["X-Map-Id"] = mapId
   const response = await client.post("/datasets/import-zip", body, {
+    headers,
     onUploadProgress,
     timeout: 10 * 60_000,
   })
+  syncUploadSession(response, setActiveSessionId)
   return response.data.data
 }
 
@@ -553,6 +631,9 @@ export async function getWorkspace(datasetId, signal) {
 }
 
 export async function attachWorkspaceDataset(primaryDatasetId, datasetId) {
+  if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+    throw new Error("Cannot attach to undefined primary dataset")
+  }
   const response = await client.post(
     `/datasets/${encodeURIComponent(primaryDatasetId)}/workspace/members`,
     { dataset_id: datasetId },
@@ -561,6 +642,9 @@ export async function attachWorkspaceDataset(primaryDatasetId, datasetId) {
 }
 
 export async function patchWorkspaceMember(primaryDatasetId, datasetId, patch) {
+  if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+    return null
+  }
   const response = await client.patch(
     `/datasets/${encodeURIComponent(primaryDatasetId)}/workspace/members/${encodeURIComponent(datasetId)}`,
     patch,
@@ -569,6 +653,9 @@ export async function patchWorkspaceMember(primaryDatasetId, datasetId, patch) {
 }
 
 export async function detachWorkspaceDataset(primaryDatasetId, datasetId) {
+  if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+    return null
+  }
   const response = await client.delete(
     `/datasets/${encodeURIComponent(primaryDatasetId)}/workspace/members/${encodeURIComponent(datasetId)}`,
   )
@@ -576,6 +663,9 @@ export async function detachWorkspaceDataset(primaryDatasetId, datasetId) {
 }
 
 export async function patchWorkspaceState(primaryDatasetId, patch) {
+  if (!primaryDatasetId || primaryDatasetId === "undefined" || primaryDatasetId === "null") {
+    return null
+  }
   const response = await client.patch(
     `/datasets/${encodeURIComponent(primaryDatasetId)}/workspace/state`,
     patch,
@@ -1147,34 +1237,6 @@ export async function generateDatasetMbtiles(datasetId, resampling = "") {
 // Saved Configurations API
 // -------------------------------------------------------------
 
-export async function listSavedConfigs(sessionId) {
-  const sid = sessionId || getActiveSessionId()
-  if (!sid) return []
-  const response = await client.get(`/sessions/${encodeURIComponent(sid)}/configs`)
-  return normalizeSavedConfigs(response.data.data)
-}
-
-export async function createSavedConfig(sessionId, configPayload) {
-  const sid = sessionId || getActiveSessionId()
-  if (!sid) throw new Error("No active session")
-  const response = await client.post(`/sessions/${encodeURIComponent(sid)}/configs`, configPayload)
-  return response.data.data
-}
-
-export async function getSavedConfig(sessionId, configId) {
-  const sid = sessionId || getActiveSessionId()
-  if (!sid) throw new Error("No active session")
-  const response = await client.get(`/sessions/${encodeURIComponent(sid)}/configs/${encodeURIComponent(configId)}`)
-  return response.data.data
-}
-
-export async function deleteSavedConfig(sessionId, configId) {
-  const sid = sessionId || getActiveSessionId()
-  if (!sid) throw new Error("No active session")
-  const response = await client.delete(`/sessions/${encodeURIComponent(sid)}/configs/${encodeURIComponent(configId)}`)
-  return response.data.data
-}
-
 // -------------------------------------------------------------
 // User Profile & Profile Dashboard API
 // -------------------------------------------------------------
@@ -1203,4 +1265,176 @@ export async function deleteProfileFile(fileId) {
   const response = await client.delete(`/api/profile/files/${encodeURIComponent(fileId)}`)
   return response.data.data
 }
+
+// -------------------------------------------------------------
+// Personal Maps & Map Sharing API
+// Architecture: User -> Personal Dashboard -> My Maps -> Share Map -> Shared With Me
+// -------------------------------------------------------------
+
+// Maps CRUD
+export async function listMaps() {
+  const response = await client.get("/api/maps")
+  return response.data.data
+}
+
+export async function createMap(name, description = "") {
+  const response = await client.post("/api/maps", { name, description })
+  return response.data.data
+}
+
+export async function getMap(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}`)
+  return response.data.data
+}
+
+export async function updateMap(mapId, name, description = "") {
+  const response = await client.put(`/api/maps/${encodeURIComponent(mapId)}`, { name, description })
+  return response.data.data
+}
+
+export async function deleteMap(mapId) {
+  const response = await client.delete(`/api/maps/${encodeURIComponent(mapId)}`)
+  return response.data.data
+}
+
+// Single-Editor Locks
+export async function acquireMapLock(mapId) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/lock`)
+  return response.data.data
+}
+
+export async function renewMapLock(mapId) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/lock/renew`)
+  return response.data.data
+}
+
+export async function releaseMapLock(mapId) {
+  const response = await client.delete(`/api/maps/${encodeURIComponent(mapId)}/lock`)
+  return response.data.data
+}
+
+export async function getMapLock(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}/lock`)
+  return response.data.data
+}
+
+// Map Configuration & Revisions
+export async function createMapFromConfiguration(payload) {
+  const response = await client.post("/api/maps/from-configuration", payload)
+  return response.data.data
+}
+
+export async function saveMapConfig(mapId, config, description = "", expectedRevision = 0) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/save`, {
+    configuration: config,
+    description,
+    expected_revision: expectedRevision,
+  })
+  return response.data.data
+}
+
+export async function listMapRevisions(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}/revisions`)
+  return response.data.data?.revisions || []
+}
+
+export async function restoreMapRevision(mapId, revisionId) {
+  const response = await client.post(
+    `/api/maps/${encodeURIComponent(mapId)}/revisions/${encodeURIComponent(revisionId)}/restore`
+  )
+  return response.data.data
+}
+
+// User Files (Personal Storage)
+export async function listUserFiles() {
+  const response = await client.get("/api/user/files")
+  return response.data.data?.files || []
+}
+
+export async function deleteUserFile(fileId) {
+  const response = await client.delete(`/api/user/files/${encodeURIComponent(fileId)}`)
+  return response.data.data
+}
+
+// Email-Based Map Sharing
+export async function inviteToMap(mapId, email, permission = "editor") {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/invitations`, {
+    email,
+    permission,
+  })
+  return response.data.data
+}
+
+export async function listMapShares(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}/shares`)
+  return response.data.data
+}
+
+export async function updateMapShare(mapId, shareId, permission) {
+  const response = await client.patch(
+    `/api/maps/${encodeURIComponent(mapId)}/shares/${encodeURIComponent(shareId)}`,
+    { permission }
+  )
+  return response.data.data
+}
+
+export async function revokeMapShare(mapId, shareId) {
+  const response = await client.delete(
+    `/api/maps/${encodeURIComponent(mapId)}/shares/${encodeURIComponent(shareId)}`
+  )
+  return response.data.data
+}
+
+export async function getMapInvitation(token) {
+  const response = await client.get(`/api/map-invitations/${encodeURIComponent(token)}`)
+  return response.data.data
+}
+
+export async function acceptMapInvitation(token) {
+  const response = await client.post(`/api/map-invitations/${encodeURIComponent(token)}/accept`)
+  return response.data.data
+}
+
+export async function declineMapInvitation(token) {
+  const response = await client.post(`/api/map-invitations/${encodeURIComponent(token)}/decline`)
+  return response.data.data
+}
+
+// Secure Shareable Links
+export async function createShareLink(mapId, { permission = "viewer", isPublic = true, expiresInDays = 7 } = {}) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/share-links`, {
+    permission,
+    is_public: isPublic,
+    expires_in_days: expiresInDays,
+  })
+  return response.data.data
+}
+
+export async function listShareLinks(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}/share-links`)
+  return response.data.data?.links || []
+}
+
+export async function revokeShareLink(mapId, linkId) {
+  const response = await client.delete(
+    `/api/maps/${encodeURIComponent(mapId)}/share-links/${encodeURIComponent(linkId)}`
+  )
+  return response.data.data
+}
+
+export async function resolveShareLink(token) {
+  const response = await client.get(`/api/share/${encodeURIComponent(token)}`)
+  return response.data.data
+}
+
+// Compatibility Aliases
+export const listWorkspaceMaps = listMaps
+export const createWorkspaceMap = createMap
+export const getWorkspaceMap = getMap
+export const updateWorkspaceMap = updateMap
+export const deleteWorkspaceMap = deleteMap
+export const saveWorkspaceMapConfig = saveMapConfig
+export const listWorkspaceMapRevisions = listMapRevisions
+export const listWorkspaceFiles = listUserFiles
+export const deleteWorkspaceFile = deleteUserFile
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
@@ -20,6 +21,7 @@ type Handler struct {
 	datasetService *services.DatasetService
 	repo           *repository.SessionRepository
 	storage        *storage.StorageManager
+	mapRepo        repository.MapRepo
 }
 
 func NewHandler(ds *services.DatasetService, repo *repository.SessionRepository, sm *storage.StorageManager) *Handler {
@@ -30,15 +32,40 @@ func NewHandler(ds *services.DatasetService, repo *repository.SessionRepository,
 	}
 }
 
+func (h *Handler) SetMapRepo(repo repository.MapRepo) {
+	h.mapRepo = repo
+}
+
+func extractMapIDFromRequest(r *http.Request, sessionID string) string {
+	mapID := strings.TrimSpace(r.FormValue("map_id"))
+	if mapID == "" {
+		mapID = strings.TrimSpace(r.Header.Get("X-Map-Id"))
+	}
+	if mapID == "" && strings.HasPrefix(sessionID, "map_") {
+		trimmed := strings.TrimPrefix(sessionID, "map_")
+		if strings.HasPrefix(trimmed, "map_") {
+			mapID = trimmed
+		} else {
+			mapID = sessionID
+		}
+	}
+	return mapID
+}
+
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is allowed", nil, nil)
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
+	requestedSessionID := models.GetSessionID(r)
+	sessionID := requestedSessionID
 	if sessionID == "" {
 		// If no session passed, create an automatic session
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	} else if _, err := h.repo.GetSession(sessionID); err != nil {
 		sess := h.repo.CreateSession()
 		sessionID = sess.ID
 		w.Header().Set("X-Session-ID", sessionID)
@@ -145,6 +172,31 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.mapRepo != nil {
+		userID := ""
+		userName := ""
+		if u := models.GetUserFromContext(r.Context()); u != nil {
+			userID = u.ID
+			userName = u.Name
+		}
+		mapID := extractMapIDFromRequest(r, requestedSessionID)
+		if mapID == "" {
+			mapID = extractMapIDFromRequest(r, sessionID)
+		}
+		_ = h.mapRepo.RegisterAsset(r.Context(), &models.MapAsset{
+			ID:               dataset.ID,
+			MapID:            mapID,
+			OwnerUserID:      userID,
+			OwnerUserName:    userName,
+			OriginalFilename: dataset.Filename,
+			StoragePath:      dataset.StoragePath,
+			FileType:         dataset.ContentType,
+			FileSize:         dataset.FileSize,
+			MimeType:         dataset.ContentType,
+			CreatedAt:        time.Now().UTC(),
+		})
+	}
+
 	w.Header().Set("X-Session-ID", sessionID)
 	models.WriteJSON(w, http.StatusCreated, UploadData{
 		ID:                 dataset.ID,
@@ -190,6 +242,33 @@ func (h *Handler) ImportPdfPages(w http.ResponseWriter, r *http.Request) {
 		}
 		models.WriteError(w, statusCode, errCode, msg, nil, nil)
 		return
+	}
+
+	if h.mapRepo != nil && res != nil {
+		userID := ""
+		userName := ""
+		if u := models.GetUserFromContext(r.Context()); u != nil {
+			userID = u.ID
+			userName = u.Name
+		}
+		mapID := extractMapIDFromRequest(r, sessionID)
+		for _, ds := range res.Datasets {
+			if ds == nil {
+				continue
+			}
+			_ = h.mapRepo.RegisterAsset(r.Context(), &models.MapAsset{
+				ID:               ds.ID,
+				MapID:            mapID,
+				OwnerUserID:      userID,
+				OwnerUserName:    userName,
+				OriginalFilename: ds.Filename,
+				StoragePath:      ds.StoragePath,
+				FileType:         ds.ContentType,
+				FileSize:         ds.FileSize,
+				MimeType:         ds.ContentType,
+				CreatedAt:        time.Now().UTC(),
+			})
+		}
 	}
 
 	models.WriteJSON(w, http.StatusOK, res)
@@ -241,6 +320,10 @@ func (h *Handler) InspectArchive(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := models.GetSessionID(r)
 	if sessionID == "" {
+		sess := h.repo.CreateSession()
+		sessionID = sess.ID
+		w.Header().Set("X-Session-ID", sessionID)
+	} else if _, err := h.repo.GetSession(sessionID); err != nil {
 		sess := h.repo.CreateSession()
 		sessionID = sess.ID
 		w.Header().Set("X-Session-ID", sessionID)
@@ -321,6 +404,35 @@ func (h *Handler) ImportArchiveSelected(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if h.mapRepo != nil && res != nil {
+		userID := ""
+		userName := ""
+		if u := models.GetUserFromContext(r.Context()); u != nil {
+			userID = u.ID
+			userName = u.Name
+		}
+		mapID := extractMapIDFromRequest(r, sessionID)
+		for _, item := range res.Results {
+			if item == nil || item.DatasetID == "" {
+				continue
+			}
+			if ds, gErr := h.repo.GetDataset(sessionID, item.DatasetID); gErr == nil && ds != nil {
+				_ = h.mapRepo.RegisterAsset(r.Context(), &models.MapAsset{
+					ID:               ds.ID,
+					MapID:            mapID,
+					OwnerUserID:      userID,
+					OwnerUserName:    userName,
+					OriginalFilename: ds.Filename,
+					StoragePath:      ds.StoragePath,
+					FileType:         ds.ContentType,
+					FileSize:         ds.FileSize,
+					MimeType:         ds.ContentType,
+					CreatedAt:        time.Now().UTC(),
+				})
+			}
+		}
+	}
+
 	models.WriteJSON(w, http.StatusOK, res)
 }
 
@@ -387,7 +499,8 @@ func (h *Handler) ReopenProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := models.GetSessionID(r)
+	requestedSessionID := models.GetSessionID(r)
+	sessionID := requestedSessionID
 	if sessionID == "" {
 		sess := h.repo.CreateSession()
 		sessionID = sess.ID
@@ -436,6 +549,31 @@ func (h *Handler) ReopenProject(w http.ResponseWriter, r *http.Request) {
 		}
 		models.WriteError(w, statusCode, errCode, msg, nil, nil)
 		return
+	}
+
+	if h.mapRepo != nil {
+		userID := ""
+		userName := ""
+		if u := models.GetUserFromContext(r.Context()); u != nil {
+			userID = u.ID
+			userName = u.Name
+		}
+		mapID := extractMapIDFromRequest(r, requestedSessionID)
+		if mapID == "" {
+			mapID = extractMapIDFromRequest(r, sessionID)
+		}
+		_ = h.mapRepo.RegisterAsset(r.Context(), &models.MapAsset{
+			ID:               dataset.ID,
+			MapID:            mapID,
+			OwnerUserID:      userID,
+			OwnerUserName:    userName,
+			OriginalFilename: dataset.Filename,
+			StoragePath:      dataset.StoragePath,
+			FileType:         dataset.ContentType,
+			FileSize:         dataset.FileSize,
+			MimeType:         dataset.ContentType,
+			CreatedAt:        time.Now().UTC(),
+		})
 	}
 
 	w.Header().Set("X-Session-ID", sessionID)
