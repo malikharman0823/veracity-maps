@@ -3,6 +3,100 @@
 -- Enforces: USER -> PROJECT -> MAP -> ASSETS & CONFIGURATIONS
 -- ============================================================================
 
+-- Ensure pre-existing constraints do not block idempotent execution
+IF OBJECT_ID(N'dbo.FK_Maps_Project') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_Maps_Project NVARCHAR(512);
+    SELECT @parentTable_FK_Maps_Project = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_Maps_Project');
+    IF @parentTable_FK_Maps_Project IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_Maps_Project + ' DROP CONSTRAINT [FK_Maps_Project];');
+END;
+IF OBJECT_ID(N'dbo.FK_Maps_Creator') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_Maps_Creator NVARCHAR(512);
+    SELECT @parentTable_FK_Maps_Creator = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_Maps_Creator');
+    IF @parentTable_FK_Maps_Creator IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_Maps_Creator + ' DROP CONSTRAINT [FK_Maps_Creator];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapConfigurations_Map') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapConfigurations_Map NVARCHAR(512);
+    SELECT @parentTable_FK_MapConfigurations_Map = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapConfigurations_Map');
+    IF @parentTable_FK_MapConfigurations_Map IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapConfigurations_Map + ' DROP CONSTRAINT [FK_MapConfigurations_Map];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapConfigurations_Creator') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapConfigurations_Creator NVARCHAR(512);
+    SELECT @parentTable_FK_MapConfigurations_Creator = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapConfigurations_Creator');
+    IF @parentTable_FK_MapConfigurations_Creator IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapConfigurations_Creator + ' DROP CONSTRAINT [FK_MapConfigurations_Creator];');
+END;
+IF OBJECT_ID(N'dbo.CK_MapConfigurations_JSON') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_CK_MapConfigurations_JSON NVARCHAR(512);
+    SELECT @parentTable_CK_MapConfigurations_JSON = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.CK_MapConfigurations_JSON');
+    IF @parentTable_CK_MapConfigurations_JSON IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_CK_MapConfigurations_JSON + ' DROP CONSTRAINT [CK_MapConfigurations_JSON];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapAssets_Project') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapAssets_Project NVARCHAR(512);
+    SELECT @parentTable_FK_MapAssets_Project = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapAssets_Project');
+    IF @parentTable_FK_MapAssets_Project IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapAssets_Project + ' DROP CONSTRAINT [FK_MapAssets_Project];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapAssets_Map') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapAssets_Map NVARCHAR(512);
+    SELECT @parentTable_FK_MapAssets_Map = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapAssets_Map');
+    IF @parentTable_FK_MapAssets_Map IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapAssets_Map + ' DROP CONSTRAINT [FK_MapAssets_Map];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapAssets_User') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapAssets_User NVARCHAR(512);
+    SELECT @parentTable_FK_MapAssets_User = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapAssets_User');
+    IF @parentTable_FK_MapAssets_User IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapAssets_User + ' DROP CONSTRAINT [FK_MapAssets_User];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapDrafts_Project') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapDrafts_Project NVARCHAR(512);
+    SELECT @parentTable_FK_MapDrafts_Project = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapDrafts_Project');
+    IF @parentTable_FK_MapDrafts_Project IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapDrafts_Project + ' DROP CONSTRAINT [FK_MapDrafts_Project];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapDrafts_Map') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapDrafts_Map NVARCHAR(512);
+    SELECT @parentTable_FK_MapDrafts_Map = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapDrafts_Map');
+    IF @parentTable_FK_MapDrafts_Map IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapDrafts_Map + ' DROP CONSTRAINT [FK_MapDrafts_Map];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapDrafts_User') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapDrafts_User NVARCHAR(512);
+    SELECT @parentTable_FK_MapDrafts_User = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapDrafts_User');
+    IF @parentTable_FK_MapDrafts_User IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapDrafts_User + ' DROP CONSTRAINT [FK_MapDrafts_User];');
+END;
+IF OBJECT_ID(N'dbo.UQ_MapDrafts_MapUser') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_UQ_MapDrafts_MapUser NVARCHAR(512);
+    SELECT @parentTable_UQ_MapDrafts_MapUser = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.UQ_MapDrafts_MapUser');
+    IF @parentTable_UQ_MapDrafts_MapUser IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_UQ_MapDrafts_MapUser + ' DROP CONSTRAINT [UQ_MapDrafts_MapUser];');
+END;
+IF OBJECT_ID(N'dbo.FK_Activities_Map') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_Activities_Map NVARCHAR(512);
+    SELECT @parentTable_FK_Activities_Map = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_Activities_Map');
+    IF @parentTable_FK_Activities_Map IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_Activities_Map + ' DROP CONSTRAINT [FK_Activities_Map];');
+END;
+GO
+
 -- 1. Ensure Projects table has all canonical columns
 IF OBJECT_ID(N'dbo.Projects', N'U') IS NOT NULL
 BEGIN
@@ -31,8 +125,14 @@ BEGIN
         CONSTRAINT FK_Maps_Project FOREIGN KEY (project_id) REFERENCES dbo.Projects(id) ON DELETE CASCADE,
         CONSTRAINT FK_Maps_Creator FOREIGN KEY (created_by) REFERENCES dbo.Users(id)
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Maps_ProjectID' AND object_id = OBJECT_ID(N'dbo.Maps'))
+BEGIN
     CREATE INDEX IX_Maps_ProjectID ON dbo.Maps(project_id);
+END;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Maps_CreatedBy' AND object_id = OBJECT_ID(N'dbo.Maps'))
+BEGIN
     CREATE INDEX IX_Maps_CreatedBy ON dbo.Maps(created_by);
+END;
 END
 ELSE
 BEGIN
@@ -69,8 +169,14 @@ BEGIN
         CONSTRAINT FK_MapConfigurations_Creator FOREIGN KEY (created_by) REFERENCES dbo.Users(id),
         CONSTRAINT CK_MapConfigurations_JSON CHECK (ISJSON(configuration_json) = 1)
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapConfigurations_MapID' AND object_id = OBJECT_ID(N'dbo.MapConfigurations'))
+BEGIN
     CREATE INDEX IX_MapConfigurations_MapID ON dbo.MapConfigurations(map_id);
+END;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapConfigurations_Revision' AND object_id = OBJECT_ID(N'dbo.MapConfigurations'))
+BEGIN
     CREATE INDEX IX_MapConfigurations_Revision ON dbo.MapConfigurations(map_id, revision_number);
+END;
 END;
 GO
 
@@ -92,9 +198,18 @@ BEGIN
         CONSTRAINT FK_MapAssets_Map FOREIGN KEY (map_id) REFERENCES dbo.Maps(id) ON DELETE CASCADE,
         CONSTRAINT FK_MapAssets_User FOREIGN KEY (owner_user_id) REFERENCES dbo.Users(id)
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapAssets_ProjectID' AND object_id = OBJECT_ID(N'dbo.MapAssets'))
+BEGIN
     CREATE INDEX IX_MapAssets_ProjectID ON dbo.MapAssets(project_id);
+END;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapAssets_MapID' AND object_id = OBJECT_ID(N'dbo.MapAssets'))
+BEGIN
     CREATE INDEX IX_MapAssets_MapID ON dbo.MapAssets(map_id);
+END;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapAssets_UserID' AND object_id = OBJECT_ID(N'dbo.MapAssets'))
+BEGIN
     CREATE INDEX IX_MapAssets_UserID ON dbo.MapAssets(owner_user_id);
+END;
 END;
 GO
 
@@ -115,7 +230,10 @@ BEGIN
         CONSTRAINT FK_MapDrafts_User FOREIGN KEY (user_id) REFERENCES dbo.Users(id),
         CONSTRAINT UQ_MapDrafts_MapUser UNIQUE (map_id, user_id)
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapDrafts_MapUser' AND object_id = OBJECT_ID(N'dbo.MapDrafts'))
+BEGIN
     CREATE INDEX IX_MapDrafts_MapUser ON dbo.MapDrafts(map_id, user_id);
+END;
 END;
 GO
 
@@ -126,7 +244,10 @@ BEGIN
     BEGIN
         ALTER TABLE dbo.Activities ADD map_id NVARCHAR(64) NULL;
         ALTER TABLE dbo.Activities ADD CONSTRAINT FK_Activities_Map FOREIGN KEY (map_id) REFERENCES dbo.Maps(id);
-        CREATE INDEX IX_Activities_MapID ON dbo.Activities(map_id);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Activities_MapID' AND object_id = OBJECT_ID(N'dbo.Activities'))
+BEGIN
+    CREATE INDEX IX_Activities_MapID ON dbo.Activities(map_id);
+END;
     END;
 END;
 GO

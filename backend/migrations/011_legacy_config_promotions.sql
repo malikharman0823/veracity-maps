@@ -1,3 +1,13 @@
+-- Ensure pre-existing constraints do not block idempotent execution
+IF OBJECT_ID(N'dbo.FK_LegacyConfigPromotions_Map') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_LegacyConfigPromotions_Map NVARCHAR(512);
+    SELECT @parentTable_FK_LegacyConfigPromotions_Map = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_LegacyConfigPromotions_Map');
+    IF @parentTable_FK_LegacyConfigPromotions_Map IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_LegacyConfigPromotions_Map + ' DROP CONSTRAINT [FK_LegacyConfigPromotions_Map];');
+END;
+GO
+
 IF OBJECT_ID(N'dbo.Legacy_Config_Promotions', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.Legacy_Config_Promotions (

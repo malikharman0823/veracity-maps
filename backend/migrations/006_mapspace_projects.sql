@@ -3,6 +3,30 @@
 -- Establishes Mapspace -> Projects (Folders) -> Maps hierarchy
 -- ============================================================================
 
+-- Ensure pre-existing constraints do not block idempotent execution
+IF OBJECT_ID(N'dbo.FK_MapProjects_Mapspace') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapProjects_Mapspace NVARCHAR(512);
+    SELECT @parentTable_FK_MapProjects_Mapspace = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapProjects_Mapspace');
+    IF @parentTable_FK_MapProjects_Mapspace IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapProjects_Mapspace + ' DROP CONSTRAINT [FK_MapProjects_Mapspace];');
+END;
+IF OBJECT_ID(N'dbo.FK_MapProjects_CreatedBy') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_MapProjects_CreatedBy NVARCHAR(512);
+    SELECT @parentTable_FK_MapProjects_CreatedBy = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_MapProjects_CreatedBy');
+    IF @parentTable_FK_MapProjects_CreatedBy IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_MapProjects_CreatedBy + ' DROP CONSTRAINT [FK_MapProjects_CreatedBy];');
+END;
+IF OBJECT_ID(N'dbo.FK_Maps_Project') IS NOT NULL
+BEGIN
+    DECLARE @parentTable_FK_Maps_Project NVARCHAR(512);
+    SELECT @parentTable_FK_Maps_Project = QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(parent_object_id))
+    FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.FK_Maps_Project');
+    IF @parentTable_FK_Maps_Project IS NOT NULL EXEC(N'ALTER TABLE ' + @parentTable_FK_Maps_Project + ' DROP CONSTRAINT [FK_Maps_Project];');
+END;
+GO
+
 -- 1. MapProjects Table
 IF OBJECT_ID(N'dbo.MapProjects', N'U') IS NULL
 BEGIN
@@ -18,8 +42,14 @@ BEGIN
         CONSTRAINT FK_MapProjects_Mapspace FOREIGN KEY (mapspace_id) REFERENCES dbo.Mapspaces(id) ON DELETE CASCADE,
         CONSTRAINT FK_MapProjects_CreatedBy FOREIGN KEY (created_by) REFERENCES dbo.Users(id)
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapProjects_MapspaceID' AND object_id = OBJECT_ID(N'dbo.MapProjects'))
+BEGIN
     CREATE INDEX IX_MapProjects_MapspaceID ON dbo.MapProjects(mapspace_id);
+END;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MapProjects_CreatedBy' AND object_id = OBJECT_ID(N'dbo.MapProjects'))
+BEGIN
     CREATE INDEX IX_MapProjects_CreatedBy ON dbo.MapProjects(created_by);
+END;
 END;
 GO
 
@@ -31,7 +61,10 @@ IF NOT EXISTS (
 BEGIN
     ALTER TABLE dbo.Maps ADD project_id NVARCHAR(64) NULL;
     ALTER TABLE dbo.Maps ADD CONSTRAINT FK_Maps_Project FOREIGN KEY (project_id) REFERENCES dbo.MapProjects(id) ON DELETE SET NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Maps_ProjectID' AND object_id = OBJECT_ID(N'dbo.Maps'))
+BEGIN
     CREATE INDEX IX_Maps_ProjectID ON dbo.Maps(project_id);
+END;
 END;
 GO
 

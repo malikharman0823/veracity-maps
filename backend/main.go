@@ -38,6 +38,7 @@ func main() {
 	}
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), dbTimeout)
 	sqlDB, err := db.InitDB(startupCtx, cfg.MSSQLConnStr)
+	cancelStartup()
 
 	var authRepo repository.AuthRepo
 	var otpRepo repository.OTPRepo
@@ -45,7 +46,6 @@ func main() {
 	var mapRepo repository.MapRepo
 
 	if err != nil {
-		cancelStartup()
 		if cfg.Environment == "production" {
 			log.Fatal("Failed to connect to MSSQL; durable authentication and map persistence are required (connection details withheld)")
 		}
@@ -65,11 +65,12 @@ func main() {
 		mapRepo = repository.NewMemoryMapRepository()
 	} else {
 		defer sqlDB.Close()
-		if err := db.RunMigrations(startupCtx, sqlDB, "migrations"); err != nil {
-			cancelStartup()
+		migCtx, cancelMig := context.WithTimeout(context.Background(), 2*time.Minute)
+		if err := db.RunMigrations(migCtx, sqlDB, "migrations"); err != nil {
+			cancelMig()
 			log.Fatalf("Failed to migrate MSSQL schema: %v", err)
 		}
-		cancelStartup()
+		cancelMig()
 		authRepo = repository.NewMSSQLAuthRepository(sqlDB)
 		otpRepo = repository.NewMSSQLOTPRepository(sqlDB)
 		profileRepo = repository.NewMSSQLProfileRepository(sqlDB)
