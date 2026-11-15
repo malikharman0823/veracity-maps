@@ -321,6 +321,20 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				rt.mapsH.SaveMapConfig(w, r, user, mapID)
 				return
 			}
+			if action == "recent" && r.Method == http.MethodPost {
+				rt.mapsH.RecordRecentMap(w, r, user, mapID)
+				return
+			}
+			if action == "saved" {
+				if r.Method == http.MethodPost {
+					rt.mapsH.SaveMapToLibrary(w, r, user, mapID)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					rt.mapsH.RemoveMapFromLibrary(w, r, user, mapID)
+					return
+				}
+			}
 			if action == "revisions" {
 				if len(parts) == 2 && r.Method == http.MethodGet {
 					rt.mapsH.ListRevisions(w, r, user, mapID)
@@ -554,6 +568,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		sid := GetSessionID(r)
 		if sid != "" {
 			rt.repo.DeleteSession(sid)
+			if rt.mapsH != nil && rt.mapsH.GetMapRepo() != nil {
+				_ = rt.mapsH.GetMapRepo().ClearSessionRecentMaps(r.Context(), sid)
+			}
 		}
 		models.WriteJSON(w, http.StatusOK, map[string]bool{"ended": true})
 		return
@@ -602,6 +619,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		sid := GetSessionID(r)
 		if sid != "" {
 			rt.repo.DeleteSession(sid)
+			if rt.mapsH != nil && rt.mapsH.GetMapRepo() != nil {
+				_ = rt.mapsH.GetMapRepo().ClearSessionRecentMaps(r.Context(), sid)
+			}
 		}
 		models.WriteJSON(w, http.StatusOK, map[string]bool{"ended": true})
 		return
@@ -628,6 +648,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			}
 			if r.Method == http.MethodDelete {
 				rt.repo.DeleteSession(sid)
+				if rt.mapsH != nil && rt.mapsH.GetMapRepo() != nil {
+					_ = rt.mapsH.GetMapRepo().ClearSessionRecentMaps(r.Context(), sid)
+				}
 				models.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 				return
 			}
@@ -635,6 +658,9 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 
 		if len(parts) == 2 && parts[1] == "end" && r.Method == http.MethodPost {
 			rt.repo.DeleteSession(parts[0])
+			if rt.mapsH != nil && rt.mapsH.GetMapRepo() != nil {
+				_ = rt.mapsH.GetMapRepo().ClearSessionRecentMaps(r.Context(), parts[0])
+			}
 			models.WriteJSON(w, http.StatusOK, map[string]bool{"ended": true})
 			return
 		}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,14 @@ type MapRepo interface {
 	GetShareLinkByToken(ctx context.Context, token string) (*models.ShareLink, *models.Map, error)
 	ListShareLinks(ctx context.Context, mapID, userID string) ([]*models.ShareLink, error)
 	RevokeShareLink(ctx context.Context, mapID, linkID, userID string) error
+
+	// Dynamic Categories & Ephemeral Session Recent Maps
+	RecordRecentMap(ctx context.Context, userID, mapID, sessionID, actionType, workSummary string) (*models.UserRecentMap, error)
+	ListRecentMaps(ctx context.Context, userID, sessionID string) ([]*models.UserRecentMap, error)
+	ClearSessionRecentMaps(ctx context.Context, sessionID string) error
+	SaveMapForUser(ctx context.Context, userID, mapID, notes string) (*models.UserSavedMap, error)
+	RemoveSavedMapForUser(ctx context.Context, userID, mapID string) error
+	ListSavedMaps(ctx context.Context, userID string) ([]*models.Map, error)
 }
 
 func HashShareToken(token string) string {
@@ -75,6 +84,8 @@ type MemoryMapRepository struct {
 	links       map[string]*models.ShareLink
 	revisions   map[string][]*models.MapRevision
 	locks       map[string]*models.MapEditingLock
+	recentMaps  map[string]*models.UserRecentMap
+	savedMaps   map[string]*models.UserSavedMap
 }
 
 func NewMemoryMapRepository() *MemoryMapRepository {
@@ -86,6 +97,8 @@ func NewMemoryMapRepository() *MemoryMapRepository {
 		links:       make(map[string]*models.ShareLink),
 		revisions:   make(map[string][]*models.MapRevision),
 		locks:       make(map[string]*models.MapEditingLock),
+		recentMaps:  make(map[string]*models.UserRecentMap),
+		savedMaps:   make(map[string]*models.UserSavedMap),
 	}
 }
 
@@ -1010,6 +1023,176 @@ func (r *MemoryMapRepository) RevokeShareLink(ctx context.Context, mapID, linkID
 		}
 	}
 	return nil
+}
+
+func (r *MemoryMapRepository) RecordRecentMap(ctx context.Context, userID, mapID, sessionID, actionType, workSummary string) (*models.UserRecentMap, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	m, ok := r.maps[mapID]
+	if !ok {
+		return nil, models.ErrMapNotFound
+	}
+
+	if actionType == "" {
+		actionType = "opened"
+	}
+	if workSummary == "" {
+		workSummary = "Opened in Studio"
+	}
+
+	key := userID + ":" + mapID + ":" + sessionID
+	now := time.Now()
+	rec, exists := r.recentMaps[key]
+	if exists {
+		rec.ActionType = actionType
+		rec.WorkSummary = workSummary
+		rec.UpdatedAt = now
+	} else {
+		rec = &models.UserRecentMap{
+			ID:          fmt.Sprintf("rec_%d", now.UnixNano()),
+			UserID:      userID,
+			MapID:       mapID,
+			SessionID:   sessionID,
+			ActionType:  actionType,
+			WorkSummary: workSummary,
+			OpenedAt:    now,
+			UpdatedAt:   now,
+		}
+		r.recentMaps[key] = rec
+	}
+
+	clone := *m
+	recCopy := *rec
+	recCopy.Map = &clone
+	return &recCopy, nil
+}
+
+func (r *MemoryMapRepository) ListRecentMaps(ctx context.Context, userID, sessionID string) ([]*models.UserRecentMap, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []*models.UserRecentMap
+	for _, rec := range r.recentMaps {
+		if rec.UserID != userID {
+			continue
+		}
+		if sessionID != "" && rec.SessionID != sessionID {
+			continue
+		}
+		m, ok := r.maps[rec.MapID]
+		if !ok {
+			continue
+		}
+		cloneMap := *m
+		recCopy := *rec
+		recCopy.Map = &cloneMap
+		result = append(result, &recCopy)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+	return result, nil
+}
+
+func (r *MemoryMapRepository) ClearSessionRecentMaps(ctx context.Context, sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if sessionID == "" {
+		return nil
+	}
+	for k, rec := range r.recentMaps {
+		if rec.SessionID == sessionID {
+			delete(r.recentMaps, k)
+		}
+	}
+	return nil
+}
+
+func (r *MemoryMapRepository) SaveMapForUser(ctx context.Context, userID, mapID, notes string) (*models.UserSavedMap, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	m, ok := r.maps[mapID]
+	if !ok {
+		return nil, models.ErrMapNotFound
+	}
+
+	key := userID + ":" + mapID
+	now := time.Now()
+	saved := &models.UserSavedMap{
+		ID:      fmt.Sprintf("saved_%d", now.UnixNano()),
+		UserID:  userID,
+		MapID:   mapID,
+		Notes:   notes,
+		SavedAt: now,
+	}
+	r.savedMaps[key] = saved
+
+	clone := *m
+	savedCopy := *saved
+	savedCopy.Map = &clone
+	return &savedCopy, nil
+}
+
+func (r *MemoryMapRepository) RemoveSavedMapForUser(ctx context.Context, userID, mapID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := userID + ":" + mapID
+	delete(r.savedMaps, key)
+	return nil
+}
+
+func (r *MemoryMapRepository) ListSavedMaps(ctx context.Context, userID string) ([]*models.Map, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var result []*models.Map
+
+	// Include maps explicitly saved/bookmarked in savedMaps
+	for _, s := range r.savedMaps {
+		if s.UserID == userID {
+			if m, ok := r.maps[s.MapID]; ok && !seen[m.ID] {
+				clone := *m
+				clone.SavedByCurrentUser = true
+				result = append(result, &clone)
+				seen[m.ID] = true
+			}
+		}
+	}
+
+	// Also include user's own maps (personal maps are saved by owner)
+	for _, m := range r.maps {
+		if m.OwnerUserID == userID && !seen[m.ID] {
+			clone := *m
+			clone.SavedByCurrentUser = true
+			result = append(result, &clone)
+			seen[m.ID] = true
+		}
+	}
+
+	// Also include shared maps where SavedByCurrentUser was set
+	for _, m := range r.maps {
+		if !seen[m.ID] && m.SavedByCurrentUser {
+			for _, sh := range r.shares {
+				if sh.MapID == m.ID && sh.UserID == userID {
+					clone := *m
+					result = append(result, &clone)
+					seen[m.ID] = true
+					break
+				}
+			}
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+	return result, nil
 }
 
 // MSSQLMapRepository implements MapRepo backed by SQL Server 2022.
@@ -2153,4 +2336,186 @@ func (r *MSSQLMapRepository) RevokeShareLink(ctx context.Context, mapID, linkID,
 	}
 	_, err = r.db.ExecContext(ctx, `DELETE FROM dbo.Share_Links WHERE id = @p1 AND map_id = @p2;`, linkID, mapID)
 	return err
+}
+
+func (r *MSSQLMapRepository) RecordRecentMap(ctx context.Context, userID, mapID, sessionID, actionType, workSummary string) (*models.UserRecentMap, error) {
+	if actionType == "" {
+		actionType = "opened"
+	}
+	if workSummary == "" {
+		workSummary = "Opened in Studio"
+	}
+	recID := fmt.Sprintf("rec_%d", time.Now().UnixNano())
+
+	mergeQuery := `
+		MERGE dbo.User_Recent_Maps WITH (HOLDLOCK) AS target
+		USING (SELECT @p1 AS user_id, @p2 AS map_id, @p3 AS session_id) AS source
+		ON (target.user_id = source.user_id AND target.map_id = source.map_id AND target.session_id = source.session_id)
+		WHEN MATCHED THEN
+			UPDATE SET action_type = @p4, work_summary = @p5, updated_at = SYSDATETIMEOFFSET()
+		WHEN NOT MATCHED THEN
+			INSERT (id, user_id, map_id, session_id, action_type, work_summary, opened_at, updated_at)
+			VALUES (@p6, @p1, @p2, @p3, @p4, @p5, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+	`
+	if _, err := r.db.ExecContext(ctx, mergeQuery, userID, mapID, sessionID, actionType, workSummary, recID); err != nil {
+		return nil, fmt.Errorf("failed to record recent map: %w", err)
+	}
+
+	fetchQuery := `
+		SELECT r.id, r.user_id, r.map_id, r.session_id, r.action_type, ISNULL(r.work_summary, ''),
+		       r.opened_at, r.updated_at,
+		       m.owner_user_id, ISNULL(u.name, ''), ISNULL(u.email, ''), m.name, ISNULL(m.description, ''),
+		       ISNULL(m.current_revision_id, ''), ISNULL(m.revision_number, 1), m.created_at, m.updated_at,
+		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count
+		FROM dbo.User_Recent_Maps r
+		INNER JOIN dbo.Maps m ON m.id = r.map_id
+		LEFT JOIN dbo.Users u ON u.id = m.owner_user_id
+		WHERE r.user_id = @p1 AND r.map_id = @p2 AND r.session_id = @p3;
+	`
+	row := r.db.QueryRowContext(ctx, fetchQuery, userID, mapID, sessionID)
+	var rec models.UserRecentMap
+	var m models.Map
+	if err := row.Scan(
+		&rec.ID, &rec.UserID, &rec.MapID, &rec.SessionID, &rec.ActionType, &rec.WorkSummary,
+		&rec.OpenedAt, &rec.UpdatedAt,
+		&m.OwnerUserID, &m.OwnerUserName, &m.OwnerUserEmail, &m.Name, &m.Description,
+		&m.CurrentRevisionID, &m.RevisionNumber, &m.CreatedAt, &m.UpdatedAt, &m.AssetCount,
+	); err != nil {
+		return nil, fmt.Errorf("failed to fetch recorded recent map: %w", err)
+	}
+	m.ID = rec.MapID
+	rec.Map = &m
+	return &rec, nil
+}
+
+func (r *MSSQLMapRepository) ListRecentMaps(ctx context.Context, userID, sessionID string) ([]*models.UserRecentMap, error) {
+	query := `
+		SELECT r.id, r.user_id, r.map_id, r.session_id, r.action_type, ISNULL(r.work_summary, ''),
+		       r.opened_at, r.updated_at,
+		       m.owner_user_id, ISNULL(u.name, ''), ISNULL(u.email, ''), m.name, ISNULL(m.description, ''),
+		       ISNULL(m.current_revision_id, ''), ISNULL(m.revision_number, 1), m.created_at, m.updated_at,
+		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count
+		FROM dbo.User_Recent_Maps r
+		INNER JOIN dbo.Maps m ON m.id = r.map_id
+		LEFT JOIN dbo.Users u ON u.id = m.owner_user_id
+		WHERE r.user_id = @p1 AND (@p2 = '' OR r.session_id = @p2)
+		ORDER BY r.updated_at DESC;
+	`
+	rows, err := r.db.QueryContext(ctx, query, userID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent maps: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*models.UserRecentMap
+	for rows.Next() {
+		var rec models.UserRecentMap
+		var m models.Map
+		if err := rows.Scan(
+			&rec.ID, &rec.UserID, &rec.MapID, &rec.SessionID, &rec.ActionType, &rec.WorkSummary,
+			&rec.OpenedAt, &rec.UpdatedAt,
+			&m.OwnerUserID, &m.OwnerUserName, &m.OwnerUserEmail, &m.Name, &m.Description,
+			&m.CurrentRevisionID, &m.RevisionNumber, &m.CreatedAt, &m.UpdatedAt, &m.AssetCount,
+		); err != nil {
+			return nil, err
+		}
+		m.ID = rec.MapID
+		rec.Map = &m
+		list = append(list, &rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *MSSQLMapRepository) ClearSessionRecentMaps(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM dbo.User_Recent_Maps WHERE session_id = @p1;
+		DELETE FROM dbo.User_Map_Categories WHERE session_id = @p1 AND is_ephemeral = 1;
+	`, sessionID)
+	return err
+}
+
+func (r *MSSQLMapRepository) SaveMapForUser(ctx context.Context, userID, mapID, notes string) (*models.UserSavedMap, error) {
+	saveID := fmt.Sprintf("saved_%d", time.Now().UnixNano())
+	query := `
+		MERGE dbo.User_Saved_Maps WITH (HOLDLOCK) AS target
+		USING (SELECT @p1 AS user_id, @p2 AS map_id) AS source
+		ON (target.user_id = source.user_id AND target.map_id = source.map_id)
+		WHEN MATCHED THEN
+			UPDATE SET notes = @p3, saved_at = SYSDATETIMEOFFSET()
+		WHEN NOT MATCHED THEN
+			INSERT (id, user_id, map_id, notes, saved_at)
+			VALUES (@p4, @p1, @p2, @p3, SYSDATETIMEOFFSET());
+	`
+	if _, err := r.db.ExecContext(ctx, query, userID, mapID, notes, saveID); err != nil {
+		return nil, fmt.Errorf("failed to save map for user: %w", err)
+	}
+
+	m, err := r.GetMap(ctx, mapID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &models.UserSavedMap{
+		ID:      saveID,
+		UserID:  userID,
+		MapID:   mapID,
+		Notes:   notes,
+		SavedAt: time.Now(),
+		Map:     m,
+	}, nil
+}
+
+func (r *MSSQLMapRepository) RemoveSavedMapForUser(ctx context.Context, userID, mapID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM dbo.User_Saved_Maps WHERE user_id = @p1 AND map_id = @p2;`, userID, mapID)
+	return err
+}
+
+func (r *MSSQLMapRepository) ListSavedMaps(ctx context.Context, userID string) ([]*models.Map, error) {
+	query := `
+		SELECT DISTINCT m.id, m.owner_user_id, ISNULL(u.name, ''), ISNULL(u.email, ''), m.name, ISNULL(m.description, ''),
+		       ISNULL(m.current_revision_id, ''), ISNULL(m.revision_number, 1), m.created_at, m.updated_at,
+		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count,
+		       ISNULL(s.saved_at, m.updated_at) AS saved_sort_time
+		FROM dbo.Maps m
+		LEFT JOIN dbo.Users u ON u.id = m.owner_user_id
+		LEFT JOIN dbo.User_Saved_Maps s ON s.map_id = m.id AND s.user_id = @p1
+		WHERE m.owner_user_id = @p1 OR s.user_id = @p1
+		ORDER BY saved_sort_time DESC;
+	`
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query saved maps: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*models.Map
+	for rows.Next() {
+		var m models.Map
+		var sortTime time.Time
+		if err := rows.Scan(
+			&m.ID, &m.OwnerUserID, &m.OwnerUserName, &m.OwnerUserEmail, &m.Name, &m.Description,
+			&m.CurrentRevisionID, &m.RevisionNumber, &m.CreatedAt, &m.UpdatedAt, &m.AssetCount,
+			&sortTime,
+		); err != nil {
+			return nil, err
+		}
+		m.SavedByCurrentUser = true
+		if m.OwnerUserID == userID {
+			m.Permission = models.PermissionEditor
+			m.SharingStatus = "private"
+		} else {
+			m.Permission = models.PermissionViewer
+			m.SharingStatus = "shared_with_me"
+		}
+		list = append(list, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
 }

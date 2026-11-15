@@ -183,3 +183,37 @@ type ActivityLog struct {
 	Details   string    `json:"details,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// UserRecentMap represents an ephemeral session-scoped map interaction.
+type UserRecentMap struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	MapID       string    `json:"map_id"`
+	SessionID   string    `json:"session_id"`
+	ActionType  string    `json:"action_type"` // 'opened', 'viewed', 'edited', 'saved', 'created'
+	WorkSummary string    `json:"work_summary,omitempty"`
+	OpenedAt    time.Time `json:"opened_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Map         *Map      `json:"map,omitempty"`
+}
+
+// UserSavedMap represents a durable map saved/bookmarked by a user across sessions.
+type UserSavedMap struct {
+	ID      string    `json:"id"`
+	UserID  string    `json:"user_id"`
+	MapID   string    `json:"map_id"`
+	Notes   string    `json:"notes,omitempty"`
+	SavedAt time.Time `json:"saved_at"`
+	Map     *Map      `json:"map,omitempty"`
+}
+
+// UserMapCategory represents a map category classification for a user.
+type UserMapCategory struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	CategoryName string    `json:"category_name"`
+	MapID        string    `json:"map_id"`
+	SessionID    string    `json:"session_id,omitempty"`
+	IsEphemeral  bool      `json:"is_ephemeral"`
+	CreatedAt    time.Time `json:"created_at"`
+}

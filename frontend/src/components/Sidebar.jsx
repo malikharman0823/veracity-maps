@@ -49,7 +49,7 @@ export default function Sidebar() {
         myMaps: detail.myMaps.length,
         sharedWithMe: detail.sharedWithMe.length,
         savedMaps: Array.isArray(detail.savedMaps) ? detail.savedMaps.length : 0,
-        recentMaps: detail.myMaps.length + detail.sharedWithMe.length,
+        recentMaps: Array.isArray(detail.recentMaps) ? detail.recentMaps.length : 0,
       })
       return
     }
@@ -58,12 +58,13 @@ export default function Sidebar() {
       const data = await listMaps()
       const my = data?.my_maps || []
       const shared = data?.shared_with_me || []
-      const saved = resolveSavedMaps(data)
+      const saved = data?.saved_maps || resolveSavedMaps(data)
+      const recent = data?.recent_maps || []
       setCounts({
         myMaps: my.length,
         sharedWithMe: shared.length,
         savedMaps: saved.length,
-        recentMaps: my.length + shared.length,
+        recentMaps: recent.length,
       })
     } catch {
       // ignore background count errors

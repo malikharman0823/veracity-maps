@@ -40,6 +40,7 @@ import {
   releaseMapLock,
   listUserFiles,
   ensureActiveSession,
+  recordRecentMap,
 } from "../api"
 import WorkspaceTable from "../components/WorkspaceTable"
 import WorkspaceLayerPanel from "../components/WorkspaceLayerPanel"
@@ -399,6 +400,7 @@ export default function WorkspacePage() {
           if (data?.map || data) {
             const m = data?.map || data
             setCurrentMap(m)
+            recordRecentMap(mapId, "opened", "Opened in Map Studio").catch(() => {})
             const queryDs = searchParams.get("dataset") || searchParams.get("datasetId")
             if (queryDs) {
               setActiveDatasetId(queryDs)
@@ -692,6 +694,7 @@ export default function WorkspacePage() {
     }
     try {
       await saveMapConfig(mapId, payload, mapName, 0)
+      recordRecentMap(mapId, "edited", "Saved map configuration").catch(() => {})
       const refreshed = await getMap(mapId).catch(() => null)
       if (refreshed?.map || refreshed) {
         setCurrentMap(refreshed?.map || refreshed)

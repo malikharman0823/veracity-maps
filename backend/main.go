@@ -148,6 +148,9 @@ func main() {
 			removed := repo.CleanupExpiredSessions(cfg.SessionIdleTimeout, cfg.SessionMaxLifetime, func(sessionID string) {
 				sessionDir := sm.GetSessionDir(sessionID)
 				_ = storage.SafeRemoveAll(sessionDir)
+				if mapRepo != nil {
+					_ = mapRepo.ClearSessionRecentMaps(context.Background(), sessionID)
+				}
 			})
 			if len(removed) > 0 {
 				log.Printf("Cleaned up %d expired sessions", len(removed))

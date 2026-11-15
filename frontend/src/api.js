@@ -1297,6 +1297,25 @@ export async function deleteMap(mapId) {
   return response.data.data
 }
 
+// Recent & Saved Maps
+export async function recordRecentMap(mapId, action = "opened", workSummary = "") {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/recent`, {
+    action,
+    work_summary: workSummary,
+  })
+  return response.data.data
+}
+
+export async function saveMapToSaved(mapId, notes = "") {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/saved`, { notes })
+  return response.data.data
+}
+
+export async function removeSavedMap(mapId) {
+  const response = await client.delete(`/api/maps/${encodeURIComponent(mapId)}/saved`)
+  return response.data.data
+}
+
 // Single-Editor Locks
 export async function acquireMapLock(mapId) {
   const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/lock`)

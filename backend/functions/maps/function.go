@@ -76,20 +76,33 @@ func (h *Handler) ListMaps(w http.ResponseWriter, r *http.Request, user *models.
 		sharedWithMe = []*models.Map{}
 	}
 
+	// Dynamic Saved Maps from database
+	savedMaps, err := h.mapRepo.ListSavedMaps(r.Context(), user.ID)
+	if err != nil || savedMaps == nil {
+		savedMaps = append([]*models.Map{}, myMaps...)
+		for _, sharedMap := range sharedWithMe {
+			if sharedMap.SavedByCurrentUser {
+				savedMaps = append(savedMaps, sharedMap)
+			}
+		}
+	}
+
+	// Dynamic Ephemeral Recent Maps for current session
+	sessionID := models.GetSessionID(r)
+	recentMaps, err := h.mapRepo.ListRecentMaps(r.Context(), user.ID, sessionID)
+	if err != nil || recentMaps == nil {
+		recentMaps = []*models.UserRecentMap{}
+	}
+
 	// For backwards compatibility and convenience, maps combines myMaps + sharedWithMe
 	combined := append([]*models.Map{}, myMaps...)
 	combined = append(combined, sharedWithMe...)
-	savedMaps := append([]*models.Map{}, myMaps...)
-	for _, sharedMap := range sharedWithMe {
-		if sharedMap.SavedByCurrentUser {
-			savedMaps = append(savedMaps, sharedMap)
-		}
-	}
 
 	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"my_maps":        myMaps,
 		"shared_with_me": sharedWithMe,
 		"saved_maps":     savedMaps,
+		"recent_maps":    recentMaps,
 		"maps":           combined,
 		"total":          len(combined),
 	})
@@ -124,6 +137,12 @@ func (h *Handler) CreateMap(w http.ResponseWriter, r *http.Request, user *models
 	}
 	m.OwnerUserName = user.Name
 	m.OwnerUserEmail = user.Email
+
+	sid := models.GetSessionID(r)
+	if sid != "" {
+		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, m.ID, sid, "created", "Created map: "+name)
+	}
+	_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, m.ID, "Initial map creation")
 
 	models.WriteJSON(w, http.StatusCreated, m)
 }
@@ -184,6 +203,15 @@ func (h *Handler) CreateMapFromConfiguration(w http.ResponseWriter, r *http.Requ
 		writeMapConfigurationError(w, err)
 		return
 	}
+
+	sid := models.GetSessionID(r)
+	if sid != "" && result != nil && result.Map != nil {
+		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, result.Map.ID, sid, "created", "Created map: "+req.Name)
+	}
+	if result != nil && result.Map != nil {
+		_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, result.Map.ID, "Created map from configuration")
+	}
+
 	models.WriteJSON(w, http.StatusCreated, result)
 }
 
@@ -280,6 +308,11 @@ func (h *Handler) GetMap(w http.ResponseWriter, r *http.Request, user *models.Us
 	m.AssetCount = len(mapAssets)
 	if m.Assets == nil {
 		m.Assets = []*models.MapAsset{}
+	}
+
+	sid := models.GetSessionID(r)
+	if sid != "" {
+		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, mapID, sid, "opened", "Opened in Map Studio")
 	}
 
 	models.WriteJSON(w, http.StatusOK, m)
@@ -401,6 +434,16 @@ func (h *Handler) SaveMapConfig(w http.ResponseWriter, r *http.Request, user *mo
 		writeMapConfigurationError(w, err)
 		return
 	}
+
+	sid := models.GetSessionID(r)
+	if sid != "" {
+		revNum := 1
+		if result != nil && result.Revision != nil {
+			revNum = result.Revision.RevisionNumber
+		}
+		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, mapID, sid, "edited", fmt.Sprintf("Saved revision %d", revNum))
+	}
+	_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, mapID, "Saved map configuration")
 
 	models.WriteJSON(w, http.StatusOK, result)
 }
@@ -943,4 +986,65 @@ func (h *Handler) ResolveShareLink(w http.ResponseWriter, r *http.Request, token
 		"is_public":  link.IsPublic,
 		"expires_at": link.ExpiresAt,
 	})
+}
+
+// RecordRecentMap handles POST /api/maps/{mapId}/recent
+func (h *Handler) RecordRecentMap(w http.ResponseWriter, r *http.Request, user *models.User, mapID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
+		return
+	}
+
+	sid := models.GetSessionID(r)
+	if sid == "" {
+		models.WriteError(w, http.StatusBadRequest, "SESSION_REQUIRED", "Active session is required to record recent maps", nil, nil)
+		return
+	}
+
+	var req struct {
+		Action      string `json:"action"`
+		WorkSummary string `json:"work_summary"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	rec, err := h.mapRepo.RecordRecentMap(r.Context(), user.ID, mapID, sid, req.Action, req.WorkSummary)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "RECORD_RECENT_ERROR", err.Error(), nil, nil)
+		return
+	}
+	models.WriteJSON(w, http.StatusOK, rec)
+}
+
+// SaveMapToLibrary handles POST /api/maps/{mapId}/saved
+func (h *Handler) SaveMapToLibrary(w http.ResponseWriter, r *http.Request, user *models.User, mapID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
+		return
+	}
+
+	var req struct {
+		Notes string `json:"notes"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	saved, err := h.mapRepo.SaveMapForUser(r.Context(), user.ID, mapID, req.Notes)
+	if err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "SAVE_MAP_ERROR", err.Error(), nil, nil)
+		return
+	}
+	models.WriteJSON(w, http.StatusOK, saved)
+}
+
+// RemoveMapFromLibrary handles DELETE /api/maps/{mapId}/saved
+func (h *Handler) RemoveMapFromLibrary(w http.ResponseWriter, r *http.Request, user *models.User, mapID string) {
+	if r.Method != http.MethodDelete {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
+		return
+	}
+
+	if err := h.mapRepo.RemoveSavedMapForUser(r.Context(), user.ID, mapID); err != nil {
+		models.WriteError(w, http.StatusInternalServerError, "UNSAVE_MAP_ERROR", err.Error(), nil, nil)
+		return
+	}
+	models.WriteJSON(w, http.StatusOK, map[string]bool{"removed": true})
 }

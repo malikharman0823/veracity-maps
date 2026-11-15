@@ -6,6 +6,8 @@ import {
   createMap,
   updateMap,
   deleteMap,
+  saveMapToSaved,
+  removeSavedMap,
   getMapInvitation,
   acceptMapInvitation,
 } from "../api"
@@ -22,6 +24,9 @@ import {
   Layers,
   Clock,
   Check,
+  Bookmark,
+  BookmarkCheck,
+  Activity,
 } from "lucide-react"
 import ThemeToggle from "../components/ThemeToggle"
 import ShareMapModal from "../components/ShareMapModal"
@@ -71,6 +76,7 @@ export default function DashboardPage() {
   const [myMaps, setMyMaps] = useState([])
   const [sharedWithMe, setSharedWithMe] = useState([])
   const [savedMaps, setSavedMaps] = useState([])
+  const [recentMaps, setRecentMaps] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -109,19 +115,21 @@ export default function DashboardPage() {
         setLoading(true)
       }
       setError("")
-      const mapsData = await listMaps().catch(() => ({ my_maps: [], shared_with_me: [] }))
+      const mapsData = await listMaps().catch(() => ({ my_maps: [], shared_with_me: [], saved_maps: [], recent_maps: [] }))
 
       const my = mapsData?.my_maps || []
       const shared = mapsData?.shared_with_me || []
-      const saved = resolveSavedMaps(mapsData)
+      const saved = mapsData?.saved_maps || resolveSavedMaps(mapsData)
+      const recent = mapsData?.recent_maps || []
       setMyMaps(my)
       setSharedWithMe(shared)
       setSavedMaps(saved)
+      setRecentMaps(recent)
       hasLoadedOnceRef.current = true
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("veracity:maps-updated", {
-            detail: { myMaps: my, sharedWithMe: shared, savedMaps: saved },
+            detail: { myMaps: my, sharedWithMe: shared, savedMaps: saved, recentMaps: recent },
           })
         )
       }
@@ -129,6 +137,25 @@ export default function DashboardPage() {
       setError("Failed to load dashboard data. Please check connection.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleToggleSave = async (mapItem, e) => {
+    if (e) e.stopPropagation()
+    const isSaved = savedMaps.some((m) => m.id === mapItem.id)
+    try {
+      if (isSaved) {
+        await removeSavedMap(mapItem.id)
+        setSavedMaps((prev) => prev.filter((m) => m.id !== mapItem.id))
+        showToast(`Map "${mapItem.name}" removed from Saved Maps.`)
+      } else {
+        await saveMapToSaved(mapItem.id, "Saved from dashboard")
+        setSavedMaps((prev) => [mapItem, ...prev.filter((m) => m.id !== mapItem.id)])
+        showToast(`Map "${mapItem.name}" added to Saved Maps!`)
+      }
+      fetchAllData(true)
+    } catch (err) {
+      showToast("Failed to update saved map status: " + (err.response?.data?.error?.message || err.message))
     }
   }
 
@@ -467,7 +494,7 @@ export default function DashboardPage() {
                 : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
             }`}
           >
-            Recent Maps ({combinedMaps.length})
+            Recent Maps ({recentMaps.length})
           </button>
           <button
             onClick={() => handleTabChange("settings")}
@@ -562,6 +589,21 @@ export default function DashboardPage() {
 
                         <div className="flex items-center gap-2">
                           <button
+                            onClick={(e) => handleToggleSave(m, e)}
+                            className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
+                              savedMaps.some((sm) => sm.id === m.id)
+                                ? "text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
+                                : "text-neutral-500 hover:text-[#3ecf8e] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b]"
+                            }`}
+                            title={savedMaps.some((sm) => sm.id === m.id) ? "Saved in library" : "Save map to library"}
+                          >
+                            {savedMaps.some((sm) => sm.id === m.id) ? (
+                              <BookmarkCheck className="w-3.5 h-3.5" />
+                            ) : (
+                              <Bookmark className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
                             onClick={() => setSharingMap(m)}
                             className="p-1.5 rounded-[4px] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b] text-neutral-500 hover:text-emerald-500 transition-colors"
                             title="Share Map"
@@ -648,13 +690,31 @@ export default function DashboardPage() {
                           <span>{formatDateTime(m.updated_at || m.created_at)}</span>
                         </div>
 
-                        <button
-                          onClick={() => navigate(`/maps/${m.id}/edit`)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
-                        >
-                          <span>Open in Studio</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => handleToggleSave(m, e)}
+                            className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
+                              savedMaps.some((sm) => sm.id === m.id)
+                                ? "text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
+                                : "text-neutral-500 hover:text-[#3ecf8e] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b]"
+                            }`}
+                            title={savedMaps.some((sm) => sm.id === m.id) ? "Saved in library" : "Save map to library"}
+                          >
+                            {savedMaps.some((sm) => sm.id === m.id) ? (
+                              <BookmarkCheck className="w-3.5 h-3.5" />
+                            ) : (
+                              <Bookmark className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => navigate(`/maps/${m.id}/edit`)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
+                          >
+                            <span>Open in Studio</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -729,48 +789,125 @@ export default function DashboardPage() {
             )}
           </div>
         ) : activeTab === "recent" ? (
-          /* RECENT MAPS */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {combinedMaps.length === 0 ? (
-              <div className="col-span-full border border-dashed border-neutral-300 dark:border-[#2e2e2e] rounded-[12px] p-12 text-center text-xs text-neutral-500">
-                No recent maps available.
+          /* RECENT MAPS (Session-scoped, erased when session ends) */
+          <div className="space-y-5">
+            <div className="p-4 rounded-[10px] bg-neutral-100 dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e]">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs text-neutral-900 dark:text-white">
+                    Active Session Activity ({recentMaps.length})
+                  </h3>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Maps you open, create, or edit in this session are tracked here dynamically. These records are ephemeral and cleared on session end, while Saved Maps and My Maps persist.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {recentMaps.length === 0 ? (
+              <div className="border border-dashed border-neutral-300 dark:border-[#2e2e2e] rounded-[12px] p-12 text-center flex flex-col items-center justify-center">
+                <Clock className="w-12 h-12 text-neutral-400 mb-3 opacity-60" />
+                <h4 className="text-base font-semibold text-neutral-900 dark:text-white">No recent maps in this session</h4>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mb-4">
+                  Open any personal or shared map in Studio to track your session work and revisions here.
+                </p>
+                <button
+                  onClick={() => handleTabChange("my-maps")}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs"
+                >
+                  <MapIcon className="w-4 h-4" />
+                  Browse My Maps
+                </button>
               </div>
             ) : (
-              combinedMaps.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-5 rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e]/50 transition-all flex flex-col justify-between shadow-2xs"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e]">
-                        REV {m.revision_number || 1}
-                      </span>
-                      <span className="text-[10px] text-neutral-400">
-                        {m.owner_user_id === user?.id ? "Personal" : `Owner: ${m.shared_by_name || m.owner_user_name || m.owner_user_email || "Unknown owner"}`}
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {recentMaps.map((rec) => {
+                  const m = rec.map || rec
+                  const isSaved = savedMaps.some((sm) => sm.id === m.id)
+                  const actionType = rec.action_type || "opened"
 
-                    <h3 className="font-bold text-base text-neutral-900 dark:text-white">
-                      {m.name}
-                    </h3>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
-                      {m.description || "Map layout"}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 pt-4 border-t border-neutral-100 dark:border-[#2b2b2b] flex items-center justify-between text-[11px] text-neutral-400">
-                    <span>{formatDateTime(m.updated_at || m.created_at)}</span>
-                    <button
-                      onClick={() => navigate(`/maps/${m.id}/edit`)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
+                  return (
+                    <div
+                      key={rec.id || m.id}
+                      className="p-5 rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e]/50 transition-all flex flex-col justify-between shadow-2xs group"
                     >
-                      <span>Open in Studio</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ))
+                      <div>
+                        {/* Header Tags */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e]">
+                              REV {m.revision_number || 1}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                actionType === "created"
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                  : actionType === "edited"
+                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                  : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                              }`}
+                            >
+                              {actionType}
+                            </span>
+                          </div>
+
+                          <span className="text-[10px] text-neutral-400">
+                            {m.owner_user_id === user?.id ? "Personal" : `Owner: ${m.shared_by_name || m.owner_user_name || m.owner_user_email || "Shared"}`}
+                          </span>
+                        </div>
+
+                        {/* Title & Description */}
+                        <h3 className="font-bold text-base text-neutral-900 dark:text-white line-clamp-1">
+                          {m.name || "Untitled Map"}
+                        </h3>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
+                          {m.description || "Interactive spatial map configuration"}
+                        </p>
+
+                        {/* Work Summary Notice */}
+                        {rec.work_summary && (
+                          <div className="mt-3 px-2.5 py-1.5 rounded-[6px] bg-neutral-100 dark:bg-[#282828] text-[11px] text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] shrink-0"></span>
+                            <span className="truncate">{rec.work_summary}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer & Actions */}
+                      <div className="mt-5 pt-4 border-t border-neutral-100 dark:border-[#2b2b2b] flex items-center justify-between text-[11px] text-neutral-400">
+                        <span title={rec.updated_at || rec.opened_at}>
+                          {formatDateTime(rec.updated_at || rec.opened_at)}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => handleToggleSave(m, e)}
+                            className={`p-1.5 rounded-[6px] transition-colors cursor-pointer ${
+                              isSaved
+                                ? "text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
+                                : "text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#2b2b2b]"
+                            }`}
+                            title={isSaved ? "Saved in library" : "Save map to library"}
+                          >
+                            {isSaved ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+                          </button>
+
+                          <button
+                            onClick={() => navigate(`/maps/${rec.map_id || m.id}/edit`)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
+                          >
+                            <span>Open in Studio</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         ) : (

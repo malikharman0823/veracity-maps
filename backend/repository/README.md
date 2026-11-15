@@ -110,6 +110,14 @@ Implements zero-database in-memory state management using Go's `sync.RWMutex`.
   - `SetLayers(sessionID, datasetID, layers)`
   - `UpdateLayer(sessionID, datasetID, layerID, visible, opacity)`
 
+- **Recent & Saved Maps Lifecycle**:
+  - `RecordRecentMap(ctx, userID, mapID, sessionID, actionType, workSummary)`: Ephemeral tracking of user map actions within an active session. Merges updates to keep actions and timestamps fresh.
+  - `ListRecentMaps(ctx, userID, sessionID)`: Returns the recent maps touched by the user during the active session.
+  - `ClearSessionRecentMaps(ctx, sessionID)`: Erases session-scoped ephemeral recent map entries when the session terminates or expires.
+  - `SaveMapForUser(ctx, userID, mapID, notes)`: Persistently saves/bookmarks a map for a user across all sessions.
+  - `RemoveSavedMapForUser(ctx, userID, mapID)`: Removes a map from the user's persistent saved maps library.
+  - `ListSavedMaps(ctx, userID)`: Returns all durable saved maps for the authenticated user.
+
 ---
 
 ## Testing & Quality

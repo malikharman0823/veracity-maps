@@ -896,3 +896,140 @@ func TestSharedMapFileAndGeoreferenceAdoptionForCollaborator(t *testing.T) {
 	}
 	imgResp.Body.Close()
 }
+
+func TestRecentMapsSessionLifecycleAndSavedMapsRetention(t *testing.T) {
+	server, _, _, _ := setupPersonalMapTestServer(t)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Register Alice and Bob
+	aliceToken, _ := registerAndLoginUser(t, server.URL, "alice-recent@example.com", "Alice Recent")
+	bobToken, _ := registerAndLoginUser(t, server.URL, "bob-recent@example.com", "Bob Recent")
+
+	aliceSessionID := "sess_alice_101"
+	bobSessionID := "sess_bob_202"
+
+	// 2. Alice creates Map 1
+	createBody, _ := json.Marshal(map[string]string{
+		"name":        "Alice Architectural Plan",
+		"description": "Floor 1 layout",
+	})
+	createReq, _ := http.NewRequest("POST", server.URL+"/api/maps", bytes.NewReader(createBody))
+	createReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	createReq.Header.Set("X-Session-ID", aliceSessionID)
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := client.Do(createReq)
+	if err != nil || createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("Alice create map failed: %v, status: %d", err, createResp.StatusCode)
+	}
+	var createdRes struct {
+		Data *models.Map `json:"data"`
+	}
+	_ = json.NewDecoder(createResp.Body).Decode(&createdRes)
+	createResp.Body.Close()
+	mapID := createdRes.Data.ID
+
+	// 3. Alice opens the map in studio
+	getReq, _ := http.NewRequest("GET", server.URL+"/api/maps/"+mapID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	getReq.Header.Set("X-Session-ID", aliceSessionID)
+	getResp, err := client.Do(getReq)
+	if err != nil || getResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice get map failed: %v, status: %d", err, getResp.StatusCode)
+	}
+	getResp.Body.Close()
+
+	// 4. Alice lists maps in her session
+	listReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	listReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	listReq.Header.Set("X-Session-ID", aliceSessionID)
+	listResp, err := client.Do(listReq)
+	if err != nil || listResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice list maps failed: %v, status: %d", err, listResp.StatusCode)
+	}
+	var aliceList struct {
+		Data struct {
+			MyMaps     []*models.Map           `json:"my_maps"`
+			SavedMaps  []*models.Map           `json:"saved_maps"`
+			RecentMaps []*models.UserRecentMap `json:"recent_maps"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(listResp.Body).Decode(&aliceList)
+	listResp.Body.Close()
+
+	if len(aliceList.Data.MyMaps) != 1 {
+		t.Fatalf("expected Alice to have 1 personal map, got %d", len(aliceList.Data.MyMaps))
+	}
+	if len(aliceList.Data.SavedMaps) != 1 {
+		t.Fatalf("expected Alice to have 1 saved map, got %d", len(aliceList.Data.SavedMaps))
+	}
+	if len(aliceList.Data.RecentMaps) != 1 {
+		t.Fatalf("expected Alice to have 1 recent map in active session, got %d", len(aliceList.Data.RecentMaps))
+	}
+	if aliceList.Data.RecentMaps[0].MapID != mapID {
+		t.Fatalf("expected recent map ID %s, got %s", mapID, aliceList.Data.RecentMaps[0].MapID)
+	}
+	if aliceList.Data.RecentMaps[0].SessionID != aliceSessionID {
+		t.Fatalf("expected session ID %s, got %s", aliceSessionID, aliceList.Data.RecentMaps[0].SessionID)
+	}
+
+	// 5. Verify Bob cannot see Alice's recent maps (User Isolation)
+	bobListReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	bobListReq.Header.Set("Authorization", "Bearer "+bobToken)
+	bobListReq.Header.Set("X-Session-ID", bobSessionID)
+	bobListResp, err := client.Do(bobListReq)
+	if err != nil || bobListResp.StatusCode != http.StatusOK {
+		t.Fatalf("Bob list maps failed: %v, status: %d", err, bobListResp.StatusCode)
+	}
+	var bobList struct {
+		Data struct {
+			MyMaps     []*models.Map           `json:"my_maps"`
+			SavedMaps  []*models.Map           `json:"saved_maps"`
+			RecentMaps []*models.UserRecentMap `json:"recent_maps"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(bobListResp.Body).Decode(&bobList)
+	bobListResp.Body.Close()
+
+	if len(bobList.Data.MyMaps) != 0 || len(bobList.Data.RecentMaps) != 0 {
+		t.Fatalf("expected Bob to have 0 maps, got my: %d, recent: %d", len(bobList.Data.MyMaps), len(bobList.Data.RecentMaps))
+	}
+
+	// 6. Alice ends her session
+	endReq, _ := http.NewRequest("DELETE", server.URL+"/sessions/"+aliceSessionID, nil)
+	endReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	endResp, err := client.Do(endReq)
+	if err != nil || endResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice end session failed: %v, status: %d", err, endResp.StatusCode)
+	}
+	endResp.Body.Close()
+
+	// 7. In a new session, Alice checks her maps:
+	// Ephemeral recent maps are erased, but durable My Maps and Saved Maps are retained!
+	newSessionReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	newSessionReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	newSessionReq.Header.Set("X-Session-ID", "sess_alice_new_999")
+	newListResp, err := client.Do(newSessionReq)
+	if err != nil || newListResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice new session list maps failed: %v, status: %d", err, newListResp.StatusCode)
+	}
+	var aliceNewList struct {
+		Data struct {
+			MyMaps     []*models.Map           `json:"my_maps"`
+			SavedMaps  []*models.Map           `json:"saved_maps"`
+			RecentMaps []*models.UserRecentMap `json:"recent_maps"`
+		} `json:"data"`
+	}
+	_ = json.NewDecoder(newListResp.Body).Decode(&aliceNewList)
+	newListResp.Body.Close()
+
+	if len(aliceNewList.Data.RecentMaps) != 0 {
+		t.Fatalf("expected recent maps to be erased after session ended, got %d", len(aliceNewList.Data.RecentMaps))
+	}
+	if len(aliceNewList.Data.MyMaps) != 1 {
+		t.Fatalf("expected My Maps to be retained persistently, got %d", len(aliceNewList.Data.MyMaps))
+	}
+	if len(aliceNewList.Data.SavedMaps) != 1 {
+		t.Fatalf("expected Saved Maps to be retained persistently, got %d", len(aliceNewList.Data.SavedMaps))
+	}
+}
