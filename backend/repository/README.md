@@ -114,9 +114,9 @@ Implements zero-database in-memory state management using Go's `sync.RWMutex`.
   - `RecordRecentMap(ctx, userID, mapID, sessionID, actionType, workSummary)`: Ephemeral tracking of user map actions within an active session. Merges updates to keep actions and timestamps fresh.
   - `ListRecentMaps(ctx, userID, sessionID)`: Returns the recent maps touched by the user during the active session.
   - `ClearSessionRecentMaps(ctx, sessionID)`: Erases session-scoped ephemeral recent map entries when the session terminates or expires.
-  - `SaveMapForUser(ctx, userID, mapID, notes)`: Persistently saves/bookmarks a map for a user across all sessions.
-  - `RemoveSavedMapForUser(ctx, userID, mapID)`: Removes a map from the user's persistent saved maps library.
-  - `ListSavedMaps(ctx, userID)`: Returns all durable saved maps for the authenticated user.
+  - `SaveMapForUser(ctx, userID, mapID, notes)`: Persistently saves/bookmarks a map for a user across all sessions upon explicit user action. Maps are never automatically added to saved maps on creation or editing.
+  - `RemoveSavedMapForUser(ctx, userID, mapID)`: Unsaved/removes a map from the user's persistent saved maps library.
+  - `ListSavedMaps(ctx, userID)`: Returns only maps explicitly bookmarked/saved by the authenticated user in `dbo.User_Saved_Maps`. Owned or shared maps that are not explicitly bookmarked are not included.
 
 ---
 

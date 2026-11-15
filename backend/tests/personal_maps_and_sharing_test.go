@@ -574,11 +574,54 @@ func TestPersonalMap_EndToEndSharingAndEditingFlow(t *testing.T) {
 		t.Fatalf("decode Bob saved maps response: %v", err)
 	}
 	bobSavedMapsResp.Body.Close()
+	// Maps must not automatically be added to saved maps
+	if len(bobSavedMapsRes.Data.SavedMaps) != 0 {
+		t.Fatalf("Bob saved maps count = %d, want 0 because maps are not automatically added to saved maps", len(bobSavedMapsRes.Data.SavedMaps))
+	}
+
+	// Bob explicitly bookmarks/saves the shared map to library
+	bobSaveLibReq, _ := http.NewRequest("POST", server.URL+"/api/maps/"+mapID+"/saved", bytes.NewReader([]byte(`{"notes":"Bob bookmark"}`)))
+	bobSaveLibReq.Header.Set("Authorization", "Bearer "+bobToken)
+	bobSaveLibReq.Header.Set("Content-Type", "application/json")
+	bobSaveLibResp, err := client.Do(bobSaveLibReq)
+	if err != nil || bobSaveLibResp.StatusCode != http.StatusOK {
+		t.Fatalf("Bob save to library failed: %v, status: %d", err, bobSaveLibResp.StatusCode)
+	}
+	bobSaveLibResp.Body.Close()
+
+	// Verify Bob now has 1 saved map
+	bobCheckReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	bobCheckReq.Header.Set("Authorization", "Bearer "+bobToken)
+	bobCheckResp, err := client.Do(bobCheckReq)
+	if err != nil || bobCheckResp.StatusCode != http.StatusOK {
+		t.Fatalf("Bob check saved maps failed: %v", err)
+	}
+	_ = json.NewDecoder(bobCheckResp.Body).Decode(&bobSavedMapsRes)
+	bobCheckResp.Body.Close()
 	if len(bobSavedMapsRes.Data.SavedMaps) != 1 {
-		t.Fatalf("Bob saved maps count = %d, want 1 after saving shared map", len(bobSavedMapsRes.Data.SavedMaps))
+		t.Fatalf("Bob saved maps count = %d, want 1 after explicit bookmark", len(bobSavedMapsRes.Data.SavedMaps))
 	}
 	if savedMap := bobSavedMapsRes.Data.SavedMaps[0]; savedMap.ID != mapID || savedMap.OwnerUserID != alice.ID {
 		t.Fatalf("Bob saved map = %+v, want Alice-owned shared map %q", savedMap, mapID)
+	}
+
+	// Bob unsaves the map from library
+	bobUnsaveReq, _ := http.NewRequest("DELETE", server.URL+"/api/maps/"+mapID+"/saved", nil)
+	bobUnsaveReq.Header.Set("Authorization", "Bearer "+bobToken)
+	bobUnsaveResp, err := client.Do(bobUnsaveReq)
+	if err != nil || bobUnsaveResp.StatusCode != http.StatusOK {
+		t.Fatalf("Bob unsave failed: %v, status: %d", err, bobUnsaveResp.StatusCode)
+	}
+	bobUnsaveResp.Body.Close()
+
+	// Verify Bob now has 0 saved maps again (unsave succeeded)
+	bobCheckAfterUnsaveReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	bobCheckAfterUnsaveReq.Header.Set("Authorization", "Bearer "+bobToken)
+	bobCheckAfterUnsaveResp, _ := client.Do(bobCheckAfterUnsaveReq)
+	_ = json.NewDecoder(bobCheckAfterUnsaveResp.Body).Decode(&bobSavedMapsRes)
+	bobCheckAfterUnsaveResp.Body.Close()
+	if len(bobSavedMapsRes.Data.SavedMaps) != 0 {
+		t.Fatalf("Bob saved maps count = %d, want 0 after unsave", len(bobSavedMapsRes.Data.SavedMaps))
 	}
 
 	// Bob releases lock
@@ -960,8 +1003,8 @@ func TestRecentMapsSessionLifecycleAndSavedMapsRetention(t *testing.T) {
 	if len(aliceList.Data.MyMaps) != 1 {
 		t.Fatalf("expected Alice to have 1 personal map, got %d", len(aliceList.Data.MyMaps))
 	}
-	if len(aliceList.Data.SavedMaps) != 1 {
-		t.Fatalf("expected Alice to have 1 saved map, got %d", len(aliceList.Data.SavedMaps))
+	if len(aliceList.Data.SavedMaps) != 0 {
+		t.Fatalf("expected Alice to have 0 saved maps initially (maps must not automatically be added to saved maps), got %d", len(aliceList.Data.SavedMaps))
 	}
 	if len(aliceList.Data.RecentMaps) != 1 {
 		t.Fatalf("expected Alice to have 1 recent map in active session, got %d", len(aliceList.Data.RecentMaps))
@@ -971,6 +1014,27 @@ func TestRecentMapsSessionLifecycleAndSavedMapsRetention(t *testing.T) {
 	}
 	if aliceList.Data.RecentMaps[0].SessionID != aliceSessionID {
 		t.Fatalf("expected session ID %s, got %s", aliceSessionID, aliceList.Data.RecentMaps[0].SessionID)
+	}
+
+	// 4b. Alice explicitly saves the map to her Saved Maps library
+	saveReq, _ := http.NewRequest("POST", server.URL+"/api/maps/"+mapID+"/saved", bytes.NewReader([]byte(`{"notes":"Alice bookmark"}`)))
+	saveReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveResp, err := client.Do(saveReq)
+	if err != nil || saveResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice save to library failed: %v", err)
+	}
+	saveResp.Body.Close()
+
+	// Verify Alice now has 1 saved map
+	checkSaveReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	checkSaveReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	checkSaveReq.Header.Set("X-Session-ID", aliceSessionID)
+	checkSaveResp, _ := client.Do(checkSaveReq)
+	_ = json.NewDecoder(checkSaveResp.Body).Decode(&aliceList)
+	checkSaveResp.Body.Close()
+	if len(aliceList.Data.SavedMaps) != 1 {
+		t.Fatalf("expected Alice to have 1 saved map after bookmarking, got %d", len(aliceList.Data.SavedMaps))
 	}
 
 	// 5. Verify Bob cannot see Alice's recent maps (User Isolation)
@@ -1031,5 +1095,24 @@ func TestRecentMapsSessionLifecycleAndSavedMapsRetention(t *testing.T) {
 	}
 	if len(aliceNewList.Data.SavedMaps) != 1 {
 		t.Fatalf("expected Saved Maps to be retained persistently, got %d", len(aliceNewList.Data.SavedMaps))
+	}
+
+	// 8. Alice unsaves the map from library and verifies it is removed
+	unsaveReq, _ := http.NewRequest("DELETE", server.URL+"/api/maps/"+mapID+"/saved", nil)
+	unsaveReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	unsaveResp, err := client.Do(unsaveReq)
+	if err != nil || unsaveResp.StatusCode != http.StatusOK {
+		t.Fatalf("Alice unsave failed: %v", err)
+	}
+	unsaveResp.Body.Close()
+
+	checkUnsaveReq, _ := http.NewRequest("GET", server.URL+"/api/maps", nil)
+	checkUnsaveReq.Header.Set("Authorization", "Bearer "+aliceToken)
+	checkUnsaveResp, _ := client.Do(checkUnsaveReq)
+	_ = json.NewDecoder(checkUnsaveResp.Body).Decode(&aliceNewList)
+	checkUnsaveResp.Body.Close()
+
+	if len(aliceNewList.Data.SavedMaps) != 0 {
+		t.Fatalf("expected Saved Maps to be 0 after unsave, got %d", len(aliceNewList.Data.SavedMaps))
 	}
 }

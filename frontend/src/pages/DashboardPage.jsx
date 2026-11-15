@@ -595,7 +595,7 @@ export default function DashboardPage() {
                                 ? "text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
                                 : "text-neutral-500 hover:text-[#3ecf8e] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b]"
                             }`}
-                            title={savedMaps.some((sm) => sm.id === m.id) ? "Saved in library" : "Save map to library"}
+                            title={savedMaps.some((sm) => sm.id === m.id) ? "Remove from Saved Maps" : "Save map to library"}
                           >
                             {savedMaps.some((sm) => sm.id === m.id) ? (
                               <BookmarkCheck className="w-3.5 h-3.5" />
@@ -698,7 +698,7 @@ export default function DashboardPage() {
                                 ? "text-[#3ecf8e] hover:bg-[#3ecf8e]/10"
                                 : "text-neutral-500 hover:text-[#3ecf8e] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b]"
                             }`}
-                            title={savedMaps.some((sm) => sm.id === m.id) ? "Saved in library" : "Save map to library"}
+                            title={savedMaps.some((sm) => sm.id === m.id) ? "Remove from Saved Maps" : "Save map to library"}
                           >
                             {savedMaps.some((sm) => sm.id === m.id) ? (
                               <BookmarkCheck className="w-3.5 h-3.5" />
@@ -766,6 +766,13 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={(e) => handleToggleSave(mapItem, e)}
+                        className="p-1.5 rounded-[4px] text-[#3ecf8e] hover:text-amber-500 hover:bg-neutral-100 dark:hover:bg-[#2b2b2b] transition-colors cursor-pointer"
+                        title="Remove from Saved Maps"
+                      >
+                        <BookmarkCheck className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => navigate(`/maps/${mapItem.id}/edit`)}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer"

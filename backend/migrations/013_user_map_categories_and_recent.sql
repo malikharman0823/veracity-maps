@@ -150,3 +150,4 @@ BEGIN
     CREATE INDEX IX_UserMapCategories_Session ON dbo.User_Map_Categories(session_id);
 END;
 GO
+

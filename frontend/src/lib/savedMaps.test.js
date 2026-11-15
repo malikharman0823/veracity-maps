@@ -13,6 +13,19 @@ test("saved map dashboard uses the saved_maps view so a shared map saved by the 
   }), [ownedMap, sharedSavedMap])
 })
 
+test("saved map dashboard returns empty array when no maps are explicitly saved", () => {
+  const ownedMap = { id: "map_owned", owner_user_id: "user_b" }
+
+  assert.deepEqual(resolveSavedMaps({
+    my_maps: [ownedMap],
+    saved_maps: [],
+  }), [])
+
+  assert.deepEqual(resolveSavedMaps({
+    my_maps: [ownedMap],
+  }), [])
+})
+
 test("saved map dashboard allows deleting only maps owned by the current user", () => {
   assert.equal(canDeleteSavedMap({ owner_user_id: "user_b" }, { id: "user_b" }), true)
   assert.equal(canDeleteSavedMap({ owner_user_id: "user_a" }, { id: "user_b" }), false)

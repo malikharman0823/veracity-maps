@@ -19,6 +19,9 @@ temp/
 backend/storage/users/
 backend/storage/projects/
 backend/storage/organizations/
+backend/storage/uploads/
+backend/storage/processed/
+backend/storage/backups/
 *.log
 
 # Environment & Local Configuration

@@ -110,7 +110,8 @@ func (r *MemoryMapRepository) ListMyMaps(ctx context.Context, userID string) ([]
 	for _, m := range r.maps {
 		if m.OwnerUserID == userID {
 			clone := *m
-			clone.SavedByCurrentUser = true
+			key := userID + ":" + m.ID
+			clone.SavedByCurrentUser = (r.savedMaps[key] != nil)
 			clone.Permission = models.PermissionEditor
 			clone.SharingStatus = "private"
 			// Check if shared
@@ -140,12 +141,8 @@ func (r *MemoryMapRepository) ListSharedWithMe(ctx context.Context, userID strin
 		if s.UserID == userID {
 			if m, ok := r.maps[s.MapID]; ok {
 				clone := *m
-				for _, revision := range r.revisions[m.ID] {
-					if revision.CreatedBy == userID {
-						clone.SavedByCurrentUser = true
-						break
-					}
-				}
+				key := userID + ":" + m.ID
+				clone.SavedByCurrentUser = (r.savedMaps[key] != nil)
 				clone.Permission = s.Permission
 				clone.SharingStatus = "shared_with_me"
 				clone.SharedBy = s.SharedBy
@@ -1153,38 +1150,29 @@ func (r *MemoryMapRepository) ListSavedMaps(ctx context.Context, userID string) 
 	seen := make(map[string]bool)
 	var result []*models.Map
 
-	// Include maps explicitly saved/bookmarked in savedMaps
+	// Include ONLY maps explicitly saved/bookmarked in savedMaps by this user
 	for _, s := range r.savedMaps {
 		if s.UserID == userID {
 			if m, ok := r.maps[s.MapID]; ok && !seen[m.ID] {
 				clone := *m
 				clone.SavedByCurrentUser = true
+				if clone.OwnerUserID == userID {
+					clone.Permission = models.PermissionEditor
+					clone.SharingStatus = "private"
+				} else {
+					clone.Permission = models.PermissionViewer
+					clone.SharingStatus = "shared_with_me"
+					for _, sh := range r.shares {
+						if sh.MapID == m.ID && sh.UserID == userID {
+							clone.Permission = sh.Permission
+							clone.SharedBy = sh.SharedBy
+							clone.SharedByName = sh.SharedByName
+							break
+						}
+					}
+				}
 				result = append(result, &clone)
 				seen[m.ID] = true
-			}
-		}
-	}
-
-	// Also include user's own maps (personal maps are saved by owner)
-	for _, m := range r.maps {
-		if m.OwnerUserID == userID && !seen[m.ID] {
-			clone := *m
-			clone.SavedByCurrentUser = true
-			result = append(result, &clone)
-			seen[m.ID] = true
-		}
-	}
-
-	// Also include shared maps where SavedByCurrentUser was set
-	for _, m := range r.maps {
-		if !seen[m.ID] && m.SavedByCurrentUser {
-			for _, sh := range r.shares {
-				if sh.MapID == m.ID && sh.UserID == userID {
-					clone := *m
-					result = append(result, &clone)
-					seen[m.ID] = true
-					break
-				}
 			}
 		}
 	}
@@ -1208,7 +1196,11 @@ func (r *MSSQLMapRepository) ListMyMaps(ctx context.Context, userID string) ([]*
 	query := `
 		SELECT m.id, m.owner_user_id, u.name, u.email, m.name, ISNULL(m.description, ''),
 		       ISNULL(m.current_revision_id, ''), ISNULL(m.revision_number, 1), m.created_at, m.updated_at,
-		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count
+		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count,
+		       CAST(CASE WHEN EXISTS (
+		           SELECT 1 FROM dbo.User_Saved_Maps sm
+		           WHERE sm.map_id = m.id AND sm.user_id = @p1
+		       ) THEN 1 ELSE 0 END AS BIT) AS saved_by_current_user
 		FROM dbo.Maps m
 		LEFT JOIN dbo.Users u ON u.id = m.owner_user_id
 		WHERE m.owner_user_id = @p1
@@ -1226,11 +1218,11 @@ func (r *MSSQLMapRepository) ListMyMaps(ctx context.Context, userID string) ([]*
 		if err := rows.Scan(
 			&m.ID, &m.OwnerUserID, &m.OwnerUserName, &m.OwnerUserEmail, &m.Name, &m.Description,
 			&m.CurrentRevisionID, &m.RevisionNumber, &m.CreatedAt, &m.UpdatedAt, &m.AssetCount,
+			&m.SavedByCurrentUser,
 		); err != nil {
 			return nil, err
 		}
 		m.Permission = models.PermissionEditor
-		m.SavedByCurrentUser = true
 		m.SharingStatus = "private"
 		list = append(list, &m)
 	}
@@ -1247,8 +1239,8 @@ func (r *MSSQLMapRepository) ListSharedWithMe(ctx context.Context, userID string
 		       s.permission, (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count,
 		       s.shared_by, ISNULL(inviter.name, ''),
 		       CAST(CASE WHEN EXISTS (
-		           SELECT 1 FROM dbo.Map_Revisions r
-		           WHERE r.map_id = m.id AND r.created_by = @p1
+		           SELECT 1 FROM dbo.User_Saved_Maps sm
+		           WHERE sm.map_id = m.id AND sm.user_id = @p1
 		       ) THEN 1 ELSE 0 END AS BIT) AS saved_by_current_user
 		FROM dbo.Map_Shares s
 		INNER JOIN dbo.Maps m ON m.id = s.map_id
@@ -2477,15 +2469,15 @@ func (r *MSSQLMapRepository) RemoveSavedMapForUser(ctx context.Context, userID, 
 
 func (r *MSSQLMapRepository) ListSavedMaps(ctx context.Context, userID string) ([]*models.Map, error) {
 	query := `
-		SELECT DISTINCT m.id, m.owner_user_id, ISNULL(u.name, ''), ISNULL(u.email, ''), m.name, ISNULL(m.description, ''),
+		SELECT m.id, m.owner_user_id, ISNULL(u.name, ''), ISNULL(u.email, ''), m.name, ISNULL(m.description, ''),
 		       ISNULL(m.current_revision_id, ''), ISNULL(m.revision_number, 1), m.created_at, m.updated_at,
 		       (SELECT COUNT(1) FROM dbo.Map_Assets WHERE map_id = m.id) AS asset_count,
-		       ISNULL(s.saved_at, m.updated_at) AS saved_sort_time
-		FROM dbo.Maps m
+		       s.saved_at AS saved_sort_time
+		FROM dbo.User_Saved_Maps s
+		INNER JOIN dbo.Maps m ON m.id = s.map_id
 		LEFT JOIN dbo.Users u ON u.id = m.owner_user_id
-		LEFT JOIN dbo.User_Saved_Maps s ON s.map_id = m.id AND s.user_id = @p1
-		WHERE m.owner_user_id = @p1 OR s.user_id = @p1
-		ORDER BY saved_sort_time DESC;
+		WHERE s.user_id = @p1
+		ORDER BY s.saved_at DESC;
 	`
 	rows, err := r.db.QueryContext(ctx, query, userID)
 	if err != nil {

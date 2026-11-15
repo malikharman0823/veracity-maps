@@ -76,15 +76,10 @@ func (h *Handler) ListMaps(w http.ResponseWriter, r *http.Request, user *models.
 		sharedWithMe = []*models.Map{}
 	}
 
-	// Dynamic Saved Maps from database
+	// Dynamic Saved Maps from database (only maps explicitly bookmarked/saved by user)
 	savedMaps, err := h.mapRepo.ListSavedMaps(r.Context(), user.ID)
 	if err != nil || savedMaps == nil {
-		savedMaps = append([]*models.Map{}, myMaps...)
-		for _, sharedMap := range sharedWithMe {
-			if sharedMap.SavedByCurrentUser {
-				savedMaps = append(savedMaps, sharedMap)
-			}
-		}
+		savedMaps = []*models.Map{}
 	}
 
 	// Dynamic Ephemeral Recent Maps for current session
@@ -142,7 +137,6 @@ func (h *Handler) CreateMap(w http.ResponseWriter, r *http.Request, user *models
 	if sid != "" {
 		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, m.ID, sid, "created", "Created map: "+name)
 	}
-	_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, m.ID, "Initial map creation")
 
 	models.WriteJSON(w, http.StatusCreated, m)
 }
@@ -207,9 +201,6 @@ func (h *Handler) CreateMapFromConfiguration(w http.ResponseWriter, r *http.Requ
 	sid := models.GetSessionID(r)
 	if sid != "" && result != nil && result.Map != nil {
 		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, result.Map.ID, sid, "created", "Created map: "+req.Name)
-	}
-	if result != nil && result.Map != nil {
-		_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, result.Map.ID, "Created map from configuration")
 	}
 
 	models.WriteJSON(w, http.StatusCreated, result)
@@ -443,7 +434,6 @@ func (h *Handler) SaveMapConfig(w http.ResponseWriter, r *http.Request, user *mo
 		}
 		_, _ = h.mapRepo.RecordRecentMap(r.Context(), user.ID, mapID, sid, "edited", fmt.Sprintf("Saved revision %d", revNum))
 	}
-	_, _ = h.mapRepo.SaveMapForUser(r.Context(), user.ID, mapID, "Saved map configuration")
 
 	models.WriteJSON(w, http.StatusOK, result)
 }

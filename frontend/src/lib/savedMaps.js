@@ -2,7 +2,7 @@ export function resolveSavedMaps(mapsData) {
   if (Array.isArray(mapsData?.saved_maps)) {
     return mapsData.saved_maps
   }
-  return Array.isArray(mapsData?.my_maps) ? mapsData.my_maps : []
+  return []
 }
 
 export function canDeleteSavedMap(mapItem, user) {
