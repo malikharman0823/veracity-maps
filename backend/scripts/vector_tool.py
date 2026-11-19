@@ -206,6 +206,12 @@ def inspect_gpkg_sqlite_extras(file_path):
             "SELECT table_name, data_type, identifier, description, min_x, min_y, max_x, max_y, srs_id FROM gpkg_contents"
         )
         rows = cur.fetchall()
+        # Some producers omit ordinary attribute tables from gpkg_contents.
+        registered = {row[0] for row in rows}
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        for (name,) in cur.fetchall():
+            if name not in registered and not name.lower().startswith(("gpkg_", "sqlite_", "rtree_")):
+                rows.append((name, "attributes", name, "", None, None, None, None, None))
         for table_name, data_type, identifier, description, min_x, min_y, max_x, max_y, srs_id in rows:
             crs_str = f"EPSG:{srs_id}" if srs_id and int(srs_id) > 0 else ""
             extras["srid_by_layer"][table_name] = crs_str
@@ -479,7 +485,7 @@ def inspect_vector_dataset(file_path):
                 seen_names.add(lname)
                 raw_gtype = str(row[1]) if row[1] is not None else "Table"
                 gtype = normalize_geom_type(raw_gtype)
-                info = pyogrio.read_info(actual_path, layer=lname)
+                info = pyogrio.read_info(actual_path, layer=lname, force_feature_count=True, force_total_bounds=True)
                 crs_val = normalize_crs_str(info.get("crs")) or gpkg_extras["srid_by_layer"].get(lname, "")
                 fcount = int(info.get("features", 0))
                 total_bounds = info.get("total_bounds")
@@ -492,31 +498,31 @@ def inspect_vector_dataset(file_path):
                 pt_meta = gpkg_extras.get("point_tables", {}).get(lname)
                 if gtype == "Table" and pt_meta is not None:
                     gtype = "Point"
-                    crs_val = crs_val or "EPSG:4326"
-                    if bounds is None and pt_meta.get("bounds"):
-                        bounds = pt_meta["bounds"]
+                    crs_val = "EPSG:4326"
+                    bounds = pt_meta["bounds"]
                 # Deep-scan generic Geometry/Unknown layers to accurately detect Point layers
                 elif gtype in ("Unknown", "Geometry", "GeometryCollection") and HAS_GEOPANDAS and fcount > 0:
                     try:
-                        sample_gdf = pyogrio.read_dataframe(actual_path, layer=lname, columns=[], max_features=min(fcount, 500))
-                        if hasattr(sample_gdf, "geometry") and sample_gdf.geometry is not None:
-                            observed = set()
+                        observed = set()
+                        scan_offset = 0
+                        while True:
+                            sample_gdf = pyogrio.read_dataframe(actual_path, layer=lname, columns=[], skip_features=scan_offset, max_features=5000)
+                            if len(sample_gdf) == 0:
+                                break
                             for g_item in sample_gdf.geometry:
-                                if g_item is not None and not g_item.is_empty:
-                                    observed.add(normalize_geom_type(g_item.geom_type))
-                            if observed:
-                                if observed.issubset({"Point", "MultiPoint"}):
-                                    gtype = "MultiPoint" if "MultiPoint" in observed and "Point" not in observed else "Point"
-                                elif "Point" in observed or "MultiPoint" in observed:
-                                    gtype = "Point"
-                                else:
-                                    gtype = next(iter(observed))
-                            if bounds is None and len(sample_gdf) > 0:
-                                tb = sample_gdf.total_bounds
-                                if tb is not None and len(tb) == 4 and not any(math.isnan(x) for x in tb):
-                                    bounds = [float(x) for x in tb]
-                    except Exception:
-                        pass
+                                if hasattr(g_item, "is_empty") and not g_item.is_empty:
+                                    normalized = force_2d_geojson(mapping(g_item))
+                                    if normalized:
+                                        observed.add(normalize_geom_type(normalized.get("type")))
+                            scan_offset += len(sample_gdf)
+                        if observed.issubset({"Point", "MultiPoint"}) and observed:
+                            gtype = "MultiPoint" if observed == {"MultiPoint"} else "Point"
+                        elif "Point" in observed or "MultiPoint" in observed:
+                            gtype = "Geometry"
+                        elif len(observed) == 1:
+                            gtype = next(iter(observed))
+                    except Exception as e:
+                        raise ValueError(f"Could not scan layer {lname}: {e}") from e
                 wgs84_bounds = transform_bounds_to_wgs84(bounds, crs_val) if bounds else None
                 fields_list = []
                 fnames = info.get("fields", [])
@@ -618,6 +624,41 @@ def inspect_vector_dataset(file_path):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def extract_gpkg_table(file_path, layer_name, max_features, offset):
+    """Read coordinate/attribute tables even when OGR cannot discover them."""
+    conn = sqlite3.connect(f"file:{file_path}?mode=ro", uri=True)
+    try:
+        safe_table = layer_name.replace('"', '""')
+        columns = conn.execute(f'PRAGMA table_info("{safe_table}")').fetchall()
+        names = [col[1] for col in columns]
+        primary_key = next((col[1] for col in columns if col[5]), None)
+        lat_col, lon_col = detect_lat_lon_columns(names)
+        total = conn.execute(f'SELECT COUNT(*) FROM "{safe_table}"').fetchone()[0]
+        rows = conn.execute(f'SELECT * FROM "{safe_table}" LIMIT ? OFFSET ?', (max_features, offset))
+        features = []
+        bounds = None
+        for idx, row in enumerate(rows):
+            props = dict(zip(names, (json_safe_value(v) for v in row)))
+            geometry = None
+            if lat_col and lon_col:
+                try:
+                    lat, lon = float(props[lat_col]), float(props[lon_col])
+                    if math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180:
+                        geometry = {"type": "Point", "coordinates": [lon, lat]}
+                        if bounds is None:
+                            bounds = [lon, lat, lon, lat]
+                        else:
+                            bounds = [min(bounds[0], lon), min(bounds[1], lat), max(bounds[2], lon), max(bounds[3], lat)]
+                except (TypeError, ValueError):
+                    pass
+            fid = props.get(primary_key) if primary_key else offset + idx + 1
+            features.append({"feature_id": str(fid), "geometry": geometry, "properties": props})
+        return {"success": True, "layer_name": layer_name, "source_crs": "EPSG:4326" if lat_col and lon_col else "",
+                "geometry_type": "Point" if bounds else "Table", "total_features": total, "bounds": bounds, "features": features}
+    finally:
+        conn.close()
+
+
 def extract_layer_features(file_path, layer_name=None, max_features=5000, offset=0):
     """
     Extracts features from a specific named layer in any supported GIS dataset (.gpkg, .shp, .zip,
@@ -667,11 +708,16 @@ def extract_layer_features(file_path, layer_name=None, max_features=5000, offset
                 "features": out_feats,
             }
 
+        if ext == ".gpkg" and layer_name:
+            extras = inspect_gpkg_sqlite_extras(actual_path)
+            if any(table["layer_name"] == layer_name for table in extras["tables"]):
+                return extract_gpkg_table(actual_path, layer_name, max_features, offset)
+
         if HAS_GEOPANDAS and HAS_PYOGRIO and ext in (".gpkg", ".shp", ".kml", ".gml", ".fgb"):
             read_kwargs = {"skip_features": int(offset), "max_features": int(max_features)}
             if layer_name:
                 read_kwargs["layer"] = layer_name
-            info = pyogrio.read_info(actual_path, layer=layer_name) if layer_name else pyogrio.read_info(actual_path)
+            info = pyogrio.read_info(actual_path, layer=layer_name, force_feature_count=True)
             total = int(info.get("features", 0))
             source_crs = normalize_crs_str(info.get("crs")) or "EPSG:4326"
             gdf = pyogrio.read_dataframe(actual_path, **read_kwargs)
@@ -699,7 +745,7 @@ def extract_layer_features(file_path, layer_name=None, max_features=5000, offset
                 geom_dict = None
                 if has_geom:
                     g = row[geom_col]
-                    if g is not None and not g.is_empty:
+                    if hasattr(g, "is_empty") and not g.is_empty:
                         geom_dict = force_2d_geojson(json.loads(json.dumps(mapping(g))))
                         if geom_dict and geom_type in ("Unknown", "Geometry", "GeometryCollection", "Table", ""):
                             geom_type = normalize_geom_type(geom_dict.get("type"))

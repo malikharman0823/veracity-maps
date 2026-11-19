@@ -4,6 +4,14 @@ Located in [`backend/services/`](file:///c:/Users/harma/OneDrive/Desktop/veracit
 
 The `services` package contains the core business logic of Veracity Maps, coordinating between storage managers, session repositories, GIS solvers, and archive packagers.
 
+`WorkspaceRegistryService.AddDatasetLayers` extracts vector layers through EOF in
+25,000-row pages and combines their geographic bounds before registering map
+features. Extraction and feature storage failures return an import error instead
+of reporting a truncated layer as successful. GeoPackage inspection errors are
+surfaced rather than replaced by potentially incomplete cached upload metadata.
+Layer reuse is scoped to its source dataset, so two GeoPackages with identical
+layer names each contribute their own features.
+
 `map_configuration_service.go` is the single durable save coordinator. It validates authenticated ownership/access, copies complete dataset trees from temporary session storage into map-owned storage, verifies primary file size, and calls one repository transaction for asset paths plus the immutable revision. A failed commit removes only directories created by that attempt. `CreatePersonalMapFromConfiguration` creates revision 1 for a standalone workspace; `SaveExistingMapConfiguration` appends to the same owned or editor-shared map.
 
 `Mailer` separates delivery from profile handlers. `VerificationEmail` and

@@ -327,6 +327,29 @@ func TestWorkspaceRegistry_DynamicGeoPackageAndRecords(t *testing.T) {
 		}
 	})
 
+	// A second source may use the same layer names without hiding its own features.
+	t.Run("SameLayerNameInDifferentGeoPackage", func(t *testing.T) {
+		secondID := uploadBinaryFile(t, client, server.URL, aliceToken, sessionID,
+			generateArbitraryTestGeoPackage(t), "application/geopackage+sqlite3")
+		resp, body := doGISRequest(t, client, "POST", server.URL+"/api/workspaces/"+workspaceID+"/layers", aliceToken, sessionID, map[string]interface{}{
+			"dataset_id": secondID, "selected_layer_names": []string{"city_districts"},
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("import second source failed (%d): %s", resp.StatusCode, body)
+		}
+		var parsed struct {
+			Data struct {
+				Layers []*models.WorkspaceLayer `json:"layers"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			t.Fatal(err)
+		}
+		if len(parsed.Data.Layers) != 1 || parsed.Data.Layers[0].SourceDatasetID != secondID {
+			t.Fatalf("second GeoPackage reused another source's layer: %s", body)
+		}
+	})
+
 	// 5. Complete GeoPackage Point Scan (3D PointZ + attribute table with latitude/longitude columns)
 	t.Run("CompleteGpkgPointScan3DAndLatLonTable", func(t *testing.T) {
 		ptGpkgPath := filepath.Join(t.TempDir(), "emergency_points_scan.gpkg")
@@ -341,15 +364,24 @@ from shapely.geometry import Point
 
 out = r"%s"
 pts3d = gpd.GeoDataFrame(
-    [{"name": "Central Hospital", "service_type": "Hospital"},
-     {"name": "North Clinic", "service_type": "Hospital"}],
-    geometry=[Point(77.21, 28.63, 215.5), Point(77.19, 28.65, 220.0)],
+    [{"name": "Hospital " + str(i), "service_type": "Hospital"} for i in range(25001)],
+    geometry=[Point(77.21, 28.63, 215.5) for _ in range(25000)] + [Point(77.19, 28.65, 220.0)],
     crs="EPSG:4326",
 )
 pts3d.to_file(out, layer="hospitals_3d", driver="GPKG")
 
+# A point after the old 500-row inspection sample, with a generic geometry declaration.
+late = gpd.GeoDataFrame({"name": ["empty"] * 501 + ["Late point"]},
+    geometry=[None] * 501 + [Point(8.54, 47.37)], crs="EPSG:4326")
+late.to_file(out, layer="late_points", driver="GPKG", geometry_type="Unknown")
+
 conn = sqlite3.connect(out)
 cur = conn.cursor()
+cur.execute("CREATE TABLE unlisted_points (id INTEGER PRIMARY KEY, name TEXT, latitude REAL, longitude REAL)")
+cur.execute("INSERT INTO unlisted_points VALUES (1, 'Unlisted point', 47.37, 8.54)")
+cur.execute("INSERT INTO unlisted_points VALUES (2, 'Invalid text', 'missing', 'invalid')")
+cur.execute("INSERT INTO unlisted_points VALUES (3, 'Missing coordinate', NULL, 8.54)")
+cur.execute("INSERT INTO unlisted_points VALUES (4, 'Out of range', 91, 8.54)")
 cur.execute("CREATE TABLE fire_stations_attr (id INTEGER PRIMARY KEY, name TEXT, latitude REAL, longitude REAL)")
 cur.execute("INSERT INTO fire_stations_attr (name, latitude, longitude) VALUES ('Connaught Fire Station', 28.6315, 77.2167)")
 cur.execute("INSERT INTO fire_stations_attr (name, latitude, longitude) VALUES ('Rohini Fire Station', 28.7041, 77.1025)")
@@ -375,12 +407,13 @@ conn.close()
 			} `json:"data"`
 		}
 		_ = json.Unmarshal(impBody, &impParsed)
-		if len(impParsed.Data.Layers) != 2 {
-			t.Fatalf("expected 2 point layers discovered & imported, got %d", len(impParsed.Data.Layers))
+		if len(impParsed.Data.Layers) != 4 {
+			t.Errorf("expected 4 point layers discovered & imported, got %d", len(impParsed.Data.Layers))
 		}
+		wantCounts := map[string]int{"hospitals_3d": 25001, "fire_stations_attr": 2, "late_points": 1, "unlisted_points": 1}
 		for _, lyr := range impParsed.Data.Layers {
 			if lyr.GeometryType != "Point" || lyr.GISLayerID == "" {
-				t.Fatalf("expected layer %s to be imported as vector Point with GISLayerID, got geom=%s gisLayer=%s", lyr.SourceLayerName, lyr.GeometryType, lyr.GISLayerID)
+				t.Errorf("expected layer %s to be imported as vector Point with GISLayerID, got geom=%s gisLayer=%s", lyr.SourceLayerName, lyr.GeometryType, lyr.GISLayerID)
 			}
 			fResp, fBody := doGISRequest(t, client, "GET", server.URL+"/api/layers/"+lyr.GISLayerID+"/features", aliceToken, sessionID, nil)
 			if fResp.StatusCode != http.StatusOK {
@@ -388,12 +421,30 @@ conn.close()
 			}
 			var fParsed struct {
 				Data struct {
-					Total int `json:"total"`
+					Total    int `json:"total"`
+					Features []struct {
+						Geometry struct {
+							Type        string    `json:"type"`
+							Coordinates []float64 `json:"coordinates"`
+						} `json:"geometry"`
+					} `json:"features"`
 				} `json:"data"`
 			}
 			_ = json.Unmarshal(fBody, &fParsed)
-			if fParsed.Data.Total != 2 {
-				t.Fatalf("expected 2 MapLibre point features in %s, got %d", lyr.SourceLayerName, fParsed.Data.Total)
+			if fParsed.Data.Total != wantCounts[lyr.SourceLayerName] {
+				t.Errorf("expected %d MapLibre point features in %s, got %d", wantCounts[lyr.SourceLayerName], lyr.SourceLayerName, fParsed.Data.Total)
+			}
+			foundLastPoint := false
+			for _, f := range fParsed.Data.Features {
+				if f.Geometry.Type != "Point" || len(f.Geometry.Coordinates) != 2 {
+					t.Fatalf("expected renderable 2D Point from %s, got %+v", lyr.SourceLayerName, f.Geometry)
+				}
+				if f.Geometry.Coordinates[0] == 77.19 && f.Geometry.Coordinates[1] == 28.65 {
+					foundLastPoint = true
+				}
+			}
+			if lyr.SourceLayerName == "hospitals_3d" && !foundLastPoint {
+				t.Error("point after row 25000 is missing from map features")
 			}
 		}
 	})

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/models"
@@ -61,8 +62,11 @@ type GISRepo interface {
 	DeleteSpatialQuery(ctx context.Context, queryID, userID string) error
 }
 
+var gisIDSequence atomic.Uint64
+
 func generateGISID(prefix, seed string) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s-%s-%d", prefix, seed, time.Now().UnixNano()))
+	// Windows clock resolution can repeat timestamps within a feature batch.
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s-%s-%d-%d", prefix, seed, time.Now().UnixNano(), gisIDSequence.Add(1)))
 	return fmt.Sprintf("%s_%x", prefix, sum)[:20]
 }
 

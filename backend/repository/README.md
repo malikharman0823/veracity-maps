@@ -1,5 +1,9 @@
 # Package: `repository`
 
+GIS IDs include an atomic sequence number alongside their timestamp and seed.
+This prevents features at identical coordinates from overwriting one another
+when a Windows batch generates multiple IDs within the same clock tick.
+
 `AuthRepo.AuthenticateAndCreateToken(ctx, email, password, duration)` verifies
 credentials and issues a token as one operation. MSSQL holds `UPDLOCK, HOLDLOCK`
 on the user row through legacy hash upgrade, token insertion, and transaction

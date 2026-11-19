@@ -1,5 +1,14 @@
 # Package: `tests`
 
+`workspace_registry_test.go` exercises GeoPackage upload, complete layer import,
+and the GeoJSON feature endpoint used by the map. Regression fixtures include
+25,001 overlapping 3D points (including the last point beyond the old import
+limit), a generic layer with a point after 501 null geometries, registered and
+unregistered latitude/longitude tables, and invalid coordinate rows. Assertions
+check persisted feature counts and renderable 2D point coordinates.
+Importing a second GeoPackage with the same layer names also verifies that its
+layers belong to the second source instead of reusing the first file's features.
+
 `auth_profile_concurrency_test.go` controls login/password interleavings without
 production hooks. It covers change-first login rejection, actual transaction and
 user-lock state at token insertion followed by password-change revocation, and

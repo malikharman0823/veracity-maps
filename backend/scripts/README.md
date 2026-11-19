@@ -4,6 +4,13 @@ Located in [`backend/scripts/`](file:///c:/Users/harma/OneDrive/Desktop/veracity
 
 This directory contains automation scripts for testing, building, and verifying the Veracity Maps project on Windows / PowerShell environments.
 
+`vector_tool.py` scans every feature in generic GeoPackage geometry layers in
+5,000-row batches, rather than sampling their first rows. It also inspects ordinary
+SQLite tables outside `gpkg_contents` for latitude/longitude columns. Coordinate
+tables are read directly in read-only mode, preserving attributes and synthesizing
+2D WGS84 points only for finite, in-range numeric coordinates. This uses SQLite
+only to read the uploaded GeoPackage, without adding application persistence.
+
 ---
 
 ## File: `test-all.ps1`

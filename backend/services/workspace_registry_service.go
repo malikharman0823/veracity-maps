@@ -160,6 +160,9 @@ func (s *WorkspaceRegistryService) InspectDataset(ctx context.Context, userID, d
 	if isVectorContainerExt(ext) || ext == ".zip" {
 		if ds.StoragePath != "" {
 			inspected, drv, err := gis.InspectVectorDatasetFile(ds.StoragePath)
+			if err != nil && ext == ".gpkg" {
+				return nil, fmt.Errorf("scan GeoPackage: %w", err)
+			}
 			if err == nil && len(inspected) > 0 {
 				layers = inspected
 				if drv != "" {
@@ -344,7 +347,9 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 	existingLayers, _ := s.repo.ListWorkspaceLayers(importCtx, workspaceID)
 	existingByName := make(map[string]*models.WorkspaceLayer)
 	for _, el := range existingLayers {
-		existingByName[el.SourceLayerName] = el
+		if el.SourceDatasetID == ds.ID {
+			existingByName[el.SourceLayerName] = el
+		}
 	}
 	nextOrder := len(existingLayers)
 	added := make([]*models.WorkspaceLayer, 0)
@@ -442,6 +447,34 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 		var extracted *gis.ExtractedLayerResult
 		if ds.StoragePath != "" {
 			extRes, extErr := gis.ExtractDatasetLayerFeatures(ds.StoragePath, info.LayerName, 25000, 0)
+			if extErr != nil {
+				return nil, nil, fmt.Errorf("extract layer %s: %w", info.LayerName, extErr)
+			}
+			// Read through EOF, including points beyond the first extraction page.
+			if extRes != nil {
+				pageSize := len(extRes.Features)
+				for pageSize == 25000 {
+					if err := importCtx.Err(); err != nil {
+						return nil, nil, err
+					}
+					page, err := gis.ExtractDatasetLayerFeatures(ds.StoragePath, info.LayerName, 25000, len(extRes.Features))
+					if err != nil {
+						return nil, nil, fmt.Errorf("extract layer %s: %w", info.LayerName, err)
+					}
+					pageSize = len(page.Features)
+					extRes.Features = append(extRes.Features, page.Features...)
+					if len(page.Bounds) == 4 {
+						if len(extRes.Bounds) != 4 {
+							extRes.Bounds = page.Bounds
+						} else {
+							extRes.Bounds[0] = math.Min(extRes.Bounds[0], page.Bounds[0])
+							extRes.Bounds[1] = math.Min(extRes.Bounds[1], page.Bounds[1])
+							extRes.Bounds[2] = math.Max(extRes.Bounds[2], page.Bounds[2])
+							extRes.Bounds[3] = math.Max(extRes.Bounds[3], page.Bounds[3])
+						}
+					}
+				}
+			}
 			if extErr == nil && extRes != nil {
 				extracted = extRes
 				if len(extRes.Bounds) == 4 {
@@ -471,6 +504,9 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 				CRS:          firstNonEmptyStr(info.CRS, "EPSG:4326"),
 				Bounds:       layerBounds,
 			})
+			if cErr != nil {
+				return nil, nil, cErr
+			}
 			if cErr == nil && createdLyr != nil {
 				gisLayerID = createdLyr.LayerID
 				// Apply distinct default styling per layer
@@ -526,7 +562,14 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 							})
 						}
 						if len(batchItems) > 0 {
-							_, _ = gisRepo.CreateFeatureBatch(importCtx, userID, batchItems)
+							created, err := gisRepo.CreateFeatureBatch(importCtx, userID, batchItems)
+							if err != nil || len(created) != len(batchItems) {
+								_ = gisRepo.DeleteLayer(importCtx, gisLayerID)
+								if err != nil {
+									return nil, nil, fmt.Errorf("import layer %s: %w", info.LayerName, err)
+								}
+								return nil, nil, fmt.Errorf("import layer %s: stored %d of %d features", info.LayerName, len(created), len(batchItems))
+							}
 						}
 					}
 				}
