@@ -11,7 +11,16 @@ import {
   readableApiError,
   removeControlPoint,
   updateControlPoint,
+  listBaseLayers,
+  listMapViews,
+  getBaseLayer,
+  registerBaseLayer,
+  selectWorkspaceBaseLayer,
+  getWorkspaceBaseLayer,
+  getWorkspaceMapView,
 } from "../api"
+import { DEFAULT_MAP_VIEWS } from "../lib/baseLayerSync"
+import BaseLayerSelectionModal from "../components/baselayers/BaseLayerSelectionModal"
 import ControlPointList from "../components/ControlPointList"
 import ReferenceMap from "../components/ReferenceMap"
 import SourceImagePane from "../components/SourceImagePane"
@@ -147,6 +156,70 @@ export default function GeoreferencePage() {
   const [directTopLeftInput, setDirectTopLeftInput] = useState("")
   const [directBottomRightInput, setDirectBottomRightInput] = useState("")
   const [directError, setDirectError] = useState(null)
+
+  // Reference Map Base Layer & Multiple Map Views state
+  const [mapViews, setMapViews] = useState(DEFAULT_MAP_VIEWS)
+  const [customBaseLayers, setCustomBaseLayers] = useState([])
+  const [refBaseLayer, setRefBaseLayer] = useState(null)
+  const [refViewType, setRefViewType] = useState("world")
+  const [refBaseLayerModalOpen, setRefBaseLayerModalOpen] = useState(false)
+  const [refBaseLayerModalMode, setRefBaseLayerModalMode] = useState("upload")
+  const [refViewPrefs, setRefViewPrefs] = useState({
+    show_labels: true,
+    show_roads: true,
+    show_places: true,
+    base_layer_opacity: 1.0,
+    base_layer_visible: true,
+  })
+
+  useEffect(() => {
+    let active = true
+    const explicitWs = searchParams.get("workspaceId")
+    const explicitBl = searchParams.get("baseLayerId")
+    const rawReturn = searchParams.get("returnTo") || ""
+    let inferredWs = explicitWs || ""
+    if (!inferredWs && rawReturn) {
+      const m = rawReturn.match(/\/maps\/([^/?#]+)/) || rawReturn.match(/\/datasets\/([^/?#]+)/)
+      if (m && m[1]) inferredWs = decodeURIComponent(m[1])
+    }
+
+    ;(async () => {
+      try {
+        const [viewsRes, libRes, wsBlRes, wsMvRes, explicitBlRes] = await Promise.all([
+          listMapViews().catch(() => null),
+          listBaseLayers().catch(() => null),
+          inferredWs ? getWorkspaceBaseLayer(inferredWs).catch(() => null) : Promise.resolve(null),
+          inferredWs ? getWorkspaceMapView(inferredWs).catch(() => null) : Promise.resolve(null),
+          explicitBl ? getBaseLayer(explicitBl).catch(() => null) : Promise.resolve(null),
+        ])
+        if (!active) return
+        if (viewsRes?.map_views?.length) setMapViews(viewsRes.map_views)
+        if (libRes?.base_layers) setCustomBaseLayers(libRes.base_layers)
+
+        const chosen = explicitBlRes?.base_layer || wsBlRes?.workspace_base_layer?.base_layer || null
+        if (chosen && !chosen.is_default) {
+          setRefBaseLayer(chosen)
+          setRefViewType("custom")
+        } else if (wsMvRes?.map_view?.view_type) {
+          setRefViewType(wsMvRes.map_view.view_type)
+        }
+        if (wsMvRes?.map_view) {
+          const mv = wsMvRes.map_view
+          setRefViewPrefs({
+            show_labels: mv.show_labels !== false,
+            show_roads: mv.show_roads !== false,
+            show_places: mv.show_places !== false,
+            base_layer_opacity: typeof mv.base_layer_opacity === "number" ? mv.base_layer_opacity : 1.0,
+            base_layer_visible: mv.base_layer_visible !== false,
+          })
+        }
+      } catch {}
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [searchParams])
 
   useEffect(() => {
     pointsRef.current = points
@@ -544,6 +617,29 @@ export default function GeoreferencePage() {
       }
       setMode("view")
       setDirectPanelOpen(false)
+      if (searchParams.get("autoRegisterBaseLayer") === "1") {
+        try {
+          const blName =
+            searchParams.get("baseLayerName") ||
+            (dataset?.filename || "Custom Base Layer").replace(/\.[^/.]+$/, "")
+          const regRes = await registerBaseLayer({
+            dataset_id: id,
+            name: blName,
+            description: "Georeferenced custom base layer",
+          })
+          const createdBl = regRes?.base_layer
+          const wsId = searchParams.get("workspaceId")
+          if (createdBl && wsId) {
+            await selectWorkspaceBaseLayer(wsId, {
+              base_layer_type: "custom",
+              base_layer_id: createdBl.id,
+              selected_view: "custom",
+            })
+          }
+        } catch (regErr) {
+          console.warn("Auto-register base layer after georeferencing failed:", regErr)
+        }
+      }
       setNotice("Georeference saved and published to the main map.")
       navigate(returnTo, { replace: true })
     } catch (requestError) {
@@ -902,6 +998,34 @@ export default function GeoreferencePage() {
               coordinates: previewCoordinates,
               opacity: overlayOpacity,
             }}
+            mapViews={mapViews}
+            activeView={refViewType}
+            customBaseLayer={refBaseLayer}
+            customBaseLayers={customBaseLayers}
+            mapViewPrefs={refViewPrefs}
+            onSelectView={(vt) => setRefViewType(vt)}
+            onSelectCustomBaseLayer={(bl) => {
+              setRefBaseLayer(bl)
+              setRefViewType("custom")
+            }}
+            onChangeMapViewPrefs={(patch) =>
+              setRefViewPrefs((prev) => ({
+                ...prev,
+                ...(patch.show_labels !== undefined ? { show_labels: patch.show_labels } : {}),
+                ...(patch.show_roads !== undefined ? { show_roads: patch.show_roads } : {}),
+                ...(patch.show_places !== undefined ? { show_places: patch.show_places } : {}),
+                ...(patch.opacity !== undefined ? { base_layer_opacity: patch.opacity } : {}),
+                ...(patch.base_layer_visible !== undefined ? { base_layer_visible: patch.base_layer_visible } : {}),
+              }))
+            }
+            onOpenBaseLayerModal={() => {
+              setRefBaseLayerModalMode("select")
+              setRefBaseLayerModalOpen(true)
+            }}
+            onOpenUploadBaseLayer={() => {
+              setRefBaseLayerModalMode("upload")
+              setRefBaseLayerModalOpen(true)
+            }}
           />
           <SourceImagePane
             sourceUrl={sourceUrl}
@@ -956,6 +1080,25 @@ export default function GeoreferencePage() {
           </aside>
         </section>
       </div>
+
+      <BaseLayerSelectionModal
+        open={refBaseLayerModalOpen}
+        initialMode={refBaseLayerModalMode}
+        workspaceId={searchParams.get("workspaceId") || ""}
+        workspaceName="Georeferencing Reference Map"
+        onCancel={() => setRefBaseLayerModalOpen(false)}
+        onConfirmed={({ baseLayer, baseLayerType }) => {
+          setRefBaseLayerModalOpen(false)
+          if (baseLayerType === "custom" && baseLayer) {
+            setRefBaseLayer(baseLayer)
+            setRefViewType("custom")
+            setCustomBaseLayers((prev) => [baseLayer, ...prev.filter((b) => b.id !== baseLayer.id)])
+          } else {
+            setRefBaseLayer(null)
+            setRefViewType("world")
+          }
+        }}
+      />
     </main>
   )
 }

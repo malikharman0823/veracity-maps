@@ -7,7 +7,9 @@ import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 
 import { BASEMAP_ATTRIBUTION, BASEMAP_TILE_URL } from "../api"
 import { parseGoogleMapsCoordinates } from "../lib/coordinateParser"
+import { syncMapBaseAndView, DEFAULT_MAP_VIEWS } from "../lib/baseLayerSync"
 import MapCoordinates from "./MapCoordinates"
+import MapViewSelector from "./baselayers/MapViewSelector"
 
 const OVERLAY_SOURCE_ID = "georeference-preview-source"
 const OVERLAY_LAYER_ID = "georeference-preview-layer"
@@ -34,10 +36,22 @@ export default function ReferenceMap({
   focusTarget = null,
   readOnly = false,
   placementMode = false,
+  mapViews = DEFAULT_MAP_VIEWS,
+  activeView = "world",
+  customBaseLayer = null,
+  customBaseLayers = [],
+  mapViewPrefs = { base_layer_opacity: 1.0, base_layer_visible: true, show_labels: true, show_roads: true, show_places: true },
+  onSelectView,
+  onSelectCustomBaseLayer,
+  onChangeMapViewPrefs,
+  onOpenBaseLayerModal,
+  onOpenUploadBaseLayer,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const initialFitDoneRef = useRef(false)
+  const lastBaseFitIdRef = useRef("")
+  const [mapLoaded, setMapLoaded] = useState(false)
 
   const mapClickRef = useRef(onMapClick)
   const selectRef = useRef(onSelect)
@@ -88,16 +102,62 @@ export default function ReferenceMap({
         mapClickRef.current({ lng: location.lng, lat })
       }
     })
+    map.on("load", () => setMapLoaded(true))
     map.on("mousemove", (event) => {
       setCursorCoordinate({ latitude: event.lngLat.lat, longitude: event.lngLat.lng })
     })
     map.on("mouseleave", () => setCursorCoordinate(null))
     mapRef.current = map
     return () => {
+      setMapLoaded(false)
       mapRef.current = null
       map.remove()
     }
   }, [])
+
+  // Synchronize selected Custom Base Layer and Map View beneath control points and georeference preview
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoaded || !map.getStyle()) return
+    syncMapBaseAndView(map, {
+      mapViews,
+      viewType: activeView,
+      customBaseLayer,
+      opacity: typeof mapViewPrefs?.base_layer_opacity === "number" ? mapViewPrefs.base_layer_opacity : 1.0,
+      visible: mapViewPrefs?.base_layer_visible !== false,
+      showLabels: mapViewPrefs?.show_labels !== false,
+      showRoads: mapViewPrefs?.show_roads !== false,
+      showPlaces: mapViewPrefs?.show_places !== false,
+      basemapLayerId: "basemap",
+    })
+  }, [mapLoaded, mapViews, activeView, customBaseLayer, mapViewPrefs])
+
+  // Auto-fit reference map to the selected Custom Base Layer extent
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoaded || !customBaseLayer || customBaseLayer.is_default) return
+    const ext = customBaseLayer.extent
+    if (!Array.isArray(ext) || ext.length !== 4) return
+    if (lastBaseFitIdRef.current === customBaseLayer.id) return
+    const [w, s, e, n] = ext.map(Number)
+    if (![w, s, e, n].every(Number.isFinite) || e <= w || n <= s) return
+    // Only auto-fit if no control points have already positioned the camera, or user actively changed base layer
+    if (!initialFitDoneRef.current || lastBaseFitIdRef.current !== "") {
+      lastBaseFitIdRef.current = customBaseLayer.id
+      initialFitDoneRef.current = true
+      try {
+        map.fitBounds(
+          [
+            [w, clampMercatorLat(s)],
+            [e, clampMercatorLat(n)],
+          ],
+          { padding: 48, maxZoom: 19, duration: 400 }
+        )
+      } catch {}
+    } else {
+      lastBaseFitIdRef.current = customBaseLayer.id
+    }
+  }, [mapLoaded, customBaseLayer])
 
   useEffect(() => {
     const map = mapRef.current
@@ -541,6 +601,24 @@ export default function ReferenceMap({
 
       <div ref={containerRef} className="min-h-0 flex-1" aria-label="Interactive geographic reference map" />
       <MapCoordinates coordinate={cursorCoordinate} />
+
+      {/* Compact Reference Map View & Custom Base Layer Selector */}
+      <div className="absolute right-2.5 top-[58px] z-20">
+        <MapViewSelector
+          compact
+          collapsible
+          mapViews={mapViews}
+          activeView={activeView}
+          customBaseLayer={customBaseLayer}
+          customBaseLayers={customBaseLayers}
+          prefs={mapViewPrefs}
+          onSelectView={onSelectView}
+          onSelectCustomBaseLayer={onSelectCustomBaseLayer}
+          onChangePrefs={onChangeMapViewPrefs}
+          onOpenBaseLayerModal={onOpenBaseLayerModal}
+          onOpenUploadBaseLayer={onOpenUploadBaseLayer}
+        />
+      </div>
 
       {searchError && (
         <div

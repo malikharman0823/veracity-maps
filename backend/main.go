@@ -14,13 +14,17 @@ import (
 	"github.com/malikharman0823/veracity-maps/config"
 	"github.com/malikharman0823/veracity-maps/db"
 	"github.com/malikharman0823/veracity-maps/functions/auth"
+	"github.com/malikharman0823/veracity-maps/functions/baselayers"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	gisFn "github.com/malikharman0823/veracity-maps/functions/gis"
 	"github.com/malikharman0823/veracity-maps/functions/maps"
+	procFn "github.com/malikharman0823/veracity-maps/functions/processing"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
+	"github.com/malikharman0823/veracity-maps/functions/workspaceregistry"
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/repository"
 	"github.com/malikharman0823/veracity-maps/services"
@@ -44,6 +48,10 @@ func main() {
 	var otpRepo repository.OTPRepo
 	var profileRepo repository.ProfileRepo
 	var mapRepo repository.MapRepo
+	var gisRepo repository.GISRepo
+	var procRepo repository.ProcessingRepo
+	var baseLayerRepo repository.BaseLayerRepo
+	var wsRegRepo repository.WorkspaceRegistryRepo
 
 	if err != nil {
 		if cfg.Environment == "production" {
@@ -63,6 +71,10 @@ func main() {
 		otpRepo = repository.NewMemoryOTPRepository()
 		profileRepo = repository.NewMemoryProfileRepository(memAuth)
 		mapRepo = repository.NewMemoryMapRepository()
+		gisRepo = repository.NewMemoryGISRepository()
+		procRepo = repository.NewMemoryProcessingRepository()
+		baseLayerRepo = repository.NewMemoryBaseLayerRepository()
+		wsRegRepo = repository.NewMemoryWorkspaceRegistryRepository()
 	} else {
 		defer sqlDB.Close()
 		migCtx, cancelMig := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -75,6 +87,10 @@ func main() {
 		otpRepo = repository.NewMSSQLOTPRepository(sqlDB)
 		profileRepo = repository.NewMSSQLProfileRepository(sqlDB)
 		mapRepo = repository.NewMSSQLMapRepository(sqlDB)
+		gisRepo = repository.NewMSSQLGISRepository(sqlDB)
+		procRepo = repository.NewMSSQLProcessingRepository(sqlDB)
+		baseLayerRepo = repository.NewMSSQLBaseLayerRepository(sqlDB)
+		wsRegRepo = repository.NewMSSQLWorkspaceRegistryRepository(sqlDB)
 	}
 
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
@@ -124,6 +140,14 @@ func main() {
 	profileHandler.SetRepositories(repo, projRepo, authRepo)
 	mapsHandler := maps.NewHandler(mapRepo, mailer, cfg.AppPublicURL)
 	mapsHandler.SetConfigurationService(services.NewMapConfigurationService(mapRepo, cfg.UploadDir, cfg.SessionStorageDir))
+	gisService := services.NewGISService(gisRepo, mapRepo, repo)
+	gisHandler := gisFn.NewHandler(gisService)
+	procService := services.NewProcessingService(procRepo, gisService, mapRepo, repo, cfg.ProcessedDir)
+	procHandler := procFn.NewHandler(procService)
+	baseLayerService := services.NewBaseLayerService(baseLayerRepo, repo, mapRepo, cfg)
+	baseLayerHandler := baselayers.NewHandler(baseLayerService)
+	wsRegService := services.NewWorkspaceRegistryService(wsRegRepo, gisService, repo, mapRepo)
+	wsRegHandler := workspaceregistry.NewHandler(wsRegService)
 
 	router := api.NewRouter(
 		repo,
@@ -139,6 +163,10 @@ func main() {
 		profileHandler,
 	)
 	router.SetMapsHandler(mapsHandler)
+	router.SetGISHandler(gisHandler)
+	router.SetProcessingHandler(procHandler)
+	router.SetBaseLayerHandler(baseLayerHandler)
+	router.SetWorkspaceRegistryHandler(wsRegHandler)
 
 	// Background session cleaner
 	go func() {

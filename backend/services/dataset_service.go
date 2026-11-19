@@ -31,6 +31,15 @@ var (
 		".webp": "image/webp",
 		".bmp":  "image/bmp",
 	}
+
+	SupportedVectorExtensions = map[string]string{
+		".gpkg":    "application/geopackage+sqlite3",
+		".shp":     "application/x-esri-shapefile",
+		".geojson": "application/geo+json",
+		".json":    "application/geo+json",
+		".kml":     "application/vnd.google-earth.kml+xml",
+		".osm":     "application/xml",
+	}
 )
 
 type DatasetService struct {
@@ -53,8 +62,8 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	if ext != ".zip" && ext != ".mbtiles" && ext != ".pdf" && ext != ".dxf" && SupportedRasterExtensions[ext] == "" {
-		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, TIFF, PDF, DXF, MBTiles, and ZIP", ext)
+	if ext != ".zip" && ext != ".mbtiles" && ext != ".pdf" && ext != ".dxf" && SupportedRasterExtensions[ext] == "" && SupportedVectorExtensions[ext] == "" {
+		return nil, fmt.Errorf("INVALID_FILE_TYPE: Unsupported file format '%s'. Supported formats are PNG, JPEG, TIFF, PDF, DXF, GPKG, SHP, GeoJSON, KML, OSM, MBTiles, and ZIP", ext)
 	}
 
 	if fileHeader.Size == 0 {
@@ -115,9 +124,72 @@ func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.Fi
 		return s.handleZipDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
 	case ".dxf":
 		return s.ConvertCadDxfToDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash)
+	case ".gpkg", ".shp", ".geojson", ".json", ".kml", ".osm":
+		return s.handleVectorDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash, SupportedVectorExtensions[ext])
 	default:
 		return s.handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, fileHeader.Filename, size, fileHash, SupportedRasterExtensions[ext])
 	}
+}
+
+func (s *DatasetService) handleVectorDataset(sessionID, datasetID, datasetDir, destPath, filename string, size int64, fileHash, contentType string) (*models.Dataset, error) {
+	layers, driver, err := gis.InspectVectorDatasetFile(destPath)
+	if err != nil {
+		// Fallback metadata when GDAL driver is unavailable for KML/OSM/GPKG in minimal env
+		driver = strings.TrimPrefix(strings.ToUpper(filepath.Ext(filename)), ".")
+	}
+	crs := "EPSG:4326"
+	geomType := "Polygon"
+	featureCount := 0
+	var boundsMap map[string]float64
+	if len(layers) > 0 {
+		if layers[0].CRS != "" {
+			crs = layers[0].CRS
+		}
+		if layers[0].GeometryType != "" {
+			geomType = layers[0].GeometryType
+		}
+		for _, l := range layers {
+			featureCount += l.FeatureCount
+		}
+		if len(layers[0].Bounds) == 4 {
+			boundsMap = map[string]float64{
+				"min_x": layers[0].Bounds[0],
+				"min_y": layers[0].Bounds[1],
+				"max_x": layers[0].Bounds[2],
+				"max_y": layers[0].Bounds[3],
+			}
+		}
+	}
+	extractedMeta := map[string]interface{}{
+		"driver":        driver,
+		"format":        strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), "."),
+		"crs":           crs,
+		"geometry_type": geomType,
+		"feature_count": featureCount,
+		"bounds":        boundsMap,
+		"layers":        layers,
+	}
+	now := time.Now()
+	dataset := &models.Dataset{
+		ID:                 datasetID,
+		SessionID:          sessionID,
+		Filename:           filename,
+		FileSize:           size,
+		ContentType:        contentType,
+		FileHash:           fileHash,
+		StoragePath:        destPath,
+		GeoreferencedPath:  destPath,
+		GeoreferenceStatus: "completed",
+		TileStatus:         "not_started",
+		ExtractedMetadata:  extractedMeta,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {
+		_ = storage.SafeRemoveAll(datasetDir)
+		return nil, err
+	}
+	return dataset, nil
 }
 
 func (s *DatasetService) handleRawRasterDataset(sessionID, datasetID, datasetDir, destPath, filename string, size int64, fileHash, contentType string) (*models.Dataset, error) {

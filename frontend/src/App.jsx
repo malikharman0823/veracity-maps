@@ -8,10 +8,9 @@ import { ThemeProvider } from "./context/ThemeContext"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 const HomePage = lazy(() => import("./pages/HomePage"))
-const UploadPage = lazy(() => import("./pages/UploadPage"))
-const DatasetPage = lazy(() => import("./pages/DatasetPage"))
 const GeoreferencePage = lazy(() => import("./pages/GeoreferencePage"))
 const WorkspacePage = lazy(() => import("./pages/WorkspacePage"))
+const WorkspaceSetupPage = lazy(() => import("./pages/WorkspaceSetupPage"))
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const RegisterPage = lazy(() => import("./pages/RegisterPage"))
 const DashboardPage = lazy(() => import("./pages/DashboardPage"))
@@ -53,7 +52,9 @@ export default function App() {
                   <Route path="/" element={<HomePage />} />
                   <Route path="/upload" element={<Navigate to="/" replace />} />
 
-                  {/* Canonical Shared Workspace Map Editor Routes */}
+                  {/* Canonical Shared Workspace Map Editor & Unified Upload Setup Routes */}
+                  <Route path="/maps/:mapId/setup" element={<WorkspaceSetupPage />} />
+                  <Route path="/workspace-setup" element={<WorkspaceSetupPage />} />
                   <Route path="/maps/:mapId/edit" element={<WorkspacePage />} />
                   <Route path="/maps/:mapId" element={<WorkspacePage />} />
 
@@ -66,7 +67,6 @@ export default function App() {
 
                   {/* Protected Dataset and Georeferencing Routes */}
                   <Route path="/datasets/:id" element={<DatasetWorkspaceRedirect />} />
-                  <Route path="/datasets/:id/legacy" element={<DatasetPage />} />
                   <Route path="/datasets/:id/workspace" element={<WorkspacePage />} />
                   <Route path="/datasets/:id/georeference" element={<GeoreferencePage />} />
                 </Route>

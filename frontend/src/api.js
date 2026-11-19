@@ -1457,3 +1457,675 @@ export const listWorkspaceMapRevisions = listMapRevisions
 export const listWorkspaceFiles = listUserFiles
 export const deleteWorkspaceFile = deleteUserFile
 
+// ============================================================================
+// PHASE 1 GIS FOUNDATION APIs (MODULES A - G)
+// ============================================================================
+
+// Module A — Advanced Layer Manager
+export async function getMapLayers(mapId) {
+  const response = await client.get(`/api/maps/${encodeURIComponent(mapId)}/layers`)
+  return response.data.data
+}
+
+export async function createMapLayer(mapId, payload) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/layers`, payload)
+  return response.data.data
+}
+
+export async function getGISLayer(layerId) {
+  const response = await client.get(`/api/layers/${encodeURIComponent(layerId)}`)
+  return response.data.data
+}
+
+export async function updateGISLayer(layerId, payload) {
+  const response = await client.patch(`/api/layers/${encodeURIComponent(layerId)}`, payload)
+  return response.data.data
+}
+
+export async function deleteGISLayer(layerId) {
+  const response = await client.delete(`/api/layers/${encodeURIComponent(layerId)}`)
+  return response.data.data
+}
+
+export async function reorderMapLayers(mapId, layerIds) {
+  const response = await client.put(`/api/maps/${encodeURIComponent(mapId)}/layers/order`, {
+    layer_ids: layerIds,
+  })
+  return response.data.data
+}
+
+export async function updateGISLayerVisibility(layerId, isVisible) {
+  const response = await client.patch(`/api/layers/${encodeURIComponent(layerId)}/visibility`, {
+    is_visible: isVisible,
+  })
+  return response.data.data
+}
+
+export async function updateGISLayerOpacity(layerId, opacity) {
+  const response = await client.patch(`/api/layers/${encodeURIComponent(layerId)}/opacity`, {
+    opacity,
+  })
+  return response.data.data
+}
+
+export async function duplicateGISLayer(layerId) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/duplicate`)
+  return response.data.data
+}
+
+export async function createLayerGroup(mapId, payload) {
+  const response = await client.post(`/api/maps/${encodeURIComponent(mapId)}/layer-groups`, payload)
+  return response.data.data
+}
+
+export async function updateLayerGroup(groupId, payload) {
+  const response = await client.patch(`/api/layer-groups/${encodeURIComponent(groupId)}`, payload)
+  return response.data.data
+}
+
+export async function deleteLayerGroup(groupId) {
+  const response = await client.delete(`/api/layer-groups/${encodeURIComponent(groupId)}`)
+  return response.data.data
+}
+
+// Module B — Vector Editing
+export async function getLayerFeatures(layerId, { bbox, limit } = {}) {
+  const params = {}
+  if (Array.isArray(bbox) && bbox.length === 4) {
+    params.bbox = bbox.join(",")
+  }
+  if (limit) {
+    params.limit = limit
+  }
+  const response = await client.get(`/api/layers/${encodeURIComponent(layerId)}/features`, {
+    params,
+    timeout: 5 * 60_000,
+  })
+  return response.data.data
+}
+
+export async function createLayerFeature(layerId, payload) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/features`, payload)
+  return response.data.data
+}
+
+export async function getVectorFeature(featureId) {
+  const response = await client.get(`/api/features/${encodeURIComponent(featureId)}`)
+  return response.data.data
+}
+
+export async function updateVectorFeature(featureId, payload) {
+  const response = await client.patch(`/api/features/${encodeURIComponent(featureId)}`, payload)
+  return response.data.data
+}
+
+export async function deleteVectorFeature(featureId) {
+  const response = await client.delete(`/api/features/${encodeURIComponent(featureId)}`)
+  return response.data.data
+}
+
+export async function splitVectorFeature(featureId, splitGeometry) {
+  const response = await client.post(`/api/features/${encodeURIComponent(featureId)}/split`, {
+    split_geometry: splitGeometry,
+  })
+  return response.data.data
+}
+
+export async function mergeVectorFeatures(payload) {
+  const response = await client.post("/api/features/merge", payload)
+  return response.data.data
+}
+
+export async function validateVectorGeometry(geometry, crs = "EPSG:4326") {
+  const response = await client.post("/api/features/validate", { geometry, crs })
+  return response.data.data
+}
+
+export async function snapVectorGeometry(payload) {
+  const response = await client.post("/api/features/snap", payload)
+  return response.data.data
+}
+
+export async function getFeatureHistory(featureId) {
+  const response = await client.get(`/api/features/${encodeURIComponent(featureId)}/history`)
+  return response.data.data
+}
+
+// Module C — Attribute Table
+export async function getLayerAttributeTable(layerId, params = {}) {
+  const response = await client.get(`/api/layers/${encodeURIComponent(layerId)}/attributes`, { params })
+  return response.data.data
+}
+
+export async function filterLayerAttributes(layerId, payload) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/attributes/filter`, payload)
+  return response.data.data
+}
+
+export async function updateFeatureAttributes(featureId, values) {
+  const response = await client.patch(`/api/features/${encodeURIComponent(featureId)}/attributes`, {
+    values,
+  })
+  return response.data.data
+}
+
+export async function addLayerField(layerId, payload) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/fields`, payload)
+  return response.data.data
+}
+
+export async function deleteLayerField(layerId, fieldId) {
+  const response = await client.delete(
+    `/api/layers/${encodeURIComponent(layerId)}/fields/${encodeURIComponent(fieldId)}`
+  )
+  return response.data.data
+}
+
+export async function calculateLayerField(layerId, payload) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/attributes/calculate`, payload)
+  return response.data.data
+}
+
+export async function exportLayerAttributes(layerId, { format = "csv", featureIds = [] } = {}) {
+  const response = await client.post(
+    `/api/layers/${encodeURIComponent(layerId)}/attributes/export`,
+    { format, feature_ids: featureIds },
+    { responseType: "blob" }
+  )
+  return response.data
+}
+
+// Module D — Symbology & Styling Engine
+export async function getLayerStyle(layerId) {
+  const response = await client.get(`/api/layers/${encodeURIComponent(layerId)}/style`)
+  return response.data.data
+}
+
+export async function updateLayerStyle(layerId, payload) {
+  const response = await client.put(`/api/layers/${encodeURIComponent(layerId)}/style`, payload)
+  return response.data.data
+}
+
+export async function deleteLayerStyle(layerId) {
+  const response = await client.delete(`/api/layers/${encodeURIComponent(layerId)}/style`)
+  return response.data.data
+}
+
+export async function validateLayerStyle(layerId, payload) {
+  const response = await client.post(`/api/layers/${encodeURIComponent(layerId)}/style/validate`, payload)
+  return response.data.data
+}
+
+// Module E — CRS Management
+export async function listSupportedCRS(query = "") {
+  const response = await client.get("/api/crs", { params: query ? { q: query } : {} })
+  return response.data.data
+}
+
+export async function getCRSDetails(epsgCode) {
+  const response = await client.get(`/api/crs/${encodeURIComponent(epsgCode)}`)
+  return response.data.data
+}
+
+export async function reprojectDatasetOrLayer(datasetOrLayerId, payload) {
+  const response = await client.post(`/api/datasets/${encodeURIComponent(datasetOrLayerId)}/reproject`, payload)
+  return response.data.data
+}
+
+export async function setDatasetSourceCRS(datasetId, crs) {
+  const response = await client.post(`/api/datasets/${encodeURIComponent(datasetId)}/crs`, { crs })
+  return response.data.data
+}
+
+// Module F — Dataset Browser
+export async function inspectGISDataset(datasetId) {
+  const response = await client.post(`/api/datasets/${encodeURIComponent(datasetId)}/inspect`)
+  return response.data.data
+}
+
+export async function getGISDatasetMetadata(datasetId) {
+  const response = await client.get(`/api/datasets/${encodeURIComponent(datasetId)}/metadata`)
+  return response.data.data
+}
+
+export async function getGISDatasetInternalLayers(datasetId) {
+  const response = await client.get(`/api/datasets/${encodeURIComponent(datasetId)}/dataset-layers`)
+  return response.data.data
+}
+
+export async function renameGISDataset(datasetId, name) {
+  const response = await client.patch(`/api/datasets/${encodeURIComponent(datasetId)}`, { name })
+  return response.data.data
+}
+
+// Module G — Spatial Query Builder
+export async function validateSpatialQuery(payload) {
+  const response = await client.post("/api/spatial-queries/validate", payload)
+  return response.data.data
+}
+
+export async function executeSpatialQuery(payload) {
+  const response = await client.post("/api/spatial-queries/execute", payload)
+  return response.data.data
+}
+
+export async function saveSpatialQuery(payload) {
+  const response = await client.post("/api/spatial-queries", payload)
+  return response.data.data
+}
+
+export async function listSavedSpatialQueries(params = {}) {
+  const response = await client.get("/api/spatial-queries", { params })
+  return response.data.data
+}
+
+export async function deleteSavedSpatialQuery(queryId) {
+  const response = await client.delete(`/api/spatial-queries/${encodeURIComponent(queryId)}`)
+  return response.data.data
+}
+
+// =============================================================
+// VERACITY MAPS 1.4 — PHASE 2: GIS PROCESSING ENGINE API
+// =============================================================
+
+export async function listProcessingAlgorithms(params = {}) {
+  const response = await client.get("/api/processing/algorithms", { params })
+  return response.data.data
+}
+
+export async function getProcessingAlgorithmDetails(algorithmId) {
+  const response = await client.get(`/api/processing/algorithms/${encodeURIComponent(algorithmId)}`)
+  return response.data.data
+}
+
+export async function validateProcessingRequest(payload) {
+  const response = await client.post("/api/processing/validate", payload)
+  return response.data.data
+}
+
+export async function executeProcessingJob(payload) {
+  const response = await client.post("/api/processing/execute", payload)
+  return response.data.data
+}
+
+export async function listProcessingPresets(algorithmName = "") {
+  const response = await client.get("/api/processing/presets", {
+    params: algorithmName ? { algorithm_name: algorithmName } : {},
+  })
+  return response.data.data
+}
+
+export async function saveProcessingPreset(payload) {
+  const response = await client.post("/api/processing/presets", payload)
+  return response.data.data
+}
+
+export async function deleteProcessingPreset(presetId) {
+  const response = await client.delete(`/api/processing/presets/${encodeURIComponent(presetId)}`)
+  return response.data.data
+}
+
+export async function runBufferAnalysis(payload) {
+  const response = await client.post("/api/analysis/buffer", payload)
+  return response.data.data
+}
+
+export async function runIntersectionAnalysis(payload) {
+  const response = await client.post("/api/analysis/intersection", payload)
+  return response.data.data
+}
+
+export async function runUnionAnalysis(payload) {
+  const response = await client.post("/api/analysis/union", payload)
+  return response.data.data
+}
+
+export async function runDifferenceAnalysis(payload) {
+  const response = await client.post("/api/analysis/difference", payload)
+  return response.data.data
+}
+
+export async function runClipAnalysis(payload) {
+  const response = await client.post("/api/analysis/clip", payload)
+  return response.data.data
+}
+
+export async function runDissolveAnalysis(payload) {
+  const response = await client.post("/api/analysis/dissolve", payload)
+  return response.data.data
+}
+
+export async function runSymmetricalDifferenceAnalysis(payload) {
+  const response = await client.post("/api/analysis/symmetrical-difference", payload)
+  return response.data.data
+}
+
+export async function runSpatialJoinAnalysis(payload) {
+  const response = await client.post("/api/analysis/spatial-join", payload)
+  return response.data.data
+}
+
+export async function runProximityAnalysis(payload) {
+  const response = await client.post("/api/analysis/proximity", payload)
+  return response.data.data
+}
+
+export async function runDistanceMatrixAnalysis(payload) {
+  const response = await client.post("/api/analysis/distance-matrix", payload)
+  return response.data.data
+}
+
+export async function runNearestFacilityAnalysis(payload) {
+  const response = await client.post("/api/analysis/nearest-facility", payload)
+  return response.data.data
+}
+
+export async function runHeatmapAnalysis(payload) {
+  const response = await client.post("/api/analysis/heatmap", payload)
+  return response.data.data
+}
+
+export async function runRasterClip(payload) {
+  const response = await client.post("/api/raster/clip", payload)
+  return response.data.data
+}
+
+export async function runRasterReproject(payload) {
+  const response = await client.post("/api/raster/reproject", payload)
+  return response.data.data
+}
+
+export async function runRasterResample(payload) {
+  const response = await client.post("/api/raster/resample", payload)
+  return response.data.data
+}
+
+export async function runRasterCalculator(payload) {
+  const response = await client.post("/api/raster/calculator", payload)
+  return response.data.data
+}
+
+export async function runRasterAlign(payload) {
+  const response = await client.post("/api/raster/align", payload)
+  return response.data.data
+}
+
+export async function runRasterMosaic(payload) {
+  const response = await client.post("/api/raster/mosaic", payload)
+  return response.data.data
+}
+
+export async function runRasterContours(payload) {
+  const response = await client.post("/api/raster/contours", payload)
+  return response.data.data
+}
+
+export async function runRasterHillshade(payload) {
+  const response = await client.post("/api/raster/hillshade", payload)
+  return response.data.data
+}
+
+export async function runTopologyValidation(payload) {
+  const response = await client.post("/api/analysis/topology", payload)
+  return response.data.data
+}
+
+export async function getTopologyResults(jobId) {
+  const response = await client.get(`/api/analysis/topology/${encodeURIComponent(jobId)}/results`)
+  return response.data.data
+}
+
+export async function getTopologyErrors(jobId) {
+  const response = await client.get(`/api/analysis/topology/${encodeURIComponent(jobId)}/errors`)
+  return response.data.data
+}
+
+export async function fixTopologyErrors(jobId, payload = { fix_all: true }) {
+  const response = await client.post(`/api/analysis/topology/${encodeURIComponent(jobId)}/fix`, payload)
+  return response.data.data
+}
+
+export async function listProcessingJobs(params = {}) {
+  const response = await client.get("/api/jobs", { params })
+  return response.data.data
+}
+
+export async function getProcessingJob(jobId) {
+  const response = await client.get(`/api/jobs/${encodeURIComponent(jobId)}`)
+  return response.data.data
+}
+
+export async function cancelProcessingJob(jobId) {
+  const response = await client.post(`/api/jobs/${encodeURIComponent(jobId)}/cancel`)
+  return response.data.data
+}
+
+export async function getProcessingJobResult(jobId) {
+  const response = await client.get(`/api/jobs/${encodeURIComponent(jobId)}/result`)
+  return response.data.data
+}
+
+export async function getProcessingJobLogs(jobId) {
+  const response = await client.get(`/api/jobs/${encodeURIComponent(jobId)}/logs`)
+  return response.data.data
+}
+
+// ============================================================================
+// CUSTOM BASE LAYERS & MULTIPLE MAP VIEWS (Veracity Maps 1.3)
+// ============================================================================
+
+export function baseLayerPreviewUrl(previewPath) {
+  if (!previewPath) return null
+  if (/^https?:\/\//i.test(previewPath)) return previewPath
+  return `${API_URL}${previewPath.startsWith("/") ? "" : "/"}${previewPath}`
+}
+
+export async function listBaseLayers() {
+  const response = await client.get("/api/base-layers")
+  return response.data.data
+}
+
+export async function registerBaseLayer(payload) {
+  const response = await client.post("/api/base-layers", payload)
+  return response.data.data
+}
+
+export async function getBaseLayer(id) {
+  const response = await client.get(`/api/base-layers/${encodeURIComponent(id)}`)
+  return response.data.data
+}
+
+export async function getBaseLayerPreview(id) {
+  const response = await client.get(`/api/base-layers/${encodeURIComponent(id)}/preview`)
+  return response.data.data
+}
+
+export async function updateBaseLayer(id, payload) {
+  const response = await client.put(`/api/base-layers/${encodeURIComponent(id)}`, payload)
+  return response.data.data
+}
+
+export async function deleteBaseLayer(id) {
+  const response = await client.delete(`/api/base-layers/${encodeURIComponent(id)}`)
+  return response.data.data
+}
+
+export async function validateBaseLayer(id) {
+  const response = await client.post(`/api/base-layers/${encodeURIComponent(id)}/validate`)
+  return response.data.data
+}
+
+export async function getWorkspaceBaseLayer(workspaceId) {
+  const response = await client.get(`/api/workspaces/${encodeURIComponent(workspaceId)}/base-layer`)
+  return response.data.data
+}
+
+export async function selectWorkspaceBaseLayer(workspaceId, payload) {
+  const response = await client.put(`/api/workspaces/${encodeURIComponent(workspaceId)}/base-layer`, payload)
+  return response.data.data
+}
+
+export async function getWorkspaceMapView(workspaceId) {
+  const response = await client.get(`/api/workspaces/${encodeURIComponent(workspaceId)}/map-view`)
+  return response.data.data
+}
+
+export async function updateWorkspaceMapView(workspaceId, payload) {
+  const response = await client.put(`/api/workspaces/${encodeURIComponent(workspaceId)}/map-view`, payload)
+  return response.data.data
+}
+
+export async function listMapViews() {
+  const response = await client.get("/api/map-views")
+  return response.data.data
+}
+
+export async function getMapView(viewType) {
+  const response = await client.get(`/api/map-views/${encodeURIComponent(viewType)}`)
+  return response.data.data
+}
+
+// ============================================================================
+// DYNAMIC GEOPACKAGE LAYERS, WORKSPACE RECORDS & RASTER MANAGEMENT (1.3)
+// ============================================================================
+
+export async function inspectUploadedDataset(payload) {
+  const response = await client.post("/api/datasets/inspect", payload)
+  return response.data.data
+}
+
+export async function addWorkspaceDatasetLayers(workspaceId, payload) {
+  const response = await client.post(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers`,
+    payload,
+    { timeout: 10 * 60_000 }
+  )
+  return response.data.data
+}
+
+export async function listWorkspaceLayers(workspaceId) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers`
+  )
+  return response.data.data
+}
+
+export async function getWorkspaceLayer(workspaceId, layerId) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/${encodeURIComponent(layerId)}`
+  )
+  return response.data.data
+}
+
+export async function updateWorkspaceLayer(workspaceId, layerId, payload) {
+  const response = await client.patch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/${encodeURIComponent(layerId)}`,
+    payload
+  )
+  return response.data.data
+}
+
+export async function deleteWorkspaceLayer(workspaceId, layerId) {
+  const response = await client.delete(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/${encodeURIComponent(layerId)}`
+  )
+  return response.data.data
+}
+
+export async function reorderWorkspaceLayers(workspaceId, layerIds) {
+  const response = await client.patch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/order`,
+    { layer_ids: layerIds }
+  )
+  return response.data.data
+}
+
+export async function batchUpdateWorkspaceLayersVisibility(workspaceId, layerIds, visibility) {
+  const response = await client.patch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/visibility`,
+    { layer_ids: layerIds, visibility }
+  )
+  return response.data.data
+}
+
+export async function queryWorkspaceLayerFeatures(workspaceId, layerId, params = {}) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/layers/${encodeURIComponent(layerId)}/features`,
+    { params }
+  )
+  return response.data.data
+}
+
+export async function listWorkspaceRecords(workspaceId, params = {}) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records`,
+    { params }
+  )
+  return response.data.data
+}
+
+export async function getWorkspaceRecordCounts(workspaceId) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/counts`
+  )
+  return response.data.data
+}
+
+export async function getWorkspaceRecordSchema(workspaceId, params = {}) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/schema`,
+    { params }
+  )
+  return response.data.data
+}
+
+export async function getWorkspaceRecord(workspaceId, recordId) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/${encodeURIComponent(recordId)}`
+  )
+  return response.data.data
+}
+
+export async function updateWorkspaceRecord(workspaceId, recordId, payload) {
+  const response = await client.patch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/${encodeURIComponent(recordId)}`,
+    payload
+  )
+  return response.data.data
+}
+
+export async function deleteWorkspaceRecord(workspaceId, recordId) {
+  const response = await client.delete(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/${encodeURIComponent(recordId)}`
+  )
+  return response.data.data
+}
+
+export async function exportWorkspaceRecords(workspaceId, payload) {
+  const response = await client.post(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/records/export`,
+    payload,
+    { responseType: "blob" }
+  )
+  return response.data
+}
+
+export async function listWorkspaceRasters(workspaceId) {
+  const response = await client.get(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/rasters`
+  )
+  return response.data.data
+}
+
+export async function updateWorkspaceRaster(workspaceId, rasterId, payload) {
+  const response = await client.patch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/rasters/${encodeURIComponent(rasterId)}`,
+    payload
+  )
+  return response.data.data
+}
+
+
+
+
+

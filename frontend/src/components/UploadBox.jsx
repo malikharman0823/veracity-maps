@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { UploadCloud, FileArchive } from "lucide-react"
 
-export const ACCEPTED_FORMATS = ".png,.jpg,.jpeg,.tif,.tiff,.pdf,.dxf,.dwg,.svf,.mbtiles,.zip,image/png,image/jpeg,image/tiff,application/pdf,application/zip,application/vnd.mapbox-vector-tile"
+export const ACCEPTED_FORMATS = ".png,.jpg,.jpeg,.tif,.tiff,.pdf,.dxf,.dwg,.svf,.gpkg,.shp,.geojson,.json,.kml,.osm,.mbtiles,.zip,image/png,image/jpeg,image/tiff,application/pdf,application/zip,application/geo+json,application/vnd.mapbox-vector-tile"
 
 export default function UploadBox({ disabled, onSelect }) {
   const inputRef = useRef(null)
@@ -49,7 +49,7 @@ export default function UploadBox({ disabled, onSelect }) {
         Drop a dataset file here or click to browse
       </h3>
       <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md mb-6">
-        Supports PNG, JPG/JPEG, TIFF/GeoTIFF (.tif, .tiff), PDF, CAD (.dxf, .dwg, .svf), standalone MBTiles (.mbtiles), and Veracity Maps project packages (.zip).
+        Supports PNG, JPG/JPEG, TIFF/GeoTIFF (.tif, .tiff), GeoPackage (.gpkg), Shapefile (.shp), GeoJSON (.geojson), KML (.kml), OSM (.osm), PDF, CAD (.dxf, .dwg, .svf), MBTiles (.mbtiles), and ZIP archives (.zip).
       </p>
 
       <div className="flex flex-wrap items-center justify-center gap-2.5">

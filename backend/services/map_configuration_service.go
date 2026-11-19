@@ -430,6 +430,6 @@ func pathWithin(root, path string) bool {
 
 func newPersistentMapID(ownerUserID, name string) string {
 	now := time.Now().UTC().UnixNano()
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s-%s-%d", ownerUserID, name, now)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s-%s-%d", ownerUserID, name, now))
 	return fmt.Sprintf("map_%x", sum)[:20]
 }

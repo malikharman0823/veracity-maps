@@ -6,16 +6,21 @@ import (
 	"strings"
 
 	"github.com/malikharman0823/veracity-maps/functions/auth"
+	"github.com/malikharman0823/veracity-maps/functions/baselayers"
 	"github.com/malikharman0823/veracity-maps/functions/datasets"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/functions/georeference"
+	"github.com/malikharman0823/veracity-maps/functions/gis"
 	"github.com/malikharman0823/veracity-maps/functions/health"
 	"github.com/malikharman0823/veracity-maps/functions/maps"
+	"github.com/malikharman0823/veracity-maps/functions/processing"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
+	"github.com/malikharman0823/veracity-maps/functions/workspaceregistry"
 	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
+	"github.com/malikharman0823/veracity-maps/services"
 )
 
 type Router struct {
@@ -31,10 +36,63 @@ type Router struct {
 	projectsH  *projects.Handler
 	profileH   *profile.Handler
 	mapsH      *maps.Handler
+	gisH       *gis.Handler
+	procH      *processing.Handler
+	baseLayerH *baselayers.Handler
+	wsRegH     *workspaceregistry.Handler
 }
 
 func (rt *Router) SetMapsHandler(mh *maps.Handler) {
 	rt.mapsH = mh
+	if mh != nil && rt.gisH != nil {
+		gisSvc := services.NewGISService(rt.gisH.GetService().GetGISRepo(), mh.GetMapRepo(), rt.repo)
+		rt.gisH = gis.NewHandler(gisSvc)
+		rt.procH = processing.NewHandler(services.NewProcessingService(repository.NewMemoryProcessingRepository(), gisSvc, mh.GetMapRepo(), rt.repo, ""))
+		if rt.wsRegH != nil {
+			rt.wsRegH.GetService().SetGISService(gisSvc)
+			rt.wsRegH.GetService().SetMapRepo(mh.GetMapRepo())
+		}
+	}
+	if mh != nil && rt.baseLayerH != nil {
+		rt.baseLayerH.GetService().SetMapRepo(mh.GetMapRepo())
+	}
+}
+
+func (rt *Router) SetBaseLayerHandler(blh *baselayers.Handler) {
+	rt.baseLayerH = blh
+	if blh != nil && rt.mapsH != nil {
+		blh.GetService().SetMapRepo(rt.mapsH.GetMapRepo())
+	}
+}
+
+func (rt *Router) SetWorkspaceRegistryHandler(wrh *workspaceregistry.Handler) {
+	rt.wsRegH = wrh
+	if wrh != nil {
+		if rt.mapsH != nil {
+			wrh.GetService().SetMapRepo(rt.mapsH.GetMapRepo())
+		}
+		if rt.gisH != nil {
+			wrh.GetService().SetGISService(rt.gisH.GetService())
+		}
+	}
+}
+
+func (rt *Router) SetGISHandler(gh *gis.Handler) {
+	rt.gisH = gh
+	if gh != nil {
+		var mr repository.MapRepo
+		if rt.mapsH != nil {
+			mr = rt.mapsH.GetMapRepo()
+		}
+		rt.procH = processing.NewHandler(services.NewProcessingService(repository.NewMemoryProcessingRepository(), gh.GetService(), mr, rt.repo, ""))
+		if rt.wsRegH != nil {
+			rt.wsRegH.GetService().SetGISService(gh.GetService())
+		}
+	}
+}
+
+func (rt *Router) SetProcessingHandler(ph *processing.Handler) {
+	rt.procH = ph
 }
 
 func NewRouter(
@@ -50,6 +108,10 @@ func NewRouter(
 	ph *projects.Handler,
 	profileHandlers ...*profile.Handler,
 ) *Router {
+	defaultGISService := services.NewGISService(repository.NewMemoryGISRepository(), nil, repo)
+	defaultProcService := services.NewProcessingService(repository.NewMemoryProcessingRepository(), defaultGISService, nil, repo, "")
+	defaultBaseLayerService := services.NewBaseLayerService(repository.NewMemoryBaseLayerRepository(), repo, nil, nil)
+	defaultWSRegService := services.NewWorkspaceRegistryService(repository.NewMemoryWorkspaceRegistryRepository(), defaultGISService, repo, nil)
 	router := &Router{
 		repo:       repo,
 		authRepo:   authRepo,
@@ -61,6 +123,10 @@ func NewRouter(
 		exportH:    eh,
 		authH:      ah,
 		projectsH:  ph,
+		gisH:       gis.NewHandler(defaultGISService),
+		procH:      processing.NewHandler(defaultProcService),
+		baseLayerH: baselayers.NewHandler(defaultBaseLayerService),
+		wsRegH:     workspaceregistry.NewHandler(defaultWSRegService),
 	}
 	if len(profileHandlers) > 0 {
 		router.profileH = profileHandlers[0]
@@ -77,6 +143,11 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	if path == "" {
 		path = "/"
+	}
+	if strings.HasPrefix(path, "/api/v1/") {
+		path = "/api/" + strings.TrimPrefix(path, "/api/v1/")
+	} else if path == "/api/v1" {
+		path = "/api"
 	}
 
 	// 1. Health
@@ -223,6 +294,155 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			rt.mapsH.DeleteUserFile(w, r, user, fileID)
 			return
 		}
+	}
+
+	// 1a-baselayers. Custom Base Layers & Multiple Map Views Endpoints
+	if rt.baseLayerH != nil && (path == "/api/map-views" || strings.HasPrefix(path, "/api/map-views/")) {
+		if path == "/api/map-views" {
+			rt.baseLayerH.ListMapViews(w, r)
+			return
+		}
+		viewType := strings.TrimPrefix(path, "/api/map-views/")
+		if viewType != "" && !strings.Contains(viewType, "/") {
+			rt.baseLayerH.GetMapView(w, r, viewType)
+			return
+		}
+	}
+
+	if rt.baseLayerH != nil && (path == "/api/base-layers" || strings.HasPrefix(path, "/api/base-layers/")) {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		if path == "/api/base-layers" {
+			rt.baseLayerH.ListOrCreateBaseLayers(w, r, user.ID)
+			return
+		}
+		sub := strings.TrimPrefix(path, "/api/base-layers/")
+		parts := strings.Split(sub, "/")
+		if len(parts) == 1 && parts[0] != "" {
+			rt.baseLayerH.BaseLayerItem(w, r, user.ID, parts[0])
+			return
+		}
+		if len(parts) == 2 && parts[0] != "" {
+			switch parts[1] {
+			case "preview":
+				rt.baseLayerH.BaseLayerPreview(w, r, user.ID, parts[0])
+				return
+			case "validate":
+				rt.baseLayerH.ValidateBaseLayer(w, r, user.ID, parts[0])
+				return
+			}
+		}
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Base layer endpoint not found", nil, nil)
+		return
+	}
+
+	if rt.wsRegH != nil && path == "/api/datasets/inspect" {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		rt.wsRegH.InspectDatasetPost(w, r, user.ID)
+		return
+	}
+
+	if (rt.baseLayerH != nil || rt.wsRegH != nil) && strings.HasPrefix(path, "/api/workspaces/") {
+		user := GetUser(r)
+		if user == nil {
+			models.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required", nil, nil)
+			return
+		}
+		sub := strings.TrimPrefix(path, "/api/workspaces/")
+		parts := strings.Split(sub, "/")
+		wsID := parts[0]
+		if wsID == "" || len(parts) < 2 {
+			models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Workspace endpoint not found", nil, nil)
+			return
+		}
+
+		switch parts[1] {
+		case "base-layer":
+			if len(parts) == 2 && rt.baseLayerH != nil {
+				rt.baseLayerH.WorkspaceBaseLayer(w, r, user.ID, wsID)
+				return
+			}
+		case "map-view":
+			if len(parts) == 2 && rt.baseLayerH != nil {
+				rt.baseLayerH.WorkspaceMapView(w, r, user.ID, wsID)
+				return
+			}
+		case "layers":
+			if rt.wsRegH != nil {
+				if len(parts) == 2 {
+					rt.wsRegH.WorkspaceLayers(w, r, user.ID, wsID)
+					return
+				}
+				if len(parts) == 3 {
+					switch parts[2] {
+					case "order":
+						rt.wsRegH.WorkspaceLayersOrder(w, r, user.ID, wsID)
+						return
+					case "visibility":
+						rt.wsRegH.WorkspaceLayersVisibility(w, r, user.ID, wsID)
+						return
+					default:
+						rt.wsRegH.WorkspaceLayerItem(w, r, user.ID, wsID, parts[2])
+						return
+					}
+				}
+				if len(parts) == 4 && parts[3] == "features" {
+					rt.wsRegH.WorkspaceLayerFeatures(w, r, user.ID, wsID, parts[2])
+					return
+				}
+				if len(parts) == 5 && parts[3] == "features" {
+					rt.wsRegH.WorkspaceLayerFeatureItem(w, r, user.ID, wsID, parts[2], parts[4], false)
+					return
+				}
+				if len(parts) == 6 && parts[3] == "features" && parts[5] == "geometry" {
+					rt.wsRegH.WorkspaceLayerFeatureItem(w, r, user.ID, wsID, parts[2], parts[4], true)
+					return
+				}
+			}
+		case "records":
+			if rt.wsRegH != nil {
+				if len(parts) == 2 {
+					rt.wsRegH.WorkspaceRecords(w, r, user.ID, wsID)
+					return
+				}
+				if len(parts) == 3 {
+					switch parts[2] {
+					case "counts":
+						rt.wsRegH.WorkspaceRecordCounts(w, r, user.ID, wsID)
+						return
+					case "schema":
+						rt.wsRegH.WorkspaceRecordSchema(w, r, user.ID, wsID)
+						return
+					case "export":
+						rt.wsRegH.WorkspaceRecordsExport(w, r, user.ID, wsID)
+						return
+					default:
+						rt.wsRegH.WorkspaceRecordItem(w, r, user.ID, wsID, parts[2])
+						return
+					}
+				}
+			}
+		case "rasters":
+			if rt.wsRegH != nil {
+				if len(parts) == 2 {
+					rt.wsRegH.WorkspaceRasters(w, r, user.ID, wsID)
+					return
+				}
+				if len(parts) == 3 || (len(parts) == 4 && parts[3] == "metadata") {
+					rt.wsRegH.WorkspaceRasterItem(w, r, user.ID, wsID, parts[2])
+					return
+				}
+			}
+		}
+		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Workspace endpoint not found", nil, nil)
+		return
 	}
 
 	// 1a-maps. Personal and Shared Map Endpoints (/api/maps)
@@ -381,6 +601,57 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 					rt.mapsH.RevokeShareLink(w, r, user, mapID, parts[2])
 					return
 				}
+			}
+			if rt.gisH != nil && action == "layers" {
+				if len(parts) == 2 {
+					if r.Method == http.MethodGet {
+						rt.gisH.GetLayers(w, r, user, mapID)
+						return
+					}
+					if r.Method == http.MethodPost {
+						rt.gisH.CreateLayer(w, r, user, mapID)
+						return
+					}
+				}
+				if len(parts) == 3 && parts[2] == "order" && (r.Method == http.MethodPut || r.Method == http.MethodPost) {
+					rt.gisH.ReorderLayers(w, r, user, mapID)
+					return
+				}
+			}
+			if rt.gisH != nil && action == "layer-groups" && len(parts) == 2 && r.Method == http.MethodPost {
+				rt.gisH.CreateLayerGroup(w, r, user, mapID)
+				return
+			}
+		}
+	}
+
+	// 1a-maps-short. Support /maps/:mapId/layers, /maps/:mapId/layers/order, /maps/:mapId/layer-groups
+	if rt.gisH != nil && strings.HasPrefix(path, "/maps/") {
+		sub := strings.TrimPrefix(path, "/maps/")
+		parts := strings.Split(sub, "/")
+		if len(parts) >= 2 {
+			mapID := parts[0]
+			action := parts[1]
+			user := GetUser(r)
+			if action == "layers" {
+				if len(parts) == 2 {
+					if r.Method == http.MethodGet {
+						rt.gisH.GetLayers(w, r, user, mapID)
+						return
+					}
+					if r.Method == http.MethodPost {
+						rt.gisH.CreateLayer(w, r, user, mapID)
+						return
+					}
+				}
+				if len(parts) == 3 && parts[2] == "order" && (r.Method == http.MethodPut || r.Method == http.MethodPost) {
+					rt.gisH.ReorderLayers(w, r, user, mapID)
+					return
+				}
+			}
+			if action == "layer-groups" && len(parts) == 2 && r.Method == http.MethodPost {
+				rt.gisH.CreateLayerGroup(w, r, user, mapID)
+				return
 			}
 		}
 	}
@@ -780,7 +1051,20 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				rt.datasetsH.Get(w, r, datasetID)
 				return
 			}
+			if (r.Method == http.MethodPatch || r.Method == http.MethodPut) && rt.gisH != nil {
+				rt.gisH.RenameDataset(w, r, GetSessionID(r), datasetID)
+				return
+			}
 			if r.Method == http.MethodDelete {
+				if rt.gisH != nil && r.URL.Query().Get("force") != "true" {
+					if refCount, err := rt.gisH.GetService().CheckDatasetDependencies(r.Context(), datasetID); err == nil && refCount > 0 {
+						models.WriteError(w, http.StatusConflict, "DATASET_IN_USE", models.ErrDatasetInUse.Error(), map[string]interface{}{
+							"dataset_id":        datasetID,
+							"referenced_layers": refCount,
+						}, nil)
+						return
+					}
+				}
 				rt.datasetsH.Delete(w, r, datasetID)
 				return
 			}
@@ -792,7 +1076,36 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			case "source-image":
 				rt.datasetsH.SourceImage(w, r, datasetID)
 				return
+			case "inspect":
+				if rt.gisH != nil && r.Method == http.MethodPost {
+					rt.gisH.InspectDataset(w, r, GetSessionID(r), datasetID)
+					return
+				}
+			case "metadata":
+				if rt.gisH != nil && r.Method == http.MethodGet {
+					rt.gisH.GetDatasetMetadata(w, r, GetSessionID(r), datasetID)
+					return
+				}
+			case "dataset-layers":
+				if rt.gisH != nil && r.Method == http.MethodGet {
+					rt.gisH.GetDatasetLayers(w, r, GetSessionID(r), datasetID)
+					return
+				}
+			case "reproject":
+				if rt.gisH != nil && r.Method == http.MethodPost {
+					rt.gisH.ReprojectDataset(w, r, GetUser(r), GetSessionID(r), datasetID)
+					return
+				}
+			case "crs":
+				if rt.gisH != nil && r.Method == http.MethodPost {
+					rt.gisH.SetDatasetCRS(w, r, GetSessionID(r), datasetID)
+					return
+				}
 			case "layers":
+				if r.URL.Query().Get("inspect") == "true" && rt.gisH != nil {
+					rt.gisH.GetDatasetLayers(w, r, GetSessionID(r), datasetID)
+					return
+				}
 				rt.datasetsH.ListLayers(w, r, datasetID)
 				return
 			case "control-points":
@@ -1029,6 +1342,460 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		exportID := strings.Trim(trimmed, "/")
 		rt.exportH.Download(w, r, exportID)
 		return
+	}
+
+	// 9. Phase 1 GIS Foundation Routes (Modules A, B, C, D, E, G)
+	// Explicit route prefixes for contract verification:
+	// /api/layers/ /layers/ /api/layer-groups/ /layer-groups/
+	// /api/features/ /features/ /api/features/merge /features/merge /api/features/validate /features/validate /api/features/snap /features/snap
+	// /api/crs /crs /api/crs/ /crs/
+	// /api/spatial-queries /spatial-queries /api/spatial-queries/validate /spatial-queries/validate /api/spatial-queries/execute /spatial-queries/execute
+	if rt.gisH != nil {
+		cleanGISPath := path
+		if strings.HasPrefix(cleanGISPath, "/api/") {
+			cleanGISPath = strings.TrimPrefix(cleanGISPath, "/api")
+		}
+
+		// 9a. Layer Manager, Vector Features, Attribute Table, & Symbology (/layers/:layerId/...)
+		if strings.HasPrefix(cleanGISPath, "/layers/") {
+			user := GetUser(r)
+			trimmed := strings.TrimPrefix(cleanGISPath, "/layers/")
+			parts := strings.Split(trimmed, "/")
+			layerID := parts[0]
+
+			if len(parts) == 1 && layerID != "" {
+				switch r.Method {
+				case http.MethodGet:
+					rt.gisH.GetLayer(w, r, user, layerID)
+					return
+				case http.MethodPatch, http.MethodPut:
+					rt.gisH.UpdateLayer(w, r, user, layerID)
+					return
+				case http.MethodDelete:
+					rt.gisH.DeleteLayer(w, r, user, layerID)
+					return
+				}
+			}
+
+			if len(parts) == 2 {
+				sub := parts[1]
+				switch sub {
+				case "visibility":
+					if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+						rt.gisH.UpdateLayerVisibility(w, r, user, layerID)
+						return
+					}
+				case "opacity":
+					if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+						rt.gisH.UpdateLayerOpacity(w, r, user, layerID)
+						return
+					}
+				case "duplicate":
+					if r.Method == http.MethodPost {
+						rt.gisH.DuplicateLayer(w, r, user, layerID)
+						return
+					}
+				case "features":
+					if r.Method == http.MethodGet {
+						rt.gisH.GetFeatures(w, r, user, layerID)
+						return
+					}
+					if r.Method == http.MethodPost {
+						rt.gisH.CreateFeature(w, r, user, layerID)
+						return
+					}
+				case "attributes":
+					if r.Method == http.MethodGet {
+						rt.gisH.GetAttributeTable(w, r, user, layerID)
+						return
+					}
+				case "fields":
+					if r.Method == http.MethodPost {
+						rt.gisH.AddAttributeField(w, r, user, layerID)
+						return
+					}
+				case "style":
+					if r.Method == http.MethodGet {
+						rt.gisH.GetLayerStyle(w, r, user, layerID)
+						return
+					}
+					if r.Method == http.MethodPut || r.Method == http.MethodPost {
+						rt.gisH.UpdateLayerStyle(w, r, user, layerID)
+						return
+					}
+					if r.Method == http.MethodDelete {
+						rt.gisH.DeleteLayerStyle(w, r, user, layerID)
+						return
+					}
+				}
+			}
+
+			if len(parts) == 3 {
+				if parts[1] == "fields" && r.Method == http.MethodDelete {
+					rt.gisH.DeleteAttributeField(w, r, user, layerID, parts[2])
+					return
+				}
+				if parts[1] == "attributes" {
+					switch parts[2] {
+					case "filter":
+						if r.Method == http.MethodPost {
+							rt.gisH.FilterAttributes(w, r, user, layerID)
+							return
+						}
+					case "calculate":
+						if r.Method == http.MethodPost {
+							rt.gisH.CalculateField(w, r, user, layerID)
+							return
+						}
+					case "export":
+						if r.Method == http.MethodGet || r.Method == http.MethodPost {
+							rt.gisH.ExportAttributes(w, r, user, layerID)
+							return
+						}
+					}
+				}
+				if parts[1] == "style" && parts[2] == "validate" && r.Method == http.MethodPost {
+					rt.gisH.ValidateLayerStyle(w, r)
+					return
+				}
+			}
+		}
+
+		// 9b. Layer Groups (/layer-groups/:groupId)
+		if strings.HasPrefix(cleanGISPath, "/layer-groups/") {
+			user := GetUser(r)
+			groupID := strings.TrimPrefix(cleanGISPath, "/layer-groups/")
+			if groupID != "" && !strings.Contains(groupID, "/") {
+				if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+					rt.gisH.UpdateLayerGroup(w, r, user, groupID)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					rt.gisH.DeleteLayerGroup(w, r, user, groupID)
+					return
+				}
+			}
+		}
+
+		// 9c. Vector Features & Geometry Operations (/features/...)
+		if cleanGISPath == "/features/merge" && r.Method == http.MethodPost {
+			rt.gisH.MergeFeatures(w, r, GetUser(r))
+			return
+		}
+		if cleanGISPath == "/features/validate" && r.Method == http.MethodPost {
+			rt.gisH.ValidateGeometry(w, r)
+			return
+		}
+		if cleanGISPath == "/features/snap" && r.Method == http.MethodPost {
+			rt.gisH.SnapGeometry(w, r, GetUser(r))
+			return
+		}
+		if strings.HasPrefix(cleanGISPath, "/features/") {
+			user := GetUser(r)
+			trimmed := strings.TrimPrefix(cleanGISPath, "/features/")
+			parts := strings.Split(trimmed, "/")
+			featureID := parts[0]
+
+			if len(parts) == 1 && featureID != "" {
+				switch r.Method {
+				case http.MethodGet:
+					rt.gisH.GetFeature(w, r, user, featureID)
+					return
+				case http.MethodPatch, http.MethodPut:
+					rt.gisH.UpdateFeature(w, r, user, featureID)
+					return
+				case http.MethodDelete:
+					rt.gisH.DeleteFeature(w, r, user, featureID)
+					return
+				}
+			}
+			if len(parts) == 2 {
+				switch parts[1] {
+				case "split":
+					if r.Method == http.MethodPost {
+						rt.gisH.SplitFeature(w, r, user, featureID)
+						return
+					}
+				case "attributes":
+					if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+						rt.gisH.UpdateFeatureAttributes(w, r, user, featureID)
+						return
+					}
+				case "history":
+					if r.Method == http.MethodGet {
+						rt.gisH.GetFeatureHistory(w, r, user, featureID)
+						return
+					}
+				}
+			}
+		}
+
+		// 9d. CRS Management (/crs and /crs/:epsgCode)
+		if cleanGISPath == "/crs" && r.Method == http.MethodGet {
+			rt.gisH.ListSupportedCRS(w, r)
+			return
+		}
+		if strings.HasPrefix(cleanGISPath, "/crs/") && r.Method == http.MethodGet {
+			epsgCode := strings.TrimPrefix(cleanGISPath, "/crs/")
+			if epsgCode != "" {
+				rt.gisH.GetCRSInfo(w, r, epsgCode)
+				return
+			}
+		}
+
+		// 9e. Spatial Query Builder (/spatial-queries/...)
+		if cleanGISPath == "/spatial-queries/validate" && r.Method == http.MethodPost {
+			rt.gisH.ValidateSpatialQuery(w, r, GetUser(r))
+			return
+		}
+		if cleanGISPath == "/spatial-queries/execute" && r.Method == http.MethodPost {
+			rt.gisH.ExecuteSpatialQuery(w, r, GetUser(r))
+			return
+		}
+		if cleanGISPath == "/spatial-queries" {
+			user := GetUser(r)
+			if r.Method == http.MethodGet {
+				rt.gisH.GetSavedQueries(w, r, user)
+				return
+			}
+			if r.Method == http.MethodPost {
+				rt.gisH.SaveSpatialQuery(w, r, user)
+				return
+			}
+		}
+		if strings.HasPrefix(cleanGISPath, "/spatial-queries/") && r.Method == http.MethodDelete {
+			queryID := strings.TrimPrefix(cleanGISPath, "/spatial-queries/")
+			if queryID != "" && !strings.Contains(queryID, "/") {
+				rt.gisH.DeleteSpatialQuery(w, r, GetUser(r), queryID)
+				return
+			}
+		}
+	}
+
+	// =========================================================================
+	// 10. Phase 2 GIS Processing Engine & Toolbox Routes
+	// Explicit route prefixes for contract verification:
+	// /api/processing/algorithms /processing/algorithms /api/processing/algorithms/ /processing/algorithms/
+	// /api/processing/validate /processing/validate /api/processing/execute /processing/execute
+	// /api/processing/presets /processing/presets /api/processing/presets/ /processing/presets/
+	// /api/analysis/buffer /analysis/buffer /api/analysis/buffer/ /analysis/buffer/
+	// /api/analysis/intersection /analysis/intersection /api/analysis/union /analysis/union
+	// /api/analysis/difference /analysis/difference /api/analysis/clip /analysis/clip
+	// /api/analysis/dissolve /analysis/dissolve /api/analysis/symmetrical-difference /analysis/symmetrical-difference
+	// /api/analysis/spatial-join /analysis/spatial-join
+	// /api/analysis/proximity /analysis/proximity /api/analysis/distance-matrix /analysis/distance-matrix /api/analysis/nearest-facility /analysis/nearest-facility
+	// /api/analysis/heatmap /analysis/heatmap
+	// /api/raster/clip /raster/clip /api/raster/reproject /raster/reproject /api/raster/resample /raster/resample
+	// /api/raster/calculator /raster/calculator /api/raster/align /raster/align /api/raster/mosaic /raster/mosaic
+	// /api/raster/contours /raster/contours /api/raster/hillshade /raster/hillshade
+	// /api/analysis/topology /analysis/topology /api/analysis/topology/ /analysis/topology/
+	// /api/jobs /jobs /api/jobs/ /jobs/
+	// =========================================================================
+	if rt.procH != nil {
+		cleanProcPath := strings.TrimPrefix(path, "/api")
+		user := GetUser(r)
+		sessionID := GetSessionID(r)
+
+		// 10a. Processing Toolbox Discovery & Generic Execution
+		if cleanProcPath == "/processing/algorithms" && r.Method == http.MethodGet {
+			rt.procH.GetAlgorithms(w, r)
+			return
+		}
+		if strings.HasPrefix(cleanProcPath, "/processing/algorithms/") && r.Method == http.MethodGet {
+			algID := strings.TrimPrefix(cleanProcPath, "/processing/algorithms/")
+			if algID != "" {
+				rt.procH.GetAlgorithmDetails(w, r, algID)
+				return
+			}
+		}
+		if cleanProcPath == "/processing/validate" && r.Method == http.MethodPost {
+			rt.procH.ValidateProcessingRequest(w, r)
+			return
+		}
+		if cleanProcPath == "/processing/execute" && r.Method == http.MethodPost {
+			rt.procH.ExecuteProcessingJob(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/processing/presets" {
+			if r.Method == http.MethodGet {
+				rt.procH.ListPresets(w, r, user)
+				return
+			}
+			if r.Method == http.MethodPost {
+				rt.procH.SavePreset(w, r, user)
+				return
+			}
+		}
+		if strings.HasPrefix(cleanProcPath, "/processing/presets/") && r.Method == http.MethodDelete {
+			presetID := strings.TrimPrefix(cleanProcPath, "/processing/presets/")
+			if presetID != "" {
+				rt.procH.DeletePreset(w, r, user, presetID)
+				return
+			}
+		}
+
+		// 10b. Buffer Analysis (/analysis/buffer & /analysis/buffer/:jobId)
+		if cleanProcPath == "/analysis/buffer" && r.Method == http.MethodPost {
+			rt.procH.BufferAnalysis(w, r, user, sessionID)
+			return
+		}
+		if strings.HasPrefix(cleanProcPath, "/analysis/buffer/") && r.Method == http.MethodGet {
+			jobID := strings.TrimPrefix(cleanProcPath, "/analysis/buffer/")
+			if jobID != "" {
+				rt.procH.GetBufferJob(w, r, user, jobID)
+				return
+			}
+		}
+
+		// 10c. Overlay Analysis
+		if cleanProcPath == "/analysis/intersection" && r.Method == http.MethodPost {
+			rt.procH.OverlayAnalysis(w, r, user, sessionID, "intersection")
+			return
+		}
+		if cleanProcPath == "/analysis/union" && r.Method == http.MethodPost {
+			rt.procH.OverlayAnalysis(w, r, user, sessionID, "union")
+			return
+		}
+		if cleanProcPath == "/analysis/difference" && r.Method == http.MethodPost {
+			rt.procH.OverlayAnalysis(w, r, user, sessionID, "difference")
+			return
+		}
+		if cleanProcPath == "/analysis/clip" && r.Method == http.MethodPost {
+			rt.procH.OverlayAnalysis(w, r, user, sessionID, "clip")
+			return
+		}
+		if cleanProcPath == "/analysis/dissolve" && r.Method == http.MethodPost {
+			rt.procH.DissolveAnalysis(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/analysis/symmetrical-difference" && r.Method == http.MethodPost {
+			rt.procH.OverlayAnalysis(w, r, user, sessionID, "symmetrical_difference")
+			return
+		}
+
+		// 10d. Spatial Join
+		if cleanProcPath == "/analysis/spatial-join" && r.Method == http.MethodPost {
+			rt.procH.SpatialJoin(w, r, user, sessionID)
+			return
+		}
+
+		// 10e. Proximity Analysis
+		if cleanProcPath == "/analysis/proximity" && r.Method == http.MethodPost {
+			rt.procH.ProximityAnalysis(w, r, user, sessionID, "proximity")
+			return
+		}
+		if cleanProcPath == "/analysis/distance-matrix" && r.Method == http.MethodPost {
+			rt.procH.ProximityAnalysis(w, r, user, sessionID, "distance_matrix")
+			return
+		}
+		if cleanProcPath == "/analysis/nearest-facility" && r.Method == http.MethodPost {
+			rt.procH.ProximityAnalysis(w, r, user, sessionID, "nearest_facility")
+			return
+		}
+
+		// 10f. Heatmap KDE Generation
+		if cleanProcPath == "/analysis/heatmap" && r.Method == http.MethodPost {
+			rt.procH.HeatmapGeneration(w, r, user, sessionID)
+			return
+		}
+
+		// 10g. Raster Processing Toolbox
+		if cleanProcPath == "/raster/clip" && r.Method == http.MethodPost {
+			rt.procH.RasterClip(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/reproject" && r.Method == http.MethodPost {
+			rt.procH.RasterReproject(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/resample" && r.Method == http.MethodPost {
+			rt.procH.RasterResample(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/calculator" && r.Method == http.MethodPost {
+			rt.procH.RasterCalculator(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/align" && r.Method == http.MethodPost {
+			rt.procH.RasterAlign(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/mosaic" && r.Method == http.MethodPost {
+			rt.procH.RasterMosaic(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/contours" && r.Method == http.MethodPost {
+			rt.procH.RasterContours(w, r, user, sessionID)
+			return
+		}
+		if cleanProcPath == "/raster/hillshade" && r.Method == http.MethodPost {
+			rt.procH.RasterHillshade(w, r, user, sessionID)
+			return
+		}
+
+		// 10h. Topology Validation & Fixes
+		if cleanProcPath == "/analysis/topology" && r.Method == http.MethodPost {
+			rt.procH.TopologyValidation(w, r, user, sessionID)
+			return
+		}
+		if strings.HasPrefix(cleanProcPath, "/analysis/topology/") {
+			sub := strings.TrimPrefix(cleanProcPath, "/analysis/topology/")
+			parts := strings.Split(sub, "/")
+			if len(parts) == 2 && parts[0] != "" {
+				jobID := parts[0]
+				switch parts[1] {
+				case "results":
+					if r.Method == http.MethodGet {
+						rt.procH.GetTopologyResults(w, r, user, jobID)
+						return
+					}
+				case "errors":
+					if r.Method == http.MethodGet {
+						rt.procH.GetTopologyErrors(w, r, user, jobID)
+						return
+					}
+				case "fix":
+					if r.Method == http.MethodPost {
+						rt.procH.FixTopologyErrors(w, r, user, jobID)
+						return
+					}
+				}
+			}
+		}
+
+		// 10i. Processing Jobs Lifecycle (/jobs, /jobs/:jobId, /jobs/:jobId/cancel, /jobs/:jobId/result, /jobs/:jobId/logs)
+		if cleanProcPath == "/jobs" && r.Method == http.MethodGet {
+			rt.procH.ListJobs(w, r, user)
+			return
+		}
+		if strings.HasPrefix(cleanProcPath, "/jobs/") {
+			sub := strings.TrimPrefix(cleanProcPath, "/jobs/")
+			parts := strings.Split(sub, "/")
+			if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
+				rt.procH.GetJob(w, r, user, parts[0])
+				return
+			}
+			if len(parts) == 2 && parts[0] != "" {
+				jobID := parts[0]
+				switch parts[1] {
+				case "cancel":
+					if r.Method == http.MethodPost {
+						rt.procH.CancelJob(w, r, user, jobID)
+						return
+					}
+				case "result":
+					if r.Method == http.MethodGet {
+						rt.procH.GetJobResult(w, r, user, jobID)
+						return
+					}
+				case "logs":
+					if r.Method == http.MethodGet {
+						rt.procH.GetJobLogs(w, r, user, jobID)
+						return
+					}
+				}
+			}
+		}
 	}
 
 	models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Endpoint not found: "+r.URL.Path, nil, nil)

@@ -27,9 +27,12 @@ import {
   Bookmark,
   BookmarkCheck,
   Activity,
+  Upload,
 } from "lucide-react"
 import ThemeToggle from "../components/ThemeToggle"
 import ShareMapModal from "../components/ShareMapModal"
+import BaseLayerManager from "../components/baselayers/BaseLayerManager"
+import BaseLayerSelectionModal from "../components/baselayers/BaseLayerSelectionModal"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { canDeleteSavedMap, resolveSavedMaps } from "../lib/savedMaps"
 
@@ -62,7 +65,7 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const validTabs = ["my-maps", "shared-with-me", "saved-maps", "recent", "settings"]
+  const validTabs = ["my-maps", "shared-with-me", "saved-maps", "recent", "base-layers", "settings"]
   const tabParam = searchParams.get("tab")
   const [activeTab, setActiveTab] = useState(
     validTabs.includes(tabParam) ? tabParam : "my-maps"
@@ -101,6 +104,13 @@ export default function DashboardPage() {
 
   // Share Map modal
   const [sharingMap, setSharingMap] = useState(null)
+
+  // Mandatory Base Layer Selection modal before opening a workspace
+  const [pendingOpenMap, setPendingOpenMap] = useState(null)
+  const requestOpenWorkspace = (mapId, mapName) => {
+    if (!mapId) return
+    setPendingOpenMap({ id: mapId, name: mapName || "Workspace" })
+  }
 
   // Invitation account mismatch modal
   const [inviteMismatchModal, setInviteMismatchModal] = useState(null)
@@ -289,8 +299,8 @@ export default function DashboardPage() {
       setNewMapName("")
       setNewMapDesc("")
       await fetchAllData()
-      showToast(`Map "${created.name}" created!`)
-      navigate(`/maps/${created.id}/edit`)
+      showToast(`Map "${created.name}" created! Set up optional layers or open with World Map.`)
+      navigate(`/maps/${created.id}/setup`)
     } catch (err) {
       alert("Failed to create map: " + (err.response?.data?.error?.message || err.message))
     } finally {
@@ -497,6 +507,16 @@ export default function DashboardPage() {
             Recent Maps ({recentMaps.length})
           </button>
           <button
+            onClick={() => handleTabChange("base-layers")}
+            className={`px-3.5 py-1.5 rounded-[6px] text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+              activeTab === "base-layers"
+                ? "bg-[#3ecf8e] text-[#171717] shadow-xs"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-[#242424]"
+            }`}
+          >
+            Base Layers
+          </button>
+          <button
             onClick={() => handleTabChange("settings")}
             className={`px-3.5 py-1.5 rounded-[6px] text-xs font-semibold transition-all shrink-0 cursor-pointer ${
               activeTab === "settings"
@@ -629,7 +649,14 @@ export default function DashboardPage() {
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => navigate(`/maps/${m.id}/edit`)}
+                            onClick={() => navigate(`/maps/${m.id}/setup`)}
+                            className="p-1.5 rounded-[4px] hover:bg-neutral-100 dark:hover:bg-[#2b2b2b] text-neutral-500 hover:text-[#3ecf8e] transition-colors cursor-pointer"
+                            title="Unified Dataset Upload & Base Layer Setup"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => requestOpenWorkspace(m.id, m.name)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors ml-1"
                           >
                             <span>Open</span>
@@ -708,7 +735,7 @@ export default function DashboardPage() {
                           </button>
 
                           <button
-                            onClick={() => navigate(`/maps/${m.id}/edit`)}
+                            onClick={() => requestOpenWorkspace(m.id, m.name)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
                           >
                             <span>Open in Studio</span>
@@ -774,7 +801,7 @@ export default function DashboardPage() {
                         <BookmarkCheck className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => navigate(`/maps/${mapItem.id}/edit`)}
+                        onClick={() => requestOpenWorkspace(mapItem.id, mapItem.name)}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer"
                       >
                         Open Map
@@ -903,7 +930,7 @@ export default function DashboardPage() {
                           </button>
 
                           <button
-                            onClick={() => navigate(`/maps/${rec.map_id || m.id}/edit`)}
+                            onClick={() => requestOpenWorkspace(rec.map_id || m.id, m.name || rec.name)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] font-semibold text-xs cursor-pointer shadow-xs transition-colors"
                           >
                             <span>Open in Studio</span>
@@ -917,6 +944,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        ) : activeTab === "base-layers" ? (
+          /* BASE LAYERS LIBRARY */
+          <BaseLayerManager onNotify={showToast} />
         ) : (
           /* SETTINGS & PROFILE */
           <div className="max-w-2xl bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] p-6 shadow-2xs space-y-6">
@@ -1149,6 +1179,21 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Mandatory Base Layer Selection Modal before opening a workspace */}
+      <BaseLayerSelectionModal
+        open={Boolean(pendingOpenMap)}
+        workspaceId={pendingOpenMap?.id}
+        workspaceName={pendingOpenMap?.name}
+        onCancel={() => setPendingOpenMap(null)}
+        onConfirmed={() => {
+          const target = pendingOpenMap
+          setPendingOpenMap(null)
+          if (target?.id) {
+            navigate(`/maps/${encodeURIComponent(target.id)}/edit?baseLayerConfirmed=1`)
+          }
+        }}
+      />
     </div>
   )
 }

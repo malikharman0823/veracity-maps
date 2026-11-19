@@ -31,6 +31,13 @@ type Config struct {
 	ResendFrom         string
 	AppPublicURL       string
 	WorkspaceTTL       time.Duration
+	BasemapTileURL     string
+	BasemapAttribution string
+	SatelliteTileURL   string
+	StreetsTileURL     string
+	TerrainTileURL     string
+	LightTileURL       string
+	DarkTileURL        string
 }
 
 func (c *Config) Validate() error {
@@ -173,6 +180,13 @@ func LoadConfig() *Config {
 		ResendFrom:         resendFrom,
 		AppPublicURL:       os.Getenv("APP_PUBLIC_URL"),
 		WorkspaceTTL:       workspaceTTL,
+		BasemapTileURL:     getEnv("BASEMAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+		BasemapAttribution: getEnv("BASEMAP_ATTRIBUTION", "© OpenStreetMap contributors"),
+		SatelliteTileURL:   getEnv("MAP_VIEW_SATELLITE_URL", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"),
+		StreetsTileURL:     getEnv("MAP_VIEW_STREETS_URL", "https://basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png"),
+		TerrainTileURL:     getEnv("MAP_VIEW_TERRAIN_URL", "https://tile.opentopomap.org/{z}/{x}/{y}.png"),
+		LightTileURL:       getEnv("MAP_VIEW_LIGHT_URL", "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"),
+		DarkTileURL:        getEnv("MAP_VIEW_DARK_URL", "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"),
 	}
 }
 

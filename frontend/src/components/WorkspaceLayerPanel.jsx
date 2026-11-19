@@ -894,9 +894,9 @@ function SortableMember({
           <GripVertical />
         </button>
         <LayerCheckbox
-          checked={member.visible}
+          checked={member.visible !== false}
           label={member.name}
-          onChange={(visible) => onUpdate(member.dataset_id, { visible })}
+          onChange={(visible) => onUpdate(member.dataset_id, { visible, raster_visible: visible })}
         />
         <div className="workspace-doc-thumb" title={member.name}>
           <img

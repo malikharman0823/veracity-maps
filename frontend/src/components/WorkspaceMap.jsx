@@ -37,6 +37,15 @@ import IconPicker from "./IconPicker"
 import IconPointForm from "./IconPointForm"
 import FloorTraversalOverlay from "./FloorTraversalOverlay"
 import BackgroundRemovalDialog from "./BackgroundRemovalDialog"
+import ToolHoverPreview from "./gis/ToolHoverPreview"
+import DraggableFloatingBar from "./gis/DraggableFloatingBar"
+import MapViewSelector from "./baselayers/MapViewSelector"
+import {
+  syncMapBaseAndView,
+  isBackgroundLayerId,
+  CUSTOM_BASE_SOURCE_ID,
+  DEFAULT_MAP_VIEWS,
+} from "../lib/baseLayerSync"
 import { processIconForMap } from "../lib/iconProcessing"
 import { resolveBuildingName, isMemberBuildingMatch } from "../lib/buildingUtils"
 
@@ -298,6 +307,19 @@ export default function WorkspaceMap({
   onToggleIsolateActiveFloor,
   manifest = null,
   overlayRefreshKey = 0,
+  onMapReady,
+  hasGISLayers = false,
+  mapViews = DEFAULT_MAP_VIEWS,
+  mapViewPrefs = null,
+  customBaseLayer = null,
+  customBaseLayers = [],
+  baseLayerFitTrigger = 0,
+  onSelectMapView,
+  onSelectCustomBaseLayer,
+  onChangeMapViewPrefs,
+  onOpenBaseLayerModal,
+  onOpenUploadBaseLayer,
+  qgisMode = false,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
@@ -524,6 +546,10 @@ export default function WorkspaceMap({
 
     map.on("load", () => {
       setReady(true)
+      if (typeof window !== "undefined") {
+        window.__veracity_map = map
+      }
+      onMapReady?.(map)
       try {
         map.resize()
       } catch {}
@@ -627,7 +653,7 @@ export default function WorkspaceMap({
     mapRef.current = map
     const setOpacityFn = (datasetId, opacityVal) => {
       const activeMap = mapRef.current
-      if (!activeMap || !activeMap.isStyleLoaded()) return
+      if (!activeMap || !activeMap.getStyle()) return
       const ids = resourceIds(datasetId)
       if (activeMap.getLayer(ids.rasterLayer)) {
         const safe = Number.isFinite(opacityVal) ? Math.max(0, Math.min(1, opacityVal)) : 1.0
@@ -713,11 +739,50 @@ export default function WorkspaceMap({
       if (Number.isFinite(manifest.max_zoom)) {
         try { map.setMaxZoom(manifest.max_zoom) } catch {}
       }
-      if (manifest.base_layer && typeof manifest.base_layer.visible === "boolean") {
+      if (manifest.base_layer && typeof manifest.base_layer.visible === "boolean" && !mapViewPrefs) {
         setVisibility(map, [BASEMAP_LAYER], manifest.base_layer.visible)
       }
     }
-  }, [ready, manifest])
+  }, [ready, manifest, mapViewPrefs])
+
+  // Synchronize Custom Base Layer & Multiple Map Views beneath all workspace layers
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map || !map.getStyle()) return
+    const viewType = mapViewPrefs?.view_type || (customBaseLayer && !customBaseLayer.is_default ? "custom" : "world")
+    const effectiveVisible =
+      typeof mapViewPrefs?.base_layer_visible === "boolean"
+        ? mapViewPrefs.base_layer_visible
+        : (manifest?.base_layer?.visible !== false)
+    syncMapBaseAndView(map, {
+      mapViews,
+      viewType,
+      customBaseLayer,
+      opacity: typeof mapViewPrefs?.base_layer_opacity === "number" ? mapViewPrefs.base_layer_opacity : 1.0,
+      visible: effectiveVisible,
+      showLabels: mapViewPrefs?.show_labels !== false,
+      showRoads: mapViewPrefs?.show_roads !== false,
+      showPlaces: mapViewPrefs?.show_places !== false,
+      basemapLayerId: BASEMAP_LAYER,
+    })
+  }, [ready, mapViews, mapViewPrefs, customBaseLayer, manifest?.base_layer?.visible])
+
+  // Fit map to selected Custom Base Layer extent on initial load or explicit switch
+  const lastFittedBaseLayerKeyRef = useRef("")
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map || !customBaseLayer || customBaseLayer.is_default) return
+    const ext = customBaseLayer.extent
+    if (!Array.isArray(ext) || ext.length !== 4) return
+    const fitKey = `${customBaseLayer.id}:${baseLayerFitTrigger}`
+    if (lastFittedBaseLayerKeyRef.current === fitKey) return
+    if (baseLayerFitTrigger > 0 || !fittedRef.current) {
+      if (safeFitBounds(map, ext, { padding: 48, duration: baseLayerFitTrigger > 0 ? 600 : 0 })) {
+        fittedRef.current = true
+        lastFittedBaseLayerKeyRef.current = fitKey
+      }
+    }
+  }, [ready, customBaseLayer, baseLayerFitTrigger])
 
   // Fetch vector layers and OCR annotation labels for active georeferenced datasets
   useEffect(() => {
@@ -828,7 +893,7 @@ export default function WorkspaceMap({
   // Synchronize Map Layers & Sources
   useEffect(() => {
     const map = mapRef.current
-    if (!ready || !map || !map.isStyleLoaded()) return
+    if (!ready || !map || !map.getStyle()) return
     const activeSourceIds = new Set()
     const activeLayerIds = new Set()
 
@@ -1016,7 +1081,7 @@ export default function WorkspaceMap({
 
       const isFloorActive = !isIsolateActive || !isBuildingFloor || (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0))
       const isVisible = isIsolateActive && isBuildingFloor
-        ? (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0) && member.raster_visible !== false)
+        ? (isBuildingMatch && memberFloorLevel === Number(currentFloorLevel ?? 0) && member.visible !== false && member.raster_visible !== false)
         : (member.visible !== false && member.raster_visible !== false)
       const isLayerVisible = isVisible && isFloorActive
 
@@ -1246,15 +1311,15 @@ export default function WorkspaceMap({
       })
     })
 
-    // Cleanup stale layers
+    // Cleanup stale workspace dataset layers (preserving background map view & custom base layers)
     const style = map.getStyle()
     ;(style.layers || [])
-      .filter((layer) => layer.id.startsWith("workspace-") && layer.id !== BASEMAP_LAYER)
+      .filter((layer) => layer.id.startsWith("workspace-") && !isBackgroundLayerId(layer.id))
       .forEach((layer) => {
         if (!activeLayerIds.has(layer.id) && map.getLayer(layer.id)) map.removeLayer(layer.id)
       })
     Object.keys(style.sources || {})
-      .filter((sourceId) => sourceId.startsWith("workspace-"))
+      .filter((sourceId) => sourceId.startsWith("workspace-") && sourceId !== CUSTOM_BASE_SOURCE_ID)
       .forEach((sourceId) => {
         if (!activeSourceIds.has(sourceId) && map.getSource(sourceId)) map.removeSource(sourceId)
       })
@@ -1363,55 +1428,101 @@ export default function WorkspaceMap({
   return (
     <div className="workspace-map-canvas w-full h-full overflow-hidden">
       <div ref={containerRef} className="workspace-map w-full h-full" />
-      <MapCoordinates coordinate={coordinate} />
+      {!qgisMode && <MapCoordinates coordinate={coordinate} />}
 
-      {/* Floating Map Tools: Icon Placement & Floor View Controls */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-        <div className="bg-white/95 dark:bg-[#202020]/95 backdrop-blur-xs rounded-[8px] shadow-lg border border-neutral-200 dark:border-[#2e2e2e] p-1.5 flex items-center gap-1.5 text-neutral-800 dark:text-neutral-200">
+      {/* Compact Multiple Map Views & Base Layer Controls (Draggable, Lockable, Collapsible) */}
+      {!qgisMode && (
+        <DraggableFloatingBar
+          storageKey="map-view-bar"
+          label="Map Views"
+          defaultStyle={{ top: 12, right: 14 }}
+        >
+          <MapViewSelector
+            embedded
+            mapViews={mapViews}
+            activeView={mapViewPrefs?.view_type || (customBaseLayer && !customBaseLayer.is_default ? "custom" : "world")}
+            customBaseLayer={customBaseLayer}
+            customBaseLayers={customBaseLayers}
+            prefs={mapViewPrefs || { base_layer_opacity: 1.0, base_layer_visible: true, show_labels: true, show_roads: true, show_places: true }}
+            onSelectView={onSelectMapView}
+            onSelectCustomBaseLayer={onSelectCustomBaseLayer}
+            onChangePrefs={onChangeMapViewPrefs}
+            onOpenBaseLayerModal={onOpenBaseLayerModal}
+            onOpenUploadBaseLayer={onOpenUploadBaseLayer}
+          />
+        </DraggableFloatingBar>
+      )}
+
+      {/* Floating Map Tools: Icon Placement & Floor View Controls (Freely Movable + Lockable + Collapsible) */}
+      <DraggableFloatingBar
+        storageKey="icon-marker-bar"
+        label="Markers"
+        defaultStyle={{ bottom: 16, left: 14 }}
+      >
+        <div className="flex items-center gap-1 text-neutral-800 dark:text-neutral-200">
           {/* Icon Picker Trigger */}
-          <button
-            type="button"
-            onClick={() => setShowIconPicker(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-neutral-100 dark:bg-[#171717] hover:bg-neutral-200 dark:hover:bg-[#282828] border border-neutral-200 dark:border-[#2e2e2e] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer"
-            title="Choose icon asset"
+          <ToolHoverPreview
+            title="Choose Marker Icon"
+            previewKey="place_icon"
+            side="top"
+            description="Pick a visual icon (such as Cinema, Hospital, Gate, or Exit) before placing a marker on your map."
           >
-            <div className="size-5 rounded-[4px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-center p-0.5">
-              <img
-                src={getIconUrl(selectedIconId)}
-                alt={selectedIconId}
-                className="max-size-full object-contain"
-              />
-            </div>
-            <span className="capitalize">{selectedIconId}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowIconPicker(true)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-[4px] bg-neutral-100 dark:bg-[#1a1a1a] hover:bg-neutral-200 dark:hover:bg-[#2f2f2f] border border-neutral-200 dark:border-[#333] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer"
+            >
+              <div className="size-4 rounded-[3px] bg-white dark:bg-[#252525] flex items-center justify-center p-0.5">
+                <img
+                  src={getIconUrl(selectedIconId)}
+                  alt={selectedIconId}
+                  className="max-size-full object-contain"
+                />
+              </div>
+              <span className="capitalize text-[11px]">{selectedIconId}</span>
+            </button>
+          </ToolHoverPreview>
 
           {/* Place Point Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsPlacingPoint((prev) => !prev)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-[6px] text-xs font-semibold transition-all shadow-xs cursor-pointer ${
-              isPlacingPoint
-                ? "bg-amber-600 text-white animate-pulse"
-                : "bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717]"
-            }`}
+          <ToolHoverPreview
+            title="Place Icon Marker"
+            previewKey="point"
+            side="top"
+            description="Turn this on and click anywhere on the map to drop an icon marker with a custom name and note."
           >
-            <Plus className="size-3.5" />
-            <span>{isPlacingPoint ? "Click Map to Place" : "Place Point"}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsPlacingPoint((prev) => !prev)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold transition-all shadow-xs cursor-pointer ${
+                isPlacingPoint
+                  ? "bg-amber-600 text-white animate-pulse"
+                  : "bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717]"
+              }`}
+            >
+              <Plus className="size-3.5" />
+              <span>{isPlacingPoint ? "Click Map to Place" : "Place Point"}</span>
+            </button>
+          </ToolHoverPreview>
 
           {/* Icon Points Visibility */}
-          <button
-            type="button"
-            onClick={() => setIconPointsVisible((v) => !v)}
-            className={`p-1.5 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] text-xs transition-colors cursor-pointer ${
-              iconPointsVisible
-                ? "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-[#171717] hover:bg-neutral-200 dark:hover:bg-[#282828]"
-                : "text-neutral-400 dark:text-neutral-500 bg-neutral-50 dark:bg-[#1c1c1c]"
-            }`}
-            title={iconPointsVisible ? "Hide icon points" : "Show icon points"}
+          <ToolHoverPreview
+            title={iconPointsVisible ? "Hide Icon Markers" : "Show Icon Markers"}
+            previewKey="place_icon"
+            side="top"
+            description="Quickly show or hide all placed icon markers on the map without deleting them."
           >
-            {iconPointsVisible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-          </button>
+            <button
+              type="button"
+              onClick={() => setIconPointsVisible((v) => !v)}
+              className={`p-1 rounded-[4px] border border-neutral-200 dark:border-[#333] text-xs transition-colors cursor-pointer ${
+                iconPointsVisible
+                  ? "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-[#1a1a1a] hover:bg-neutral-200 dark:hover:bg-[#2f2f2f]"
+                  : "text-neutral-400 dark:text-neutral-500 bg-neutral-50 dark:bg-[#1c1c1c]"
+              }`}
+            >
+              {iconPointsVisible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            </button>
+          </ToolHoverPreview>
 
           {/* Cross-floor visibility toggle */}
           {buildingFloors.length > 1 && (
@@ -1432,7 +1543,7 @@ export default function WorkspaceMap({
 
         {/* Banner indicator when in placement or moving mode */}
         {(isPlacingPoint || movingPointId) && (
-          <div className="bg-amber-500 text-white text-xs px-3 py-1.5 rounded-lg shadow-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
+          <div className="bg-amber-500 text-white text-xs px-3 py-1.5 rounded-lg shadow-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 ml-2">
             <span>
               {isPlacingPoint
                 ? `Click map to place "${selectedIconId}" point`
@@ -1450,7 +1561,7 @@ export default function WorkspaceMap({
             </button>
           </div>
         )}
-      </div>
+      </DraggableFloatingBar>
 
       {/* Hover Tooltip */}
       {hoveredPoint && !editingPoint && !pendingPlacementCoord && (
@@ -1596,7 +1707,7 @@ export default function WorkspaceMap({
 
 
       {/* Empty State */}
-      {!sortedMembers.some((member) => member.map_layer || member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (
+      {!qgisMode && !hasGISLayers && !sortedMembers.some((member) => member.map_layer || member.dataset?.map_layer || member.dataset?.georeference_status === "completed" || member.bounds || member.dataset?.extracted_metadata?.bounds) && (
         <div className="workspace-map-empty">
           <strong>No mapped raster is available</strong>
           <span>Open Database to inspect raw datasets or georeference a layer.</span>
