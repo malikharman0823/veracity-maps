@@ -422,7 +422,7 @@ func (r *MSSQLProcessingRepository) ListJobs(ctx context.Context, userID, mapID 
 			list = append(list, &j)
 		}
 	}
-	return list, nil
+	return list, rows.Err()
 }
 
 func (r *MSSQLProcessingRepository) UpdateJobStatus(ctx context.Context, jobID, status, stage string, progress int, errCode, errMsg string, outCfg map[string]interface{}) error {
@@ -489,7 +489,7 @@ func (r *MSSQLProcessingRepository) GetJobLogs(ctx context.Context, jobID string
 			logs = append(logs, l)
 		}
 	}
-	return logs, nil
+	return logs, rows.Err()
 }
 
 func (r *MSSQLProcessingRepository) SaveJobInputs(ctx context.Context, jobID string, inputs []models.ProcessingJobInput) error {
@@ -537,7 +537,7 @@ func (r *MSSQLProcessingRepository) GetJobOutputs(ctx context.Context, jobID str
 			list = append(list, o)
 		}
 	}
-	return list, nil
+	return list, rows.Err()
 }
 
 func (r *MSSQLProcessingRepository) SaveTopologyRule(ctx context.Context, rule *models.TopologyRule) error {
@@ -601,6 +601,9 @@ func (r *MSSQLProcessingRepository) GetTopologyErrors(ctx context.Context, jobID
 			}
 			list = append(list, &e)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if len(list) == 0 {
 		return r.mem.GetTopologyErrors(ctx, jobID)

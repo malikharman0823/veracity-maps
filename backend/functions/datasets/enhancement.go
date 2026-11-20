@@ -3,6 +3,7 @@ package datasets
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -319,16 +320,37 @@ func (h *Handler) ServeTile(w http.ResponseWriter, r *http.Request, datasetID, z
 		}
 	}
 
-	if mbtilesPath == "" || !fileExists(mbtilesPath) {
-		models.WriteError(w, http.StatusNotFound, "MBTILES_NOT_FOUND", "No MBTiles tile database exists for this dataset", nil, nil)
-		return
-	}
-
 	datasetDir := h.datasetService.StorageManager().GetDatasetDir(sessionID, dataset.ID)
 	if !fileExists(datasetDir) && dataset.StoragePath != "" {
 		datasetDir = filepath.Dir(dataset.StoragePath)
 	}
 	xyzCacheDir := filepath.Join(datasetDir, "tiles_xyz")
+
+	// 1. Direct loose XYZ tile check on disk (from Custom Local Tiles or tile cache)
+	for _, ext := range []string{".png", ".jpg", ".jpeg", ".pbf", ".mvt"} {
+		loosePath := filepath.Join(xyzCacheDir, fmt.Sprintf("%d", z), fmt.Sprintf("%d", x), fmt.Sprintf("%d%s", y, ext))
+		if fileExists(loosePath) {
+			b, rErr := os.ReadFile(loosePath)
+			if rErr == nil && len(b) > 0 {
+				cType := "image/png"
+				if ext == ".jpg" || ext == ".jpeg" {
+					cType = "image/jpeg"
+				} else if ext == ".pbf" || ext == ".mvt" {
+					cType = "application/vnd.mapbox-vector-tile"
+				}
+				w.Header().Set("Content-Type", cType)
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				_, _ = w.Write(b)
+				return
+			}
+		}
+	}
+
+	if mbtilesPath == "" || !fileExists(mbtilesPath) {
+		models.WriteError(w, http.StatusNotFound, "MBTILES_NOT_FOUND", "No MBTiles or local tile cache exists for this dataset", nil, nil)
+		return
+	}
 
 	scheme := "tms"
 	tileFormat := "png"

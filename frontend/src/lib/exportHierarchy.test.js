@@ -57,3 +57,25 @@ test("buildExportHierarchy with multi-floor building groups floors under that bu
   assert.equal(result.standaloneLayers[0].name, "standalone.png")
   assert.equal(result.allLayerIds.length, 3)
 })
+
+test("buildExportHierarchy classifies layers into 6 standard categories", () => {
+  const members = [
+    { dataset_id: "ds_raster", name: "aerial.tif" },
+    { dataset_id: "ds_vector", name: "boundaries.gpkg" },
+  ]
+  const datasets = [
+    { id: "ds_raster", filename: "aerial.tif", extracted_metadata: { control_points_count: 4 } },
+    { id: "ds_vector", filename: "boundaries.gpkg", extracted_metadata: { document_type: "vector" } },
+  ]
+
+  const result = buildExportHierarchy({ members, datasets })
+
+  assert.ok(result.categories, "categories object should be defined")
+  assert.equal(result.categories.base_maps.length, 1, "Should have default base map")
+  assert.equal(result.categories.raster_layers.length, 1, "Should have 1 raster layer")
+  assert.equal(result.categories.raster_layers[0].id, "ds_raster")
+  assert.equal(result.categories.vector_layers.length, 1, "Should have 1 vector layer")
+  assert.equal(result.categories.vector_layers[0].id, "ds_vector")
+  assert.equal(result.categories.control_points.length, 1, "Should have control points entry for raster")
+  assert.equal(result.categories.icon_points.length, 1, "Should have icon points entry for raster")
+})

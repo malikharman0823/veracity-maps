@@ -755,7 +755,7 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
     if (exportPayload && (exportPayload.layer_ids || exportPayload.options || exportPayload.building_ids || exportPayload.format)) {
       response = await client.post(
         `/datasets/${encodeURIComponent(datasetId)}/export`,
-        { ...exportPayload, format: exportPayload.format || "project_zip", project_name: projectName },
+        { ...exportPayload, format: exportPayload.format || "custom_local_tiles", project_name: projectName },
         {
           responseType: "blob",
           timeout: 10 * 60_000,
@@ -1990,7 +1990,11 @@ export async function getMapView(viewType) {
 // ============================================================================
 
 export async function inspectUploadedDataset(payload) {
-  const response = await client.post("/api/datasets/inspect", payload)
+  const body =
+    typeof payload === "string"
+      ? { file_id: payload, dataset_id: payload }
+      : payload || {}
+  const response = await client.post("/api/datasets/inspect", body)
   return response.data.data
 }
 

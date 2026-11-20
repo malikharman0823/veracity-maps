@@ -227,6 +227,12 @@ func (s *ExportService) GenerateExport(sessionID, datasetID, format string) (str
 	var outPath, outName string
 
 	switch format {
+	case "custom_local_tiles", "custom-local-tiles", "local_tiles":
+		opts := DefaultSelectiveExportOptions()
+		outPath, outName, err = s.GenerateCustomLocalTilesExport(sessionID, datasetID, SelectiveExportParams{
+			Format:  "custom_local_tiles",
+			Options: opts,
+		})
 	case "project_zip", "zip", "project", "complete_project", "mtmap":
 		var zoomCfg *ZoomConfiguration
 		if dataset.ExtractedMetadata != nil {

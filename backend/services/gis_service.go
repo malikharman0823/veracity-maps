@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,9 +43,13 @@ func (s *GISService) checkMapAccess(ctx context.Context, mapID, userID string, r
 	}
 	m, err := s.mapRepo.GetMap(ctx, mapID, userID)
 	if err != nil {
+		if errors.Is(err, models.ErrMapNotFound) {
+			// Standalone dataset workspace (e.g. ds_...) not backed by a dbo.Maps row — authenticated user allowed.
+			return nil, nil
+		}
 		return nil, err
 	}
-	if requireEdit {
+	if m != nil && requireEdit {
 		if m.OwnerUserID != userID && m.Permission != models.PermissionEditor {
 			return nil, models.ErrMapAccessDenied
 		}

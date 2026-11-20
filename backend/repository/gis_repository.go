@@ -1406,7 +1406,7 @@ func (r *MSSQLGISRepository) CreateFeatureBatch(ctx context.Context, userID stri
 			bbox_minx, bbox_miny, bbox_maxx, bbox_maxy, attributes,
 			created_by, updated_by, created_at, updated_at
 		) VALUES (
-			@p1, @p2, geometry::STGeomFromText(@p3, @p4).MakeValid(), @p5, @p6, @p4,
+			@p1, @p2, CASE WHEN @p3 = '' THEN NULL ELSE geometry::STGeomFromText(@p3, @p4).MakeValid() END, @p5, @p6, @p4,
 			@p7, @p8, @p9, @p10, @p11,
 			@p12, @p12, @p13, @p13
 		);
@@ -1442,6 +1442,15 @@ func (r *MSSQLGISRepository) CreateFeatureBatch(ctx context.Context, userID stri
 			minX, minY, maxX, maxY, string(attrBytes),
 			userID, now,
 		)
+		if execErr != nil && item.WKT != "" {
+			// Fallback: if SQL Server STGeomFromText rejects a malformed third-party WKT ring,
+			// persist the feature with NULL SQL geometry so its GeoJSON still renders on MapLibre.
+			_, execErr = stmtFeat.ExecContext(ctx,
+				fid, item.Request.LayerID, "", item.SRID, string(geomBytes), item.Request.Geometry.Type,
+				minX, minY, maxX, maxY, string(attrBytes),
+				userID, now,
+			)
+		}
 		if execErr != nil {
 			continue
 		}

@@ -448,4 +448,37 @@ conn.close()
 			}
 		}
 	})
+
+	// 6. Standalone dataset workspace (ds_... not in dbo.Maps) supports /api/maps/:id/layers,
+	//    /api/workspaces/:id/layers, and string-payload /api/datasets/inspect
+	t.Run("StandaloneDatasetWorkspaceLayersAndInspect", func(t *testing.T) {
+		standaloneWsID := rasterDsID // ds_... ID without a dbo.Maps row
+
+		// GET /api/maps/ds_.../layers must return 200 (not 404)
+		getResp, getBody := doGISRequest(t, client, "GET", server.URL+"/api/maps/"+standaloneWsID+"/layers", aliceToken, sessionID, nil)
+		if getResp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for standalone dataset workspace map layers, got %d: %s", getResp.StatusCode, string(getBody))
+		}
+
+		// POST /api/workspaces/ds_.../layers must succeed with 201 (not 500)
+		addResp, addBody := doGISRequest(t, client, "POST", server.URL+"/api/workspaces/"+standaloneWsID+"/layers", aliceToken, sessionID, map[string]interface{}{
+			"dataset_id":           gpkgDsID,
+			"selected_layer_names": []string{"charging_hubs"},
+		})
+		if addResp.StatusCode != http.StatusCreated {
+			t.Fatalf("expected 201 importing layer into standalone dataset workspace, got %d: %s", addResp.StatusCode, string(addBody))
+		}
+
+		// GET /api/maps/ds_.../layers now returns the imported GIS layer
+		afterResp, afterBody := doGISRequest(t, client, "GET", server.URL+"/api/maps/"+standaloneWsID+"/layers", aliceToken, sessionID, nil)
+		if afterResp.StatusCode != http.StatusOK || !strings.Contains(string(afterBody), "charging_hubs") {
+			t.Fatalf("expected charging_hubs in standalone dataset workspace map layers (%d): %s", afterResp.StatusCode, string(afterBody))
+		}
+
+		// POST /api/datasets/inspect with a JSON string body (legacy Browser panel format) must return 200 (not 400)
+		inspResp, inspBody := doGISRequest(t, client, "POST", server.URL+"/api/datasets/inspect", aliceToken, sessionID, gpkgDsID)
+		if inspResp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for string-body /api/datasets/inspect, got %d: %s", inspResp.StatusCode, string(inspBody))
+		}
+	})
 }

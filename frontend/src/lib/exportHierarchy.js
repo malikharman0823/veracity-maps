@@ -91,9 +91,96 @@ export function buildExportHierarchy({
 
   const allLayerIds = enrichedLayers.map((l) => l.id)
 
+  // Categorize into the 6 standard export categories
+  const categories = {
+    base_maps: [
+      {
+        id: "base_map_osm",
+        name: "OpenStreetMap Standard",
+        type: "Base Map",
+        format: "XYZ URL",
+        visible: true,
+        associated: "Global",
+        selectable: true,
+      },
+    ],
+    raster_layers: [],
+    vector_layers: [],
+    icon_points: [],
+    control_points: [],
+    areas: [],
+  }
+
+  enrichedLayers.forEach((layer) => {
+    const fn = layer.dataset?.filename || layer.name || ""
+    const ext = fn.slice(fn.lastIndexOf(".")).toLowerCase()
+    const isVector = [".gpkg", ".shp", ".kml", ".kmz", ".geojson", ".osm", ".pbf"].includes(ext) ||
+      layer.dataset?.extracted_metadata?.document_type === "vector"
+
+    const layerMeta = {
+      id: layer.id,
+      name: layer.name,
+      type: isVector ? "Vector Layer" : "Raster Layer",
+      format: ext.toUpperCase().replace(".", "") || (isVector ? "GPKG" : "PNG"),
+      visible: layer.member?.visible ?? true,
+      associated: layer.buildingName ? `${layer.buildingName} (${layer.floorLabel})` : "Standalone",
+      buildingName: layer.buildingName,
+      floorLabel: layer.floorLabel,
+      isVector,
+      dataset: layer.dataset,
+      member: layer.member,
+    }
+
+    if (isVector) {
+      categories.vector_layers.push(layerMeta)
+    } else {
+      categories.raster_layers.push(layerMeta)
+
+      // Derive control points and icon points for this raster layer
+      const meta = layer.dataset?.extracted_metadata
+      const cpCount = meta?.control_points_count || (meta?.control_points ? meta.control_points.length : 0)
+      categories.control_points.push({
+        id: `cp_group_${layer.id}`,
+        rasterId: layer.id,
+        name: `Control Points (${layer.name})`,
+        type: "Control Points",
+        format: "GeoJSON",
+        count: cpCount,
+        visible: true,
+        associated: layer.name,
+      })
+
+      const ipCount = meta?.icon_points_count || (meta?.icon_points ? meta.icon_points.length : 0)
+      categories.icon_points.push({
+        id: `ip_group_${layer.id}`,
+        rasterId: layer.id,
+        name: `Icon Points & Landmarks (${layer.name})`,
+        type: "Icon Points",
+        format: "GeoJSON",
+        count: ipCount,
+        visible: true,
+        associated: layer.name,
+      })
+
+      if (meta?.areas && Array.isArray(meta.areas) && meta.areas.length > 0) {
+        categories.areas.push({
+          id: `area_group_${layer.id}`,
+          rasterId: layer.id,
+          name: `Areas & Drawings (${layer.name})`,
+          type: "Areas",
+          format: "GeoJSON",
+          count: meta.areas.length,
+          visible: true,
+          associated: layer.name,
+        })
+      }
+    }
+  })
+
   return {
     buildings: buildingsResult,
     standaloneLayers,
     allLayerIds,
+    categories,
   }
 }

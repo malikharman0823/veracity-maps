@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,6 +258,81 @@ func (s *DatasetService) InspectProjectPackage(sessionID string, fileHeader *mul
 	relFiles, err := s.extractAndValidateZip(stagedFile, extractDir)
 	if err != nil {
 		return nil, err
+	}
+
+	var tileConfigRel string
+	for _, rf := range relFiles {
+		if strings.EqualFold(filepath.Base(rf), "tile_config.json") {
+			tileConfigRel = rf
+			break
+		}
+	}
+	if tileConfigRel != "" {
+		cfgBytes, rErr := os.ReadFile(filepath.Join(extractDir, filepath.FromSlash(tileConfigRel)))
+		if rErr == nil {
+			var cfg CustomLocalTilesConfig
+			if json.Unmarshal(cfgBytes, &cfg) == nil {
+				projName := cfg.Name
+				if projName == "" {
+					projName = strings.TrimSuffix(fileHeader.Filename, filepath.Ext(fileHeader.Filename))
+				}
+				totalFloors := 0
+				for _, b := range cfg.Buildings {
+					totalFloors += len(b.Floors)
+				}
+				var previews []*models.ProjectLayerPreview
+				for _, r := range cfg.RasterLayers {
+					previews = append(previews, &models.ProjectLayerPreview{
+						ID:         r.ID,
+						Name:       r.Name,
+						Type:       "raster",
+						TileFormat: r.Format,
+						FloorLevel: r.FloorLevel,
+						FloorLabel: r.FloorLabel,
+						Visible:    r.Visible,
+						Opacity:    r.Opacity,
+						MinZoom:    r.MinZoom,
+						MaxZoom:    r.MaxZoom,
+						Bounds:     r.Bounds,
+						HasMBTiles: false,
+					})
+				}
+				for _, v := range cfg.VectorLayers {
+					previews = append(previews, &models.ProjectLayerPreview{
+						ID:         v.ID,
+						Name:       v.Name,
+						Type:       "vector",
+						TileFormat: v.Format,
+						Visible:    v.Visible,
+						MinZoom:    v.MinZoom,
+						MaxZoom:    v.MaxZoom,
+						Bounds:     v.Bounds,
+						HasMBTiles: false,
+					})
+				}
+				return &models.ProjectPackageInspection{
+					Valid:         true,
+					PackageType:   "custom_local_tiles",
+					Filename:      fileHeader.Filename,
+					FileSize:      written,
+					ProjectName:   projName,
+					SchemaVersion: 1,
+					Bounds:        cfg.Bounds,
+					Center:        cfg.Center,
+					InitialZoom:   float64(cfg.InitialZoom),
+					MinZoom:       cfg.MinZoom,
+					MaxZoom:       cfg.MaxZoom,
+					TileFormat:    "png",
+					TileScheme:    "xyz",
+					TileCount:     len(previews) * 10,
+					HasBaseLayer:  true,
+					BuildingCount: len(cfg.Buildings),
+					FloorCount:    totalFloors,
+					LayerCount:    len(previews),
+					Layers:        previews,
+				}, nil
+			}
+		}
 	}
 
 	var mbtilesRelPaths []string
@@ -848,6 +924,17 @@ func (s *DatasetService) ReopenProjectZipFromPath(sessionID, primaryDatasetID, p
 	if err != nil {
 		_ = storage.SafeRemoveAll(primaryDatasetDir)
 		return nil, err
+	}
+
+	var tileConfigRel string
+	for _, rf := range relFiles {
+		if strings.EqualFold(filepath.Base(rf), "tile_config.json") {
+			tileConfigRel = rf
+			break
+		}
+	}
+	if tileConfigRel != "" {
+		return s.ReopenCustomLocalTilesFromPath(sessionID, primaryDatasetID, primaryDatasetDir, extractDir, zipPath, filename, size, fileHash, tileConfigRel)
 	}
 
 	// 1. Verify that at least one valid SQLite .mbtiles file exists in the archive
@@ -1790,4 +1877,358 @@ func (s *DatasetService) ReopenProjectZipFromPath(sessionID, primaryDatasetID, p
 	_ = os.Remove(zipPath)
 
 	return restoredDatasets[0], nil
+}
+
+// ReopenCustomLocalTilesFromPath restores a Custom Local Tiles package containing tile_config.json,
+// loose XYZ raster & vector tiles, GeoJSON metadata, custom icons, and multifloor associations.
+func (s *DatasetService) ReopenCustomLocalTilesFromPath(sessionID, primaryDatasetID, primaryDatasetDir, extractDir, zipPath, filename string, size int64, fileHash, tileConfigRel string) (*models.Dataset, error) {
+	cfgPath := filepath.Join(extractDir, filepath.FromSlash(tileConfigRel))
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		_ = storage.SafeRemoveAll(primaryDatasetDir)
+		return nil, fmt.Errorf("CORRUPT_METADATA: failed to read tile_config.json: %w", err)
+	}
+
+	var cfg CustomLocalTilesConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		_ = storage.SafeRemoveAll(primaryDatasetDir)
+		return nil, fmt.Errorf("CORRUPT_METADATA: invalid tile_config.json: %w", err)
+	}
+
+	projName := cfg.Name
+	if projName == "" {
+		projName = strings.TrimSuffix(filename, filepath.Ext(filename))
+	}
+
+	// 1. Copy tiles to dataset tiles_xyz directory
+	xyzDir := filepath.Join(primaryDatasetDir, "tiles_xyz")
+	_ = os.MkdirAll(xyzDir, 0755)
+
+	var previewSampleTile string
+	_ = filepath.Walk(extractDir, func(p string, info os.FileInfo, wErr error) error {
+		if wErr != nil || info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".pbf" || ext == ".mvt" {
+			rel, rErr := filepath.Rel(extractDir, p)
+			if rErr == nil {
+				parts := strings.Split(filepath.ToSlash(rel), "/")
+				if len(parts) >= 3 {
+					z := parts[len(parts)-3]
+					x := parts[len(parts)-2]
+					y := parts[len(parts)-1]
+					if _, errZ := strconv.Atoi(z); errZ == nil {
+						if _, errX := strconv.Atoi(x); errX == nil {
+							dest := filepath.Join(xyzDir, z, x, y)
+							_ = os.MkdirAll(filepath.Dir(dest), 0755)
+							_ = storage.CopyFile(p, dest)
+							if (ext == ".png" || ext == ".jpg") && previewSampleTile == "" {
+								previewSampleTile = p
+							}
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	// 2. Setup thumbnail preview
+	processedDir := filepath.Join(primaryDatasetDir, "processed")
+	_ = os.MkdirAll(processedDir, 0755)
+	previewPath := filepath.Join(processedDir, "mbtiles_preview.png")
+	displayPath := filepath.Join(processedDir, "display.png")
+	if previewSampleTile != "" && fileExists(previewSampleTile) {
+		_ = storage.CopyFile(previewSampleTile, previewPath)
+		_ = storage.CopyFile(previewSampleTile, displayPath)
+	}
+
+	// 3. Restore Control Points from GeoJSON
+	var restoredCPs []*models.ControlPoint
+	cpGeoJSONRel := cfg.GeoJSONResources["control_points"]
+	if cpGeoJSONRel == "" {
+		cpGeoJSONRel = "geojson/control_points.geojson"
+	}
+	cpDisk := filepath.Join(extractDir, filepath.FromSlash(cpGeoJSONRel))
+	if !fileExists(cpDisk) {
+		cpDisk = filepath.Join(extractDir, "Custom_Local_Tiles", filepath.FromSlash(cpGeoJSONRel))
+	}
+	if fileExists(cpDisk) {
+		if rawCP, cpErr := os.ReadFile(cpDisk); cpErr == nil {
+			var fc struct {
+				Features []struct {
+					ID       string `json:"id"`
+					Geometry struct {
+						Coordinates []float64 `json:"coordinates"`
+					} `json:"geometry"`
+					Properties struct {
+						ID       string  `json:"id"`
+						PointID  string  `json:"point_id"`
+						ImageX   float64 `json:"image_x"`
+						ImageY   float64 `json:"image_y"`
+						RasterID string  `json:"associated_raster"`
+					} `json:"properties"`
+				} `json:"features"`
+			}
+			if json.Unmarshal(rawCP, &fc) == nil {
+				for _, f := range fc.Features {
+					if len(f.Geometry.Coordinates) >= 2 {
+						pid := f.Properties.ID
+						if pid == "" {
+							pid = f.Properties.PointID
+						}
+						if pid == "" {
+							pid = f.ID
+						}
+						if pid == "" {
+							pid = "cp_" + repository.GenerateDatasetID()
+						}
+						restoredCPs = append(restoredCPs, &models.ControlPoint{
+							ID:        pid,
+							DatasetID: primaryDatasetID,
+							ImageX:    f.Properties.ImageX,
+							ImageY:    f.Properties.ImageY,
+							Longitude: f.Geometry.Coordinates[0],
+							Latitude:  f.Geometry.Coordinates[1],
+							CreatedAt: time.Now(),
+						})
+					}
+				}
+			}
+		}
+	}
+	if len(restoredCPs) > 0 {
+		_ = s.repo.SetControlPoints(sessionID, primaryDatasetID, restoredCPs)
+	}
+
+	// 4. Restore Icon Points from GeoJSON
+	ipGeoJSONRel := cfg.GeoJSONResources["icon_points"]
+	if ipGeoJSONRel == "" {
+		ipGeoJSONRel = "geojson/icon_points.geojson"
+	}
+	ipDisk := filepath.Join(extractDir, filepath.FromSlash(ipGeoJSONRel))
+	if !fileExists(ipDisk) {
+		ipDisk = filepath.Join(extractDir, "Custom_Local_Tiles", filepath.FromSlash(ipGeoJSONRel))
+	}
+	if fileExists(ipDisk) {
+		if rawIP, ipErr := os.ReadFile(ipDisk); ipErr == nil {
+			var fc struct {
+				Features []struct {
+					ID       string `json:"id"`
+					Geometry struct {
+						Coordinates []float64 `json:"coordinates"`
+					} `json:"geometry"`
+					Properties struct {
+						ID          string                 `json:"id"`
+						PointID     string                 `json:"point_id"`
+						Name        string                 `json:"name"`
+						Description string                 `json:"description"`
+						Category    string                 `json:"category"`
+						IconID      string                 `json:"icon_id"`
+						FloorLevel  int                    `json:"floor_level"`
+						FloorLabel  string                 `json:"floor_label"`
+						BuildingID  string                 `json:"building_id"`
+						Extra       map[string]interface{} `json:"properties"`
+					} `json:"properties"`
+				} `json:"features"`
+			}
+			if json.Unmarshal(rawIP, &fc) == nil {
+				for _, f := range fc.Features {
+					if len(f.Geometry.Coordinates) >= 2 {
+						pid := f.Properties.ID
+						if pid == "" {
+							pid = f.Properties.PointID
+						}
+						if pid == "" {
+							pid = f.ID
+						}
+						if pid == "" {
+							pid = "ip_" + repository.GenerateDatasetID()
+						}
+						_, _ = s.repo.CreateIconPoint(sessionID, &models.IconPoint{
+							ID:          pid,
+							SessionID:   sessionID,
+							DatasetID:   primaryDatasetID,
+							BuildingID:  f.Properties.BuildingID,
+							FloorLevel:  f.Properties.FloorLevel,
+							FloorLabel:  f.Properties.FloorLabel,
+							Scope:       f.Properties.Category,
+							Name:        f.Properties.Name,
+							Description: f.Properties.Description,
+							IconID:      f.Properties.IconID,
+							Longitude:   f.Geometry.Coordinates[0],
+							Latitude:    f.Geometry.Coordinates[1],
+							Properties:  f.Properties.Extra,
+							CreatedAt:   time.Now(),
+							UpdatedAt:   time.Now(),
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// 5. Restore Buildings & Floors
+	for _, b := range cfg.Buildings {
+		bld, _ := s.repo.CreateBuilding(sessionID, &models.Building{
+			Name: b.Name,
+			Bounds: map[string]interface{}{
+				"min_x": cfg.Bounds[0],
+				"min_y": cfg.Bounds[1],
+				"max_x": cfg.Bounds[2],
+				"max_y": cfg.Bounds[3],
+			},
+		})
+		if bld != nil {
+			for _, fl := range b.Floors {
+				_, _ = s.repo.AddFloor(sessionID, bld.ID, &models.BuildingFloor{
+					Level:      fl.Level,
+					Name:       fl.Name,
+					DatasetIDs: []string{primaryDatasetID},
+				})
+			}
+		}
+	}
+
+	// 6. Register primary Dataset in repo
+	boundsMap := map[string]interface{}{
+		"min_x": cfg.Bounds[0],
+		"min_y": cfg.Bounds[1],
+		"max_x": cfg.Bounds[2],
+		"max_y": cfg.Bounds[3],
+	}
+	coords4 := [][]float64{
+		{cfg.Bounds[0], cfg.Bounds[3]},
+		{cfg.Bounds[2], cfg.Bounds[3]},
+		{cfg.Bounds[2], cfg.Bounds[1]},
+		{cfg.Bounds[0], cfg.Bounds[1]},
+	}
+
+	tileURLTemplate := fmt.Sprintf("/datasets/%s/tiles/{z}/{x}/{y}", primaryDatasetID)
+	mapLayer := map[string]interface{}{
+		"id":                "lyr_" + primaryDatasetID,
+		"name":              projName,
+		"type":              "custom_local_tiles",
+		"tile_format":       "png",
+		"scheme":            "xyz",
+		"tile_url_template": tileURLTemplate,
+		"tile_min_zoom":     cfg.MinZoom,
+		"tile_max_zoom":     cfg.MaxZoom,
+		"bounds":            boundsMap,
+		"bounds_crs":        "EPSG:4326",
+		"coordinates":       coords4,
+	}
+
+	extractedMeta := map[string]interface{}{
+		"driver":              "CustomLocalTiles",
+		"format":              "custom_local_tiles",
+		"document_type":       "custom_local_tiles",
+		"width":               512,
+		"height":              512,
+		"crs":                 "EPSG:4326",
+		"tile_crs":            "EPSG:3857",
+		"bounds":              boundsMap,
+		"center":              cfg.Center,
+		"initial_zoom":        cfg.InitialZoom,
+		"minzoom":             cfg.MinZoom,
+		"maxzoom":             cfg.MaxZoom,
+		"tile_min_zoom":       cfg.MinZoom,
+		"tile_max_zoom":       cfg.MaxZoom,
+		"tile_format":         "png",
+		"tile_scheme":         "xyz",
+		"georeference_source": "custom_local_tiles_config",
+		"raster_layers":       cfg.RasterLayers,
+		"vector_layers":       cfg.VectorLayers,
+		"content": &models.ContentComposition{
+			HasRaster: len(cfg.RasterLayers) > 0,
+			HasVector: len(cfg.VectorLayers) > 0,
+		},
+	}
+
+	dataset := &models.Dataset{
+		ID:                 primaryDatasetID,
+		SessionID:          sessionID,
+		Filename:           filename,
+		FileSize:           size,
+		ContentType:        "application/zip",
+		FileHash:           fileHash,
+		StoragePath:        zipPath,
+		ProcessedPath:      previewPath,
+		GeoreferencedPath:  zipPath,
+		TilePath:           xyzDir,
+		GeoreferenceStatus: "completed",
+		TileStatus:         "completed",
+		ExtractedMetadata:  extractedMeta,
+		MapLayer:           mapLayer,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := s.repo.InsertDataset(sessionID, dataset); err != nil {
+		_ = storage.SafeRemoveAll(primaryDatasetDir)
+		return nil, err
+	}
+
+	_ = s.repo.SetLayers(sessionID, primaryDatasetID, []*models.Layer{
+		{
+			ID:        "lyr_" + primaryDatasetID,
+			DatasetID: primaryDatasetID,
+			Name:      projName,
+			Type:      "custom_local_tiles",
+			Visible:   true,
+			Opacity:   1.0,
+			Bounds:    cfg.Bounds,
+		},
+	})
+
+	// 7. Save MapProject
+	proj := &models.MapProject{
+		ID:        "proj_" + repository.GenerateDatasetID(),
+		DatasetID: primaryDatasetID,
+		Name:      projName,
+		Configuration: map[string]interface{}{
+			"active_view":       "map",
+			"active_dataset_id": primaryDatasetID,
+			"min_zoom":          cfg.MinZoom,
+			"max_zoom":          cfg.MaxZoom,
+			"initial_zoom":      cfg.InitialZoom,
+			"camera": map[string]interface{}{
+				"longitude": cfg.Center[0],
+				"latitude":  cfg.Center[1],
+				"center":    cfg.Center,
+				"zoom":      cfg.InitialZoom,
+				"bearing":   0.0,
+				"pitch":     0.0,
+			},
+			"base_layer": map[string]interface{}{
+				"type":    "raster-xyz",
+				"name":    "OpenStreetMap",
+				"visible": true,
+			},
+			"members": []interface{}{
+				map[string]interface{}{
+					"dataset_id":             primaryDatasetID,
+					"name":                   projName,
+					"building_name":          projName,
+					"is_building_floor":      false,
+					"floor_level":            0,
+					"floor_label":            "Ground Floor",
+					"visible":                true,
+					"raster_visible":         true,
+					"raster_opacity":         1.0,
+					"control_points_visible": true,
+					"icon_points_visible":    true,
+					"annotations_visible":    true,
+					"vectors_visible":        true,
+					"sort_order":             0,
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = s.repo.SaveMapProject(sessionID, proj)
+
+	return dataset, nil
 }

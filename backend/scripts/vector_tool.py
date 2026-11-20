@@ -882,6 +882,71 @@ def reproject_raster_file(src_path, dst_path, source_crs, target_crs):
         return {"success": False, "error": str(e)}
 
 
+def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zoom=16):
+    try:
+        if not HAS_PYOGRIO or not HAS_GEOPANDAS:
+            return {"success": False, "error": "pyogrio and geopandas required for vector tile generation"}
+        if not os.path.exists(src_path):
+            return {"success": False, "error": f"Source file does not exist: {src_path}"}
+
+        # Target directory must NOT exist beforehand because GDAL MVT driver creates it
+        shutil.rmtree(out_dir, ignore_errors=True)
+        parent_dir = os.path.dirname(os.path.abspath(out_dir))
+        os.makedirs(parent_dir, exist_ok=True)
+
+        read_kwargs = {}
+        if layer_name:
+            read_kwargs["layer"] = layer_name
+        gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
+        if gdf.empty:
+            return {"success": False, "error": "Vector dataset contains 0 features"}
+
+        if gdf.crs is not None and not gdf.crs.equals("EPSG:4326"):
+            gdf = gdf.to_crs("EPSG:4326")
+
+        def _to_2d(geom):
+            if geom is None or geom.is_empty:
+                return geom
+            if HAS_SHAPELY and hasattr(shapely, "force_2d"):
+                return shapely.force_2d(geom)
+            return geom
+
+        gdf["geometry"] = gdf["geometry"].apply(_to_2d)
+
+        # Convert non-serializable columns
+        for col in gdf.columns:
+            if col != "geometry" and col != gdf.geometry.name:
+                dt = str(gdf[col].dtype).lower()
+                if "datetime" in dt or "object" in dt:
+                    gdf[col] = gdf[col].astype(str)
+
+        pyogrio.write_dataframe(
+            gdf,
+            out_dir,
+            driver="MVT",
+            MINZOOM=int(min_zoom),
+            MAXZOOM=int(max_zoom),
+        )
+
+        tile_count = 0
+        for root, dirs, files in os.walk(out_dir):
+            for f in files:
+                if f.endswith(".pbf") or f.endswith(".mvt"):
+                    tile_count += 1
+
+        return {
+            "success": True,
+            "layer_name": layer_name or "vector",
+            "feature_count": len(gdf),
+            "tile_count": tile_count,
+            "min_zoom": int(min_zoom),
+            "max_zoom": int(max_zoom),
+            "out_dir": out_dir,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({"success": False, "error": "Missing command"}))
@@ -903,6 +968,14 @@ def main():
         print(json.dumps(res))
     elif cmd == "reproject_raster":
         res = reproject_raster_file(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+        print(json.dumps(res))
+    elif cmd == "generate_vector_tiles":
+        fp = sys.argv[2]
+        out_dir = sys.argv[3]
+        lname = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "" else None
+        min_z = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+        max_z = int(sys.argv[6]) if len(sys.argv) > 6 else 16
+        res = generate_vector_tiles(fp, out_dir, lname, min_z, max_z)
         print(json.dumps(res))
     else:
         print(json.dumps({"success": False, "error": f"Unknown command: {cmd}"}))

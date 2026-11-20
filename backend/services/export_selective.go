@@ -121,6 +121,9 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	_ = os.MkdirAll(exportDir, 0755)
 
 	normFormat := strings.ToLower(strings.TrimSpace(params.Format))
+	if normFormat == "custom_local_tiles" || normFormat == "custom-local-tiles" || normFormat == "local_tiles" {
+		return s.GenerateCustomLocalTilesExport(sessionID, primaryDatasetID, params)
+	}
 	if normFormat == "base_layer" || normFormat == "basemap" {
 		return s.exportBaseLayerFile(primaryDs, exportDir)
 	}

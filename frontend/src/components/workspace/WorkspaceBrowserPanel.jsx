@@ -130,7 +130,7 @@ export default function WorkspaceBrowserPanel({
     setExpandedNodes((prev) => ({ ...prev, [`ds:${id}`]: true }))
     setInspectedById((prev) => ({ ...prev, [id]: { loading: true, data: null, error: "" } }))
     try {
-      const res = await inspectUploadedDataset(id)
+      const res = await inspectUploadedDataset({ file_id: id, workspace_id: workspaceId || "" })
       setInspectedById((prev) => ({ ...prev, [id]: { loading: false, data: res, error: "" } }))
       setPreviewItem({ kind: "dataset", file, inspection: res })
     } catch (err) {
@@ -261,16 +261,17 @@ export default function WorkspaceBrowserPanel({
             {discoveredLayers.length > 0 && (
               <>
                 {discoveredLayers.map((lyr) => {
-                  const lKey = `${file.id}:${lyr.name}`
+                  const lyrName = lyr.layer_name || lyr.name || "Layer"
+                  const lKey = `${file.id}:${lyrName}`
                   return (
                     <div
-                      key={lyr.name}
+                      key={lyrName}
                       onClick={() => setPreviewItem({ kind: "layer", file, layer: lyr })}
                       className="flex items-center justify-between gap-1 px-1.5 py-0.5 rounded-[3px] hover:bg-neutral-200/70 dark:hover:bg-[#303030] text-[10.5px] cursor-pointer"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-neutral-800 dark:text-neutral-200 font-medium">
-                          {lyr.name}
+                          {lyrName}
                         </div>
                         <div className="text-[9.5px] text-neutral-400 font-mono truncate">
                           {lyr.geometry_type || lyr.layer_type || "Layer"} • {lyr.feature_count ?? 0} • {lyr.crs || "—"}
@@ -281,10 +282,10 @@ export default function WorkspaceBrowserPanel({
                         disabled={addingKey === lKey}
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleAddDatasetLayer(file.id, [lyr.name], lyr.name)
+                          handleAddDatasetLayer(file.id, [lyrName], lyrName)
                         }}
                         className="px-1.5 py-0.5 rounded bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] hover:bg-[#3ecf8e] hover:text-[#141414] text-[9.5px] font-bold cursor-pointer shrink-0"
-                        title={`Add layer "${lyr.name}"`}
+                        title={`Add layer "${lyrName}"`}
                       >
                         {addingKey === lKey ? "…" : "+ Add"}
                       </button>

@@ -48,6 +48,8 @@ func ValidateExport(filePath, format, datasetID string) (*ValidationResult, erro
 	}
 
 	switch normFormat {
+	case "custom_local_tiles", "custom-local-tiles", "local_tiles":
+		return validateCustomLocalTilesExport(filePath, datasetID)
 	case "mbtiles":
 		return validateMBTilesExport(filePath, datasetID)
 	case "project_zip", "zip", "project", "complete_project", "mtmap", "base_layer", "basemap":
@@ -181,7 +183,7 @@ func validateZipExport(filePath, format, datasetID string) (*ValidationResult, e
 
 		entriesMap[cleanSlash] = f
 		baseLower := strings.ToLower(filepath.Base(cleanSlash))
-		if baseLower == "manifest.json" || baseLower == "project.json" || baseLower == "metadata.json" {
+		if baseLower == "manifest.json" || baseLower == "project.json" || baseLower == "metadata.json" || baseLower == "tile_config.json" {
 			hasManifest = true
 		}
 		if strings.HasSuffix(strings.ToLower(cleanSlash), ".mbtiles") {
@@ -250,6 +252,109 @@ func validateZipExport(filePath, format, datasetID string) (*ValidationResult, e
 		Format:   format,
 		FilePath: filePath,
 		Details:  fmt.Sprintf("Valid ZIP project archive with %d entries", len(zr.File)),
+	}, nil
+}
+
+func validateCustomLocalTilesExport(filePath, datasetID string) (*ValidationResult, error) {
+	zr, err := zip.OpenReader(filePath)
+	if err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "zip_open",
+			Reason:     fmt.Sprintf("Cannot open Custom Local Tiles archive: %v", err),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Failed at step 'zip_open': %w (dataset: %s)", err, datasetID)
+	}
+	defer zr.Close()
+
+	if len(zr.File) == 0 {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "zip_empty",
+			Reason:     "Custom Local Tiles archive contains zero entries",
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Failed at step 'zip_empty': Archive contains 0 entries (dataset: %s)", datasetID)
+	}
+
+	entriesMap := make(map[string]*zip.File)
+	var tileConfigFile *zip.File
+
+	for _, f := range zr.File {
+		cleanSlash := filepath.ToSlash(f.Name)
+		if strings.HasPrefix(cleanSlash, "/") || strings.Contains(cleanSlash, "../") || strings.Contains(cleanSlash, `..\`) {
+			return &ValidationResult{
+				Valid:      false,
+				Format:     "custom_local_tiles",
+				FilePath:   filePath,
+				FailedStep: "zip_slip_check",
+				Reason:     fmt.Sprintf("Unsafe path traversal entry detected: '%s'", f.Name),
+				DatasetID:  datasetID,
+			}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Path traversal in '%s' (dataset: %s)", f.Name, datasetID)
+		}
+		entriesMap[cleanSlash] = f
+		baseLower := strings.ToLower(filepath.Base(cleanSlash))
+		if baseLower == "tile_config.json" {
+			tileConfigFile = f
+		}
+	}
+
+	if tileConfigFile == nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "tile_config_presence",
+			Reason:     "Custom Local Tiles package lacks tile_config.json",
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Missing tile_config.json metadata (dataset: %s)", datasetID)
+	}
+
+	rc, err := tileConfigFile.Open()
+	if err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "tile_config_read",
+			Reason:     fmt.Sprintf("Could not open tile_config.json: %v", err),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Failed to open tile_config.json: %w", err)
+	}
+	defer rc.Close()
+
+	var cfgDoc map[string]interface{}
+	if err := json.NewDecoder(rc).Decode(&cfgDoc); err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "tile_config_json_parse",
+			Reason:     fmt.Sprintf("tile_config.json contains invalid JSON: %v", err),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Invalid JSON in tile_config.json: %w", err)
+	}
+
+	boundsRaw, ok := cfgDoc["bounds"].([]interface{})
+	if !ok || len(boundsRaw) != 4 {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     "custom_local_tiles",
+			FilePath:   filePath,
+			FailedStep: "tile_config_bounds",
+			Reason:     "tile_config.json lacks valid 4-element geographic bounds",
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [custom_local_tiles] Invalid bounds in tile_config.json (dataset: %s)", datasetID)
+	}
+
+	return &ValidationResult{
+		Valid:    true,
+		Format:   "custom_local_tiles",
+		FilePath: filePath,
+		Details:  fmt.Sprintf("Valid Custom Local Tiles package with %d entries", len(zr.File)),
 	}, nil
 }
 

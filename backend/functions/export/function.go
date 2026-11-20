@@ -53,10 +53,10 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Format != "" {
 			format = req.Format
+		} else {
+			format = "custom_local_tiles"
 		}
-		if len(req.BuildingIDs) > 0 || len(req.FloorIDs) > 0 || len(req.LayerIDs) > 0 || req.Options != nil || req.ProjectName != "" || req.ZoomConfig != nil {
-			isSelective = true
-		}
+		isSelective = true
 	case http.MethodGet:
 		if qFormat := r.URL.Query().Get("format"); qFormat != "" {
 			format = qFormat

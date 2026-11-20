@@ -3,6 +3,7 @@ package workspaceregistry
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,7 +28,8 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, models.ErrWorkspaceLayerNotFound),
 		errors.Is(err, models.ErrWorkspaceRecordNotFound),
-		errors.Is(err, models.ErrWorkspaceRasterNotFound):
+		errors.Is(err, models.ErrWorkspaceRasterNotFound),
+		errors.Is(err, models.ErrMapNotFound):
 		models.WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil, nil)
 	case errors.Is(err, models.ErrMapAccessDenied):
 		models.WriteError(w, http.StatusForbidden, "FORBIDDEN", err.Error(), nil, nil)
@@ -44,14 +46,35 @@ func (h *Handler) InspectDatasetPost(w http.ResponseWriter, r *http.Request, use
 		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", nil, nil)
 		return
 	}
-	var req models.InspectDatasetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		models.WriteError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON payload", err.Error(), nil)
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_JSON", "Failed reading request body", err.Error(), nil)
 		return
+	}
+	var req models.InspectDatasetRequest
+	trimmed := strings.TrimSpace(string(rawBody))
+	if trimmed != "" {
+		if err := json.Unmarshal(rawBody, &req); err != nil {
+			var asStr string
+			if sErr := json.Unmarshal(rawBody, &asStr); sErr == nil && strings.TrimSpace(asStr) != "" {
+				req.FileID = strings.TrimSpace(asStr)
+			} else if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
+				req.FileID = strings.Trim(trimmed, "\"")
+			} else {
+				models.WriteError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON payload", err.Error(), nil)
+				return
+			}
+		}
 	}
 	dsID := strings.TrimSpace(req.FileID)
 	if dsID == "" {
 		dsID = strings.TrimSpace(req.DatasetID)
+	}
+	if dsID == "" {
+		dsID = strings.TrimSpace(r.URL.Query().Get("file_id"))
+	}
+	if dsID == "" {
+		dsID = strings.TrimSpace(r.URL.Query().Get("dataset_id"))
 	}
 	if dsID == "" {
 		models.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "file_id or dataset_id is required", nil, nil)
