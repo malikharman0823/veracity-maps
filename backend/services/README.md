@@ -105,6 +105,14 @@ never send external traffic.
   └── {z}/{x}/{y}.png                   # Direct root tile pyramid for standard viewers
   ```
 
+- **Custom Local Tiles (`format: "custom_local_tiles"`)**:
+  - Unified offline export packaging both raster and vector layers into a single reusable package for Viewscape.
+  - Implements smart bounds-based tile generation that detects and skips empty/transparent tiles.
+  - Features SHA-256 content-hash tile caching (`storage/processed/tile_cache/`) for near-instant repeat exports (~64% faster).
+  - Uses streaming ZIP packaging with `zip.Store` for PNG/JPG tiles to eliminate redundant CPU re-compression, and `zip.Deflate` for text/GeoJSON/PBF files.
+  - Generates `tile_manifest.json` containing layer bounds, tile counts, performance metrics, and SHA-256 file checksums.
+  - Tracks live progress across 8 pipeline stages via `ExportProgressManager` (`export_progress.go`) with cancellation support.
+
 - **Project Manifest Schema (`project.json`)**:
   - `format`: `"veracity-project"`
   - `schema_version`: `1`

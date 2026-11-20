@@ -82,6 +82,9 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 				IncludeBaseMapSettings:  req.Options.IncludeBaseMapSettings,
 				IncludeProjectMetadata:  req.Options.IncludeProjectMetadata,
 				ZoomConfig:              req.Options.ZoomConfig,
+				TileSize:                req.Options.TileSize,
+				RasterFormat:            req.Options.RasterFormat,
+				ImageQuality:            req.Options.ImageQuality,
 			}
 		} else if req.ZoomConfig != nil {
 			selOpts = services.DefaultSelectiveExportOptions()
@@ -133,6 +136,43 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		DownloadURL: downloadURL,
 		Format:      format,
 		Filename:    filename,
+	})
+}
+
+// GetProgress returns the real-time execution metrics for an active export.
+func (h *Handler) GetProgress(w http.ResponseWriter, r *http.Request, datasetID string) {
+	if r.Method != http.MethodGet {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is supported", nil, nil)
+		return
+	}
+
+	prog := h.exportService.GetProgress(datasetID)
+	if prog == nil {
+		// Return idle state if no active or recent export exists
+		models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"dataset_id":  datasetID,
+			"status":      "idle",
+			"stage":       "Idle",
+			"stage_index": 0,
+			"percent":     0.0,
+		})
+		return
+	}
+
+	models.WriteJSON(w, http.StatusOK, prog)
+}
+
+// CancelExport aborts an in-progress export.
+func (h *Handler) CancelExport(w http.ResponseWriter, r *http.Request, datasetID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is supported", nil, nil)
+		return
+	}
+
+	success := h.exportService.CancelExport(datasetID)
+	models.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"dataset_id": datasetID,
+		"cancelled":  success,
 	})
 }
 

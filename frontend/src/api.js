@@ -807,6 +807,16 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
   return filename
 }
 
+export async function getExportProgress(datasetId, signal) {
+  const response = await client.get(`/datasets/${encodeURIComponent(datasetId)}/export/progress`, { signal })
+  return response.data?.data || response.data
+}
+
+export async function cancelExport(datasetId) {
+  const response = await client.post(`/datasets/${encodeURIComponent(datasetId)}/export/cancel`)
+  return response.data?.data || response.data
+}
+
 
 
 const DEFAULT_ICONS = [

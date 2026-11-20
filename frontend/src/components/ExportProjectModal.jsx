@@ -25,6 +25,18 @@ import {
 } from "lucide-react"
 import { buildExportHierarchy } from "../lib/exportHierarchy"
 import SpringCheck from "./SpringCheck"
+import { getExportProgress, cancelExport } from "../api"
+
+export const EXPORT_STAGES = [
+  { index: 1, label: "Inspecting selected layers" },
+  { index: 2, label: "Calculating tile coverage" },
+  { index: 3, label: "Processing raster layers" },
+  { index: 4, label: "Generating vector tiles" },
+  { index: 5, label: "Processing GeoJSON metadata" },
+  { index: 6, label: "Reusing cached tiles" },
+  { index: 7, label: "Packaging ZIP" },
+  { index: 8, label: "Validating export" },
+]
 
 export const SUGGESTED_ZOOM_LEVELS = [
   { level: 21, label: "House level", preset: "house" },
@@ -94,6 +106,46 @@ export default function ExportProjectModal({
     imageQuality: 85,
     boundsClipping: "project",
   })
+
+  // Live export execution metrics from backend
+  const [liveProgress, setLiveProgress] = useState(null)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  // Poll real backend progress during active export
+  useEffect(() => {
+    if (!exporting || !primaryDatasetId) {
+      setLiveProgress(null)
+      setIsCancelling(false)
+      return
+    }
+
+    let active = true
+    const poll = async () => {
+      try {
+        const prog = await getExportProgress(primaryDatasetId)
+        if (active && prog && prog.status === "processing") {
+          setLiveProgress(prog)
+        }
+      } catch {
+        // Ignore background polling errors
+      }
+    }
+
+    poll()
+    const timer = setInterval(poll, 350)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [exporting, primaryDatasetId])
+
+  const handleCancelExport = async () => {
+    if (isCancelling || !primaryDatasetId) return
+    setIsCancelling(true)
+    try {
+      await cancelExport(primaryDatasetId)
+    } catch {}
+  }
 
   // Initialize selection when modal opens
   useEffect(() => {
@@ -425,6 +477,112 @@ export default function ExportProjectModal({
             SCROLLABLE BODY
             ========================================================================= */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-white dark:bg-[#191919]">
+          {/* =========================================================================
+              LIVE EXPORT PROGRESS SECTION (Stage 1-8 Backend Reporting)
+              ========================================================================= */}
+          {exporting && (
+            <div className="p-4 rounded-[10px] bg-neutral-900 border border-[#3ecf8e]/40 shadow-lg text-white space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Loader2 className="size-5 text-[#3ecf8e] animate-spin shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-[#3ecf8e] uppercase tracking-wider">
+                      Stage {liveProgress?.stage_index || 1} of 8: {liveProgress?.stage || "Processing Custom Local Tiles…"}
+                    </div>
+                    {liveProgress?.current_layer && (
+                      <div className="text-[11px] text-neutral-400 font-mono mt-0.5">
+                        Active Layer: <span className="text-white font-semibold">{liveProgress.current_layer}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold font-mono text-[#3ecf8e]">
+                    {Math.round(liveProgress?.percent || 5)}%
+                  </div>
+                  {liveProgress?.estimated_remaining_seconds > 0 && (
+                    <div className="text-[10px] text-neutral-400 font-mono">
+                      ~{liveProgress.estimated_remaining_seconds}s remaining
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden border border-neutral-700">
+                <div
+                  className="bg-[#3ecf8e] h-full transition-all duration-300 ease-out rounded-full shadow-[0_0_8px_rgba(62,207,142,0.6)]"
+                  style={{ width: `${Math.min(100, Math.max(5, liveProgress?.percent || 5))}%` }}
+                />
+              </div>
+
+              {/* Real-time Metric Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                <div className="p-2 rounded-[6px] bg-neutral-800/80 border border-neutral-700/60">
+                  <div className="text-[10px] text-neutral-400">Tiles Processed</div>
+                  <div className="text-xs font-bold font-mono text-white mt-0.5">
+                    {liveProgress?.completed_tiles || 0} / {liveProgress?.expected_tiles || "?"}
+                  </div>
+                </div>
+                <div className="p-2 rounded-[6px] bg-neutral-800/80 border border-neutral-700/60">
+                  <div className="text-[10px] text-neutral-400">Empty Tiles Skipped</div>
+                  <div className="text-xs font-bold font-mono text-[#3ecf8e] mt-0.5">
+                    {liveProgress?.empty_tiles_skipped || 0}
+                  </div>
+                </div>
+                <div className="p-2 rounded-[6px] bg-neutral-800/80 border border-neutral-700/60">
+                  <div className="text-[10px] text-neutral-400">Cached Tiles Reused</div>
+                  <div className="text-xs font-bold font-mono text-blue-400 mt-0.5">
+                    {liveProgress?.cached_tiles_reused || 0}
+                  </div>
+                </div>
+                <div className="p-2 rounded-[6px] bg-neutral-800/80 border border-neutral-700/60">
+                  <div className="text-[10px] text-neutral-400">Elapsed Time</div>
+                  <div className="text-xs font-bold font-mono text-neutral-200 mt-0.5">
+                    {liveProgress?.duration_seconds ? `${liveProgress.duration_seconds}s` : "Starting…"}
+                  </div>
+                </div>
+              </div>
+
+              {/* 8 Distinct Stages Stepper */}
+              <div className="pt-2 border-t border-neutral-800">
+                <div className="text-[10px] uppercase tracking-wider font-bold text-neutral-400 mb-2">
+                  Pipeline Execution Stages
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                  {EXPORT_STAGES.map((st) => {
+                    const currentIdx = liveProgress?.stage_index || 1
+                    const isDone = st.index < currentIdx
+                    const isCurrent = st.index === currentIdx
+                    return (
+                      <div
+                        key={st.index}
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-[4px] border ${
+                          isDone
+                            ? "bg-[#3ecf8e]/10 border-[#3ecf8e]/30 text-[#3ecf8e]"
+                            : isCurrent
+                            ? "bg-white/10 border-white/30 text-white font-semibold"
+                            : "bg-neutral-800/40 border-neutral-800 text-neutral-500"
+                        }`}
+                      >
+                        {isDone ? (
+                          <Check className="size-3 shrink-0 text-[#3ecf8e]" />
+                        ) : isCurrent ? (
+                          <Loader2 className="size-3 shrink-0 animate-spin text-white" />
+                        ) : (
+                          <span className="size-3 rounded-full border border-neutral-600 inline-block text-[9px] text-center leading-3">
+                            {st.index}
+                          </span>
+                        )}
+                        <span className="truncate">{st.label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Main Card: Custom Local Tiles */}
           <div className="p-4 rounded-[10px] bg-[#3ecf8e]/5 border border-[#3ecf8e]/30 shadow-xs relative overflow-hidden">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -964,14 +1122,24 @@ export default function ExportProjectModal({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={exporting}
-              className="px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-[#252525] rounded-[6px] transition-colors cursor-pointer disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            {exporting ? (
+              <button
+                type="button"
+                onClick={handleCancelExport}
+                disabled={isCancelling}
+                className="px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-[6px] border border-red-500/30 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isCancelling ? "Cancelling…" : "Cancel Export"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-[#252525] rounded-[6px] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
 
             <button
               type="button"
@@ -982,7 +1150,9 @@ export default function ExportProjectModal({
               {exporting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>Packaging Custom Local Tiles…</span>
+                  <span>
+                    {liveProgress?.stage || "Packaging Custom Local Tiles…"} ({Math.round(liveProgress?.percent || 5)}%)
+                  </span>
                 </>
               ) : (
                 <>

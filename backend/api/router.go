@@ -1176,6 +1176,14 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				rt.georefH.Georeference(w, r, datasetID)
 				return
 			case "export":
+				if len(parts) >= 3 && parts[2] == "progress" {
+					rt.exportH.GetProgress(w, r, datasetID)
+					return
+				}
+				if len(parts) >= 3 && parts[2] == "cancel" {
+					rt.exportH.CancelExport(w, r, datasetID)
+					return
+				}
 				rt.exportH.Export(w, r, datasetID)
 				return
 			case "inspection":
@@ -1351,12 +1359,26 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 8. Export download
+	// 8. Export download & progress
 	if strings.HasPrefix(path, "/api/exports/") && strings.HasSuffix(path, "/download") {
 		trimmed := strings.TrimPrefix(path, "/api/exports/")
 		trimmed = strings.TrimSuffix(trimmed, "/download")
 		exportID := strings.Trim(trimmed, "/")
 		rt.exportH.Download(w, r, exportID)
+		return
+	}
+	if strings.HasPrefix(path, "/api/exports/") && strings.HasSuffix(path, "/progress") {
+		trimmed := strings.TrimPrefix(path, "/api/exports/")
+		trimmed = strings.TrimSuffix(trimmed, "/progress")
+		exportID := strings.Trim(trimmed, "/")
+		rt.exportH.GetProgress(w, r, exportID)
+		return
+	}
+	if strings.HasPrefix(path, "/api/exports/") && strings.HasSuffix(path, "/cancel") {
+		trimmed := strings.TrimPrefix(path, "/api/exports/")
+		trimmed = strings.TrimSuffix(trimmed, "/cancel")
+		exportID := strings.Trim(trimmed, "/")
+		rt.exportH.CancelExport(w, r, exportID)
 		return
 	}
 

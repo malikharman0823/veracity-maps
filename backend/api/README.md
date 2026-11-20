@@ -44,6 +44,8 @@ and response behavior.
     - `/datasets/{id}/layers`: Retrieves dataset layers (`GET`).
     - `/datasets/{id}/layers/{layer_id}`: Updates layer opacity or visibility (`PATCH`).
     - `/datasets/{id}/export`: Generates GIS export bundle (`GET`).
+    - `/datasets/{id}/export/progress`: Polls live 8-stage export progress, tile counters, and remaining time (`GET`).
+    - `/datasets/{id}/export/cancel`: Cancels an in-flight background export (`POST`).
     - `/api/exports/{id}/download`: Streams downloadable ZIP/VRT artifact (`GET`).
     - `/datasets/{id}/workspace`: Retrieves the workspace manifest (`GET`).
     - `/datasets/{id}/workspace/members`: Attaches a multi-layer member (`POST`).

@@ -12,6 +12,9 @@ type ExportOptions struct {
 	IncludeBaseMapSettings bool                        `json:"include_base_map_settings"`
 	IncludeProjectMetadata bool                        `json:"include_project_metadata"`
 	ZoomConfig             *services.ZoomConfiguration `json:"zoom_config,omitempty"`
+	TileSize               int                         `json:"tile_size,omitempty"`
+	RasterFormat           string                      `json:"raster_format,omitempty"`
+	ImageQuality           int                         `json:"image_quality,omitempty"`
 }
 
 type ExportRequest struct {

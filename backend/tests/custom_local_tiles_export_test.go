@@ -553,4 +553,3 @@ func TestCustomLocalTiles_VectorLayersVisibilityAndExport(t *testing.T) {
 		t.Errorf("expected reopened dataset to have HasVector == true")
 	}
 }
-

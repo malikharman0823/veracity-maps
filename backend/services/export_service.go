@@ -24,15 +24,35 @@ import (
 )
 
 type ExportService struct {
-	repo    *repository.SessionRepository
-	storage *storage.StorageManager
+	repo     *repository.SessionRepository
+	storage  *storage.StorageManager
+	progress *ExportProgressManager
 }
 
 func NewExportService(repo *repository.SessionRepository, sm *storage.StorageManager) *ExportService {
 	return &ExportService{
-		repo:    repo,
-		storage: sm,
+		repo:     repo,
+		storage:  sm,
+		progress: NewExportProgressManager(),
 	}
+}
+
+// ProgressManager returns the progress manager instance.
+func (s *ExportService) ProgressManager() *ExportProgressManager {
+	if s.progress == nil {
+		s.progress = NewExportProgressManager()
+	}
+	return s.progress
+}
+
+// GetProgress returns the live progress snapshot for an export.
+func (s *ExportService) GetProgress(datasetID string) *ExportProgress {
+	return s.ProgressManager().GetProgress(datasetID)
+}
+
+// CancelExport cancels an active export job.
+func (s *ExportService) CancelExport(datasetID string) bool {
+	return s.ProgressManager().CancelExport(datasetID)
 }
 
 // StorageManager exposes the underlying StorageManager for direct export file lookup.

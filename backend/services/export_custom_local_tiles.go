@@ -3,6 +3,9 @@ package services
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -13,7 +16,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/gis"
@@ -242,8 +248,21 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		_ = storage.SafeRemoveAll(stageDir)
 	}()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.ProgressManager().StartExport(primaryDatasetID, sessionID, cancel)
+
+	startTime := time.Now()
+	var originalDataSize int64
+	var completedTilesCount int
+	var emptyTilesSkippedCount int
+	var cachedTilesReusedCount int
+
+	s.ProgressManager().UpdateStage(primaryDatasetID, 1, "Inspecting selected layers", primaryDs.Filename)
+
 	zipFile, err := os.Create(zipPath)
 	if err != nil {
+		s.ProgressManager().FailExport(primaryDatasetID, err)
 		return "", "", fmt.Errorf("STORAGE_ERROR: Failed creating Custom Local Tiles archive: %w", err)
 	}
 	defer zipFile.Close()
@@ -251,13 +270,20 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 	archive := zip.NewWriter(zipFile)
 	defer archive.Close()
 
+	tileChecksums := make(map[string]string)
 	seenZipEntries := make(map[string]bool)
+
 	addBytesToZip := func(archivePath string, data []byte) error {
 		clean := filepath.ToSlash(archivePath)
 		if seenZipEntries[clean] {
 			return nil
 		}
-		w, err := archive.Create(clean)
+		header := &zip.FileHeader{
+			Name:     clean,
+			Method:   zip.Deflate,
+			Modified: time.Now(),
+		}
+		w, err := archive.CreateHeader(header)
 		if err != nil {
 			return err
 		}
@@ -265,6 +291,8 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 			return err
 		}
 		seenZipEntries[clean] = true
+		h := sha256.Sum256(data)
+		tileChecksums[clean] = hex.EncodeToString(h[:])
 		return nil
 	}
 
@@ -279,14 +307,35 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		}
 		defer f.Close()
 
-		w, err := archive.Create(clean)
+		fi, err := f.Stat()
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(w, f); err != nil {
+
+		ext := strings.ToLower(filepath.Ext(clean))
+		method := zip.Deflate
+		// Fast streaming: images are already compressed; storing them avoids expensive re-compression
+		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" {
+			method = zip.Store
+		}
+
+		header := &zip.FileHeader{
+			Name:     clean,
+			Method:   method,
+			Modified: fi.ModTime(),
+		}
+		w, err := archive.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		hasher := sha256.New()
+		multi := io.MultiWriter(w, hasher)
+		if _, err := io.Copy(multi, f); err != nil {
 			return err
 		}
 		seenZipEntries[clean] = true
+		tileChecksums[clean] = hex.EncodeToString(hasher.Sum(nil))
 		return nil
 	}
 
@@ -387,9 +436,61 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		}
 	}
 
+	// Stage 2: Calculate tile coverage
+	s.ProgressManager().UpdateStage(primaryDatasetID, 2, "Calculating tile coverage", "")
+	totalExpectedTiles := 0
+	for _, ds := range rasterDatasets {
+		dsBounds := extractDatasetBounds(ds)
+		if len(dsBounds) != 4 {
+			dsBounds = unionBounds
+		}
+		clampMinZ, clampMaxZ := gis.DetermineTileZooms(dsBounds, 512, 512)
+		if minZoom > clampMinZ {
+			clampMinZ = minZoom
+		}
+		if maxZoom < clampMaxZ {
+			clampMaxZ = maxZoom
+		}
+		if clampMinZ > clampMaxZ {
+			clampMinZ = clampMaxZ
+		}
+		for z := clampMinZ; z <= clampMaxZ; z++ {
+			minX, maxY := gis.LatLngToTile(dsBounds[1], dsBounds[0], z)
+			maxX, minY := gis.LatLngToTile(dsBounds[3], dsBounds[2], z)
+			if minX > maxX {
+				minX, maxX = maxX, minX
+			}
+			if minY > maxY {
+				minY, maxY = maxY, minY
+			}
+			totalExpectedTiles += (maxX - minX + 1) * (maxY - minY + 1)
+		}
+	}
+	for range vectorDatasets {
+		totalExpectedTiles += (maxZoom - minZoom + 1) * 2
+	}
+	if totalExpectedTiles == 0 {
+		totalExpectedTiles = 10
+	}
+
 	// 1. Process Raster Layers -> raster/<layer_dir>/{z}/{x}/{y}.png
+	s.ProgressManager().UpdateStage(primaryDatasetID, 3, "Processing raster layers", "")
+	rasterQuality := 85
+	if opts.ImageQuality > 0 && opts.ImageQuality <= 100 {
+		rasterQuality = opts.ImageQuality
+	}
 	var rasterConfigLayers []TileConfigRasterLayer
 	for _, ds := range rasterDatasets {
+		if ctx.Err() != nil {
+			s.ProgressManager().FailExport(primaryDatasetID, ctx.Err())
+			return "", "", fmt.Errorf("EXPORT_CANCELLED: %w", ctx.Err())
+		}
+		if ds.FileSize > 0 {
+			originalDataSize += ds.FileSize
+		} else if fi, statErr := os.Stat(ds.StoragePath); statErr == nil {
+			originalDataSize += fi.Size()
+		}
+
 		dsBounds := extractDatasetBounds(ds)
 		if len(dsBounds) != 4 {
 			dsBounds = unionBounds
@@ -435,15 +536,21 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		}
 
 		format := "png"
-		if strings.HasSuffix(strings.ToLower(renderPath), ".jpg") || strings.HasSuffix(strings.ToLower(renderPath), ".jpeg") {
+		if opts.RasterFormat != "" {
+			format = strings.ToLower(opts.RasterFormat)
+		} else if strings.HasSuffix(strings.ToLower(renderPath), ".jpg") || strings.HasSuffix(strings.ToLower(renderPath), ".jpeg") {
 			format = "jpg"
 		}
 
-		// Render XYZ tiles for this raster
+		// Render XYZ tiles for this raster with caching and worker pool
 		layerTileDir := filepath.Join(stageDir, "raster", layerSlug)
 		_ = os.MkdirAll(layerTileDir, 0755)
 
-		s.renderRasterXYZTiles(renderPath, dsBounds, minZoom, maxZoom, format, layerTileDir)
+		cTiles, skTiles, reTiles := s.getOrCreateCachedRasterTiles(ctx, renderPath, dsBounds, minZoom, maxZoom, format, rasterQuality, layerTileDir)
+		completedTilesCount += cTiles
+		emptyTilesSkippedCount += skTiles
+		cachedTilesReusedCount += reTiles
+		s.ProgressManager().UpdateTileMetrics(primaryDatasetID, completedTilesCount+cachedTilesReusedCount, totalExpectedTiles, emptyTilesSkippedCount, cachedTilesReusedCount, layerSlug)
 
 		// Walk layerTileDir and add tiles to zip under Custom_Local_Tiles/raster/<layerSlug>/{z}/{x}/{y}.ext
 		_ = filepath.Walk(layerTileDir, func(path string, info os.FileInfo, err error) error {
@@ -479,8 +586,19 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 	}
 
 	// 2. Process Vector Layers -> vector/<layer_name>/{z}/{x}/{y}.pbf
+	s.ProgressManager().UpdateStage(primaryDatasetID, 4, "Generating vector tiles", "")
 	var vectorConfigLayers []TileConfigVectorLayer
 	for _, ds := range vectorDatasets {
+		if ctx.Err() != nil {
+			s.ProgressManager().FailExport(primaryDatasetID, ctx.Err())
+			return "", "", fmt.Errorf("EXPORT_CANCELLED: %w", ctx.Err())
+		}
+		if ds.FileSize > 0 {
+			originalDataSize += ds.FileSize
+		} else if fi, statErr := os.Stat(ds.StoragePath); statErr == nil {
+			originalDataSize += fi.Size()
+		}
+
 		layerSlug := safeStem(ds.Filename)
 		if layerSlug == "" {
 			layerSlug = ds.ID
@@ -491,13 +609,16 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 
 		featCount := 0
 		geomType := "Vector"
-		vRes, vErr := s.generateVectorTilesWithPython(ds.StoragePath, vectorTileDir, layerSlug, minZoom, maxZoom)
+		vRes, reTiles, vErr := s.getOrCreateCachedVectorTiles(ctx, ds.StoragePath, vectorTileDir, layerSlug, minZoom, maxZoom)
 		if vErr == nil && vRes != nil {
 			featCount = vRes.FeatureCount
 			if vRes.GeometryType != "" {
 				geomType = vRes.GeometryType
 			}
+			completedTilesCount += vRes.TileCount
 		}
+		cachedTilesReusedCount += reTiles
+		s.ProgressManager().UpdateTileMetrics(primaryDatasetID, completedTilesCount+cachedTilesReusedCount, totalExpectedTiles, emptyTilesSkippedCount, cachedTilesReusedCount, layerSlug)
 
 		_ = filepath.Walk(vectorTileDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() {
@@ -539,6 +660,7 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 	}
 
 	// 3. Process GeoJSON metadata (control points, icon points, landmarks, areas)
+	s.ProgressManager().UpdateStage(primaryDatasetID, 5, "Processing GeoJSON metadata", "")
 	var allControlPoints []*models.ControlPoint
 	var allIconPoints []*models.IconPoint
 
@@ -724,10 +846,15 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		},
 		Buildings: buildingsConfig,
 		Summary: map[string]interface{}{
-			"selected_rasters": len(rasterConfigLayers),
-			"selected_vectors": len(vectorConfigLayers),
-			"control_points":   len(allControlPoints),
-			"icon_points":      len(allIconPoints),
+			"selected_rasters":         len(rasterConfigLayers),
+			"selected_vectors":         len(vectorConfigLayers),
+			"control_points":           len(allControlPoints),
+			"icon_points":              len(allIconPoints),
+			"duration_seconds":         math.Round(time.Since(startTime).Seconds()*100) / 100,
+			"original_data_size_bytes": originalDataSize,
+			"total_tiles_generated":    completedTilesCount,
+			"empty_tiles_skipped":      emptyTilesSkippedCount,
+			"cached_tiles_reused":      cachedTilesReusedCount,
 		},
 	}
 	for _, v := range vectorConfigLayers {
@@ -744,39 +871,300 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 	_ = addBytesToZip("manifest.json", configData)
 	_ = addBytesToZip("project.json", configData)
 
+	// Stage 6: Reusing cached tiles
+	if cachedTilesReusedCount > 0 {
+		s.ProgressManager().UpdateStage(primaryDatasetID, 6, "Reusing cached tiles", fmt.Sprintf("%d cached tiles reused", cachedTilesReusedCount))
+	}
+
+	// Stage 7: Packaging ZIP
+	s.ProgressManager().UpdateStage(primaryDatasetID, 7, "Packaging ZIP", filename)
+
+	// Generate and bundle tile_manifest.json (Section 7 standard)
+	manifestDoc := map[string]interface{}{
+		"manifest_version": "1.0.0",
+		"name":             projectName,
+		"format":           "custom_local_tiles",
+		"created_at":       time.Now().UTC().Format(time.RFC3339),
+		"bounds":           unionBounds,
+		"center":           center,
+		"zoom_range":       []int{minZoom, maxZoom},
+		"performance": map[string]interface{}{
+			"duration_seconds":         math.Round(time.Since(startTime).Seconds()*100) / 100,
+			"original_data_size_bytes": originalDataSize,
+			"total_tiles_generated":    completedTilesCount,
+			"empty_tiles_skipped":      emptyTilesSkippedCount,
+			"cached_tiles_reused":      cachedTilesReusedCount,
+		},
+		"tile_counts": map[string]interface{}{
+			"raster": len(rasterConfigLayers),
+			"vector": len(vectorConfigLayers),
+			"total":  completedTilesCount + cachedTilesReusedCount,
+		},
+		"tile_checksums": tileChecksums,
+	}
+	manifestData, _ := json.MarshalIndent(manifestDoc, "", "  ")
+	_ = addBytesToZip("Custom_Local_Tiles/tile_manifest.json", manifestData)
+	_ = addBytesToZip("tile_manifest.json", manifestData)
+
 	_ = archive.Close()
 	_ = zipFile.Close()
 
-	// Perform actual post-export strict validation
+	// Stage 8: Validating export
+	s.ProgressManager().UpdateStage(primaryDatasetID, 8, "Validating export", filename)
 	if _, valErr := ValidateExport(zipPath, "custom_local_tiles", primaryDatasetID); valErr != nil {
+		s.ProgressManager().FailExport(primaryDatasetID, valErr)
 		return "", "", fmt.Errorf("EXPORT_VALIDATION_FAILED: %w", valErr)
 	}
+
+	fi, _ := os.Stat(zipPath)
+	var finalSize int64
+	if fi != nil {
+		finalSize = fi.Size()
+	}
+	s.ProgressManager().CompleteExport(primaryDatasetID, finalSize)
 
 	return zipPath, filename, nil
 }
 
-// renderRasterXYZTiles generates 256x256 XYZ PNG or JPG tiles from a source raster into targetDir/{z}/{x}/{y}.ext
-func (s *ExportService) renderRasterXYZTiles(imagePath string, bounds []float64, minZoom, maxZoom int, format, targetDir string) {
+type tileCacheManifest struct {
+	Hash       string   `json:"hash"`
+	Format     string   `json:"format"`
+	MinZoom    int      `json:"min_zoom"`
+	MaxZoom    int      `json:"max_zoom"`
+	TileCount  int      `json:"tile_count"`
+	TilePaths  []string `json:"tile_paths"`
+	GeoJSONRel string   `json:"geojson_rel,omitempty"`
+}
+
+func computeRasterContentHash(filePath string, bounds []float64, minZ, maxZ int, format string, quality int) string {
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return ""
+	}
+	keyStr := fmt.Sprintf("%s:%d:%d:%.6f,%.6f,%.6f,%.6f:%d:%d:%s:%d",
+		filepath.Base(filePath),
+		fi.Size(),
+		fi.ModTime().UnixNano(),
+		bounds[0], bounds[1], bounds[2], bounds[3],
+		minZ, maxZ, format, quality,
+	)
+	h := sha256.Sum256([]byte(keyStr))
+	return hex.EncodeToString(h[:12])
+}
+
+func computeVectorContentHash(filePath, layerName string, minZ, maxZ int) string {
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return ""
+	}
+	keyStr := fmt.Sprintf("%s:%s:%d:%d:%d:%d",
+		filepath.Base(filePath),
+		layerName,
+		fi.Size(),
+		fi.ModTime().UnixNano(),
+		minZ, maxZ,
+	)
+	h := sha256.Sum256([]byte(keyStr))
+	return hex.EncodeToString(h[:12])
+}
+
+func (s *ExportService) getTileCacheDir(layerSlug, contentHash string) string {
+	base := ""
+	if s.storage != nil {
+		base = s.storage.ProcessedDir
+	}
+	if base == "" {
+		base = filepath.Join("storage", "processed")
+	}
+	dir := filepath.Join(base, "tile_cache", layerSlug+"_"+contentHash)
+	_ = os.MkdirAll(dir, 0755)
+	return dir
+}
+
+func isTileEmptyOrTransparent(img *image.RGBA) bool {
+	pix := img.Pix
+	for i := 3; i < len(pix); i += 4 {
+		if pix[i] > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *ExportService) getOrCreateCachedRasterTiles(ctx context.Context, renderPath string, dsBounds []float64, minZ, maxZ int, format string, quality int, layerTileDir string) (int, int, int) {
+	cacheKey := computeRasterContentHash(renderPath, dsBounds, minZ, maxZ, format, quality)
+	cacheDir := s.getTileCacheDir(filepath.Base(layerTileDir), cacheKey)
+
+	manifestPath := filepath.Join(cacheDir, "cache_manifest.json")
+	if fileExists(manifestPath) {
+		raw, mErr := os.ReadFile(manifestPath)
+		if mErr == nil {
+			var mDoc tileCacheManifest
+			if json.Unmarshal(raw, &mDoc) == nil && mDoc.TileCount > 0 {
+				valid := true
+				for _, p := range mDoc.TilePaths {
+					if !fileExists(filepath.Join(cacheDir, filepath.FromSlash(p))) {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					for _, p := range mDoc.TilePaths {
+						src := filepath.Join(cacheDir, filepath.FromSlash(p))
+						dst := filepath.Join(layerTileDir, filepath.FromSlash(p))
+						_ = os.MkdirAll(filepath.Dir(dst), 0755)
+						_ = storage.CopyFile(src, dst)
+					}
+					return 0, 0, mDoc.TileCount
+				}
+			}
+		}
+	}
+
+	completed, skipped := s.renderRasterXYZTiles(ctx, renderPath, dsBounds, minZ, maxZ, format, quality, layerTileDir)
+
+	if completed > 0 {
+		var cachedPaths []string
+		_ = filepath.Walk(layerTileDir, func(p string, info os.FileInfo, wErr error) error {
+			if wErr != nil || info.IsDir() {
+				return nil
+			}
+			rel, rErr := filepath.Rel(layerTileDir, p)
+			if rErr == nil {
+				cleanRel := filepath.ToSlash(rel)
+				cachedPaths = append(cachedPaths, cleanRel)
+				dst := filepath.Join(cacheDir, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(dst), 0755)
+				_ = storage.CopyFile(p, dst)
+			}
+			return nil
+		})
+		mDoc := tileCacheManifest{
+			Hash:      cacheKey,
+			Format:    format,
+			MinZoom:   minZ,
+			MaxZoom:   maxZ,
+			TileCount: completed,
+			TilePaths: cachedPaths,
+		}
+		mData, _ := json.Marshal(mDoc)
+		_ = os.WriteFile(manifestPath, mData, 0644)
+	}
+
+	return completed, skipped, 0
+}
+
+func (s *ExportService) getOrCreateCachedVectorTiles(ctx context.Context, srcPath, vectorTileDir, layerSlug string, minZ, maxZ int) (*pythonVectorTileResult, int, error) {
+	cacheKey := computeVectorContentHash(srcPath, layerSlug, minZ, maxZ)
+	cacheDir := s.getTileCacheDir(layerSlug, cacheKey)
+
+	manifestPath := filepath.Join(cacheDir, "cache_manifest.json")
+	if fileExists(manifestPath) {
+		raw, mErr := os.ReadFile(manifestPath)
+		if mErr == nil {
+			var mDoc tileCacheManifest
+			if json.Unmarshal(raw, &mDoc) == nil && mDoc.TileCount > 0 {
+				valid := true
+				for _, p := range mDoc.TilePaths {
+					if !fileExists(filepath.Join(cacheDir, filepath.FromSlash(p))) {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					for _, p := range mDoc.TilePaths {
+						src := filepath.Join(cacheDir, filepath.FromSlash(p))
+						dst := filepath.Join(vectorTileDir, filepath.FromSlash(p))
+						_ = os.MkdirAll(filepath.Dir(dst), 0755)
+						_ = storage.CopyFile(src, dst)
+					}
+					if mDoc.GeoJSONRel != "" {
+						srcGJ := filepath.Join(cacheDir, mDoc.GeoJSONRel)
+						if fileExists(srcGJ) {
+							dstGJ := filepath.Join(filepath.Dir(filepath.Dir(vectorTileDir)), "geojson", layerSlug+".geojson")
+							_ = os.MkdirAll(filepath.Dir(dstGJ), 0755)
+							_ = storage.CopyFile(srcGJ, dstGJ)
+						}
+					}
+					return &pythonVectorTileResult{
+						Success:      true,
+						LayerName:    layerSlug,
+						FeatureCount: mDoc.TileCount,
+						TileCount:    mDoc.TileCount,
+						MinZoom:      minZ,
+						MaxZoom:      maxZ,
+					}, mDoc.TileCount, nil
+				}
+			}
+		}
+	}
+
+	vRes, vErr := s.generateVectorTilesWithPython(srcPath, vectorTileDir, layerSlug, minZ, maxZ)
+	if vErr != nil {
+		return nil, 0, vErr
+	}
+
+	if vRes != nil && vRes.TileCount > 0 {
+		var cachedPaths []string
+		_ = filepath.Walk(vectorTileDir, func(p string, info os.FileInfo, wErr error) error {
+			if wErr != nil || info.IsDir() {
+				return nil
+			}
+			rel, rErr := filepath.Rel(vectorTileDir, p)
+			if rErr == nil {
+				cleanRel := filepath.ToSlash(rel)
+				cachedPaths = append(cachedPaths, cleanRel)
+				dst := filepath.Join(cacheDir, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(dst), 0755)
+				_ = storage.CopyFile(p, dst)
+			}
+			return nil
+		})
+		gjRel := ""
+		if vRes.GeoJSONFile != "" && fileExists(vRes.GeoJSONFile) {
+			gjDst := filepath.Join(cacheDir, layerSlug+".geojson")
+			_ = storage.CopyFile(vRes.GeoJSONFile, gjDst)
+			gjRel = layerSlug + ".geojson"
+		}
+		mDoc := tileCacheManifest{
+			Hash:       cacheKey,
+			Format:     "pbf",
+			MinZoom:    minZ,
+			MaxZoom:    maxZ,
+			TileCount:  vRes.TileCount,
+			TilePaths:  cachedPaths,
+			GeoJSONRel: gjRel,
+		}
+		mData, _ := json.Marshal(mDoc)
+		_ = os.WriteFile(manifestPath, mData, 0644)
+	}
+
+	return vRes, 0, nil
+}
+
+// renderRasterXYZTiles generates 256x256 XYZ PNG or JPG tiles with a controlled worker pool,
+// smart bounding box filtering, and transparent/empty tile detection.
+func (s *ExportService) renderRasterXYZTiles(ctx context.Context, imagePath string, bounds []float64, minZoom, maxZoom int, format string, quality int, targetDir string) (int, int) {
 	if len(bounds) < 4 || !fileExists(imagePath) {
-		return
+		return 0, 0
 	}
 
 	f, err := os.Open(imagePath)
 	if err != nil {
-		return
+		return 0, 0
 	}
 	defer f.Close()
 
 	srcImg, _, err := image.Decode(f)
 	if err != nil {
-		return
+		return 0, 0
 	}
 
 	srcBounds := srcImg.Bounds()
 	imgW := srcBounds.Dx()
 	imgH := srcBounds.Dy()
 	if imgW <= 0 || imgH <= 0 {
-		return
+		return 0, 0
 	}
 
 	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
@@ -798,9 +1186,19 @@ func (s *ExportService) renderRasterXYZTiles(imagePath string, bounds []float64,
 		clampMinZ = clampMaxZ
 	}
 
-	totalTiles := 0
-	const maxTileLimit = 600
+	type tileJob struct {
+		x, y, z  int
+		tPixelX0 int
+		tPixelY0 int
+		tPixelX1 int
+		tPixelY1 int
+		sPixelX0 int
+		sPixelY0 int
+		sPixelX1 int
+		sPixelY1 int
+	}
 
+	var jobs []tileJob
 	for z := clampMinZ; z <= clampMaxZ; z++ {
 		minX, maxY := gis.LatLngToTile(south, west, z)
 		maxX, minY := gis.LatLngToTile(north, east, z)
@@ -810,17 +1208,6 @@ func (s *ExportService) renderRasterXYZTiles(imagePath string, bounds []float64,
 		}
 		if minY > maxY {
 			minY, maxY = maxY, minY
-		}
-
-		countForZoom := (maxX - minX + 1) * (maxY - minY + 1)
-		if countForZoom > 64 || totalTiles+countForZoom > maxTileLimit {
-			if totalTiles > 0 {
-				break
-			}
-			midX := (minX + maxX) / 2
-			midY := (minY + maxY) / 2
-			minX, maxX = midX, midX
-			minY, maxY = midY, midY
 		}
 
 		for x := minX; x <= maxX; x++ {
@@ -861,27 +1248,89 @@ func (s *ExportService) renderRasterXYZTiles(imagePath string, bounds []float64,
 					continue
 				}
 
-				tileImg := image.NewRGBA(image.Rect(0, 0, 256, 256))
-				rescaleSubImageFast(tileImg, tilePixelX0, tilePixelY0, tilePixelX1, tilePixelY1,
-					srcImg, srcPixelX0, srcPixelY0, srcPixelX1, srcPixelY1)
+				jobs = append(jobs, tileJob{
+					x: x, y: y, z: z,
+					tPixelX0: tilePixelX0, tPixelY0: tilePixelY0,
+					tPixelX1: tilePixelX1, tPixelY1: tilePixelY1,
+					sPixelX0: srcPixelX0, sPixelY0: srcPixelY0,
+					sPixelX1: srcPixelX1, sPixelY1: srcPixelY1,
+				})
+			}
+		}
+	}
 
-				tileOutDir := filepath.Join(targetDir, fmt.Sprintf("%d", z), fmt.Sprintf("%d", x))
+	if len(jobs) == 0 {
+		return 0, 0
+	}
+
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8
+	}
+	if numWorkers < 2 {
+		numWorkers = 2
+	}
+	if numWorkers > len(jobs) {
+		numWorkers = len(jobs)
+	}
+
+	jobChan := make(chan tileJob, len(jobs))
+	for _, j := range jobs {
+		jobChan <- j
+	}
+	close(jobChan)
+
+	var completedCount int64
+	var emptySkippedCount int64
+	var wg sync.WaitGroup
+
+	if quality <= 0 || quality > 100 {
+		quality = 85
+	}
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tileImg := image.NewRGBA(image.Rect(0, 0, 256, 256))
+
+			for j := range jobChan {
+				if ctx != nil && ctx.Err() != nil {
+					return
+				}
+
+				for i := range tileImg.Pix {
+					tileImg.Pix[i] = 0
+				}
+
+				rescaleSubImageFast(tileImg, j.tPixelX0, j.tPixelY0, j.tPixelX1, j.tPixelY1,
+					srcImg, j.sPixelX0, j.sPixelY0, j.sPixelX1, j.sPixelY1)
+
+				if isTileEmptyOrTransparent(tileImg) {
+					atomic.AddInt64(&emptySkippedCount, 1)
+					continue
+				}
+
+				tileOutDir := filepath.Join(targetDir, fmt.Sprintf("%d", j.z), fmt.Sprintf("%d", j.x))
 				_ = os.MkdirAll(tileOutDir, 0755)
-				tileOutPath := filepath.Join(tileOutDir, fmt.Sprintf("%d.%s", y, format))
+				tileOutPath := filepath.Join(tileOutDir, fmt.Sprintf("%d.%s", j.y, format))
 
 				outFile, oErr := os.Create(tileOutPath)
 				if oErr == nil {
 					if format == "jpg" {
-						_ = jpeg.Encode(outFile, tileImg, &jpeg.Options{Quality: 85})
+						_ = jpeg.Encode(outFile, tileImg, &jpeg.Options{Quality: quality})
 					} else {
 						_ = png.Encode(outFile, tileImg)
 					}
 					_ = outFile.Close()
-					totalTiles++
+					atomic.AddInt64(&completedCount, 1)
 				}
 			}
-		}
+		}()
 	}
+
+	wg.Wait()
+	return int(completedCount), int(emptySkippedCount)
 }
 
 type pythonVectorTileResult struct {
