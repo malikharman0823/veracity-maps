@@ -30,10 +30,9 @@ func writeCustomTilesTestImage(filePath string, w, h int) error {
 func TestCustomLocalTiles_ExportAndReimportWorkflow(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
@@ -344,10 +343,9 @@ func TestCustomLocalTiles_HTTPHandlerExportDefault(t *testing.T) {
 func TestCustomLocalTiles_VectorLayersVisibilityAndExport(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
@@ -557,10 +555,9 @@ func TestCustomLocalTiles_VectorLayersVisibilityAndExport(t *testing.T) {
 func TestCustomLocalTiles_ReferenceFormatStructure(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
