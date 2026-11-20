@@ -1070,6 +1070,21 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if len(parts) >= 2 && parts[1] == "export" {
+			if len(parts) >= 3 && parts[2] == "progress" {
+				rt.exportH.GetProgress(w, r, datasetID)
+				return
+			}
+			if len(parts) >= 3 && parts[2] == "cancel" {
+				rt.exportH.CancelExport(w, r, datasetID)
+				return
+			}
+			if len(parts) == 2 {
+				rt.exportH.Export(w, r, datasetID)
+				return
+			}
+		}
+
 		if len(parts) == 2 {
 			sub := parts[1]
 			switch sub {
@@ -1174,17 +1189,6 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				}
 			case "georeference":
 				rt.georefH.Georeference(w, r, datasetID)
-				return
-			case "export":
-				if len(parts) >= 3 && parts[2] == "progress" {
-					rt.exportH.GetProgress(w, r, datasetID)
-					return
-				}
-				if len(parts) >= 3 && parts[2] == "cancel" {
-					rt.exportH.CancelExport(w, r, datasetID)
-					return
-				}
-				rt.exportH.Export(w, r, datasetID)
 				return
 			case "inspection":
 				rt.datasetsH.GetInspection(w, r, datasetID)

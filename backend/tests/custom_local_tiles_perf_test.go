@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/malikharman0823/veracity-maps/api"
 	"github.com/malikharman0823/veracity-maps/config"
 	"github.com/malikharman0823/veracity-maps/functions/export"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -261,6 +262,34 @@ func TestCustomLocalTiles_ExportProgressEndpoints(t *testing.T) {
 	}
 	if compResp.Data["stage"] != "Export completed" {
 		t.Errorf("expected stage 'Export completed', got '%v'", compResp.Data["stage"])
+	}
+
+	// 4. Verify HTTP route dispatch through router for /datasets/{id}/export/progress and /cancel
+	router := api.NewRouter(repo, nil, nil, api.NewMiddleware(repo, nil), nil, nil, nil, handler, nil, nil)
+	httpHandler := router.BuildHandler()
+
+	req4 := httptest.NewRequest(http.MethodGet, "/datasets/"+dsID+"/export/progress", nil)
+	req4.Header.Set("X-Session-ID", sessionID)
+	w4 := httptest.NewRecorder()
+	httpHandler.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from router for /datasets/%s/export/progress, got %d: %s", dsID, w4.Code, w4.Body.String())
+	}
+
+	req5 := httptest.NewRequest(http.MethodGet, "/api/datasets/"+dsID+"/export/progress", nil)
+	req5.Header.Set("X-Session-ID", sessionID)
+	w5 := httptest.NewRecorder()
+	httpHandler.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from router for /api/datasets/%s/export/progress, got %d: %s", dsID, w5.Code, w5.Body.String())
+	}
+
+	req6 := httptest.NewRequest(http.MethodPost, "/datasets/"+dsID+"/export/cancel", nil)
+	req6.Header.Set("X-Session-ID", sessionID)
+	w6 := httptest.NewRecorder()
+	httpHandler.ServeHTTP(w6, req6)
+	if w6.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from router for /datasets/%s/export/cancel, got %d: %s", dsID, w6.Code, w6.Body.String())
 	}
 }
 
