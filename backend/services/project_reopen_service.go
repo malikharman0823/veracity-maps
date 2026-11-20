@@ -1923,6 +1923,20 @@ func (s *DatasetService) ReopenCustomLocalTilesFromPath(sessionID, primaryDatase
 							dest := filepath.Join(xyzDir, z, x, y)
 							_ = os.MkdirAll(filepath.Dir(dest), 0755)
 							_ = storage.CopyFile(p, dest)
+
+							// Also preserve nested path if under vector/ or raster/
+							relClean := filepath.ToSlash(rel)
+							if strings.Contains(relClean, "vector/") || strings.Contains(relClean, "raster/") {
+								idx := strings.Index(relClean, "vector/")
+								if idx < 0 {
+									idx = strings.Index(relClean, "raster/")
+								}
+								nestedRel := relClean[idx:]
+								nestedDest := filepath.Join(xyzDir, filepath.FromSlash(nestedRel))
+								_ = os.MkdirAll(filepath.Dir(nestedDest), 0755)
+								_ = storage.CopyFile(p, nestedDest)
+							}
+
 							if (ext == ".png" || ext == ".jpg") && previewSampleTile == "" {
 								previewSampleTile = p
 							}

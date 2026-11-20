@@ -79,7 +79,7 @@ func (s *WorkspaceRegistryService) checkWorkspaceAccess(ctx context.Context, wor
 	if strings.TrimSpace(workspaceID) == "" {
 		return fmt.Errorf("%w: workspace_id is required", models.ErrInvalidWorkspaceRequest)
 	}
-	if s.mapRepo == nil {
+	if s.mapRepo == nil || strings.HasPrefix(workspaceID, "ds_") {
 		return nil
 	}
 	m, err := s.mapRepo.GetMap(ctx, workspaceID, userID)

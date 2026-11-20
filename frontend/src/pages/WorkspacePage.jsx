@@ -1877,6 +1877,7 @@ export default function WorkspacePage() {
         manifest={effectiveManifest}
         buildings={exportModalBuildings}
         datasets={exportModalDatasets}
+        gisLayers={gisLayers}
         primaryDatasetId={id}
         onExport={handlePerformExport}
         exporting={exporting}

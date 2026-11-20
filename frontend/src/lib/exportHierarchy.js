@@ -9,13 +9,15 @@ import { resolveBuildingName } from "./buildingUtils.js"
  * @param {Array} options.members - Workspace manifest members (ground truth for layers)
  * @param {Array} options.datasets - List of datasets in the session/workspace
  * @param {Array} options.buildings - Optional formal buildings list
+ * @param {Array} options.gisLayers - Active GIS/vector workspace layers
  * @param {string} options.primaryDatasetId - ID of active primary dataset
- * @returns {{ buildings: Array, standaloneLayers: Array, allLayerIds: Array }}
+ * @returns {{ buildings: Array, standaloneLayers: Array, allLayerIds: Array, categories: Object }}
  */
 export function buildExportHierarchy({
   members = [],
   datasets = [],
   buildings = [],
+  gisLayers = [],
   primaryDatasetId = null,
 } = {}) {
   const memberList = Array.isArray(members) ? members : []
@@ -111,6 +113,8 @@ export function buildExportHierarchy({
     areas: [],
   }
 
+  const seenVectorIds = new Set()
+
   enrichedLayers.forEach((layer) => {
     const fn = layer.dataset?.filename || layer.name || ""
     const ext = fn.slice(fn.lastIndexOf(".")).toLowerCase()
@@ -132,6 +136,7 @@ export function buildExportHierarchy({
     }
 
     if (isVector) {
+      seenVectorIds.add(layer.id)
       categories.vector_layers.push(layerMeta)
     } else {
       categories.raster_layers.push(layerMeta)
@@ -173,6 +178,67 @@ export function buildExportHierarchy({
           visible: true,
           associated: layer.name,
         })
+      }
+    }
+  })
+
+  // Integrate active GIS/vector workspace layers (e.g. from GeoPackage, Shapefile imports)
+  const gisList = Array.isArray(gisLayers) ? gisLayers : []
+  gisList.forEach((lyr) => {
+    const lId = lyr.id || lyr.layer_id || lyr.workspace_layer_id
+    if (!lId || seenVectorIds.has(lId)) return
+    seenVectorIds.add(lId)
+
+    const geomType = lyr.geometry_type || lyr.geometry || "Vector"
+    const fCount = lyr.feature_count ?? lyr.features_count ?? 0
+    const sourceDs = datasetList.find((d) => d.id === lyr.source_dataset_id || d.id === lyr.dataset_id)
+    const displayName = lyr.display_name || lyr.name || lyr.source_layer_name || sourceDs?.filename || "Vector Layer"
+    const ext = sourceDs?.filename ? sourceDs.filename.slice(sourceDs.filename.lastIndexOf(".")).toLowerCase() : ".gpkg"
+
+    categories.vector_layers.push({
+      id: lId,
+      name: displayName,
+      type: "Vector Layer",
+      format: ext.toUpperCase().replace(".", "") || "GPKG",
+      geometryType: geomType,
+      featureCount: fCount,
+      visible: lyr.visibility !== false && lyr.is_visible !== false,
+      associated: lyr.buildingName || "Workspace",
+      isVector: true,
+      dataset: sourceDs,
+      layer: lyr,
+    })
+    if (!allLayerIds.includes(lId)) {
+      allLayerIds.push(lId)
+    }
+  })
+
+  // Integrate any standalone vector datasets from the session/workspace not in members
+  datasetList.forEach((ds) => {
+    if (!ds || !ds.id || seenVectorIds.has(ds.id)) return
+    const fn = ds.filename || ""
+    const ext = fn.slice(fn.lastIndexOf(".")).toLowerCase()
+    const isVecExt = [".gpkg", ".shp", ".kml", ".kmz", ".geojson", ".json", ".osm", ".pbf"].includes(ext)
+    const isVecMeta = ds.extracted_metadata?.document_type === "vector" ||
+      (ds.extracted_metadata?.content?.has_vector && !ds.extracted_metadata?.content?.has_raster)
+
+    if (isVecExt || isVecMeta) {
+      seenVectorIds.add(ds.id)
+      const featCount = ds.extracted_metadata?.feature_count || ds.extracted_metadata?.record_count || 0
+      categories.vector_layers.push({
+        id: ds.id,
+        name: ds.filename || "Vector Dataset",
+        type: "Vector Layer",
+        format: ext.toUpperCase().replace(".", "") || "VECTOR",
+        geometryType: ds.extracted_metadata?.geometry_type || "Geometry",
+        featureCount: featCount,
+        visible: true,
+        associated: "Standalone",
+        isVector: true,
+        dataset: ds,
+      })
+      if (!allLayerIds.includes(ds.id)) {
+        allLayerIds.push(ds.id)
       }
     }
   })

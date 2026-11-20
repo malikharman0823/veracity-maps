@@ -289,6 +289,7 @@ func (h *Handler) ServeTile(w http.ResponseWriter, r *http.Request, datasetID, z
 	}
 
 	yClean := yRaw
+	reqExt := strings.ToLower(filepath.Ext(yRaw))
 	if dotIdx := strings.IndexByte(yClean, '.'); dotIdx >= 0 {
 		yClean = yClean[:dotIdx]
 	}
@@ -327,23 +328,53 @@ func (h *Handler) ServeTile(w http.ResponseWriter, r *http.Request, datasetID, z
 	xyzCacheDir := filepath.Join(datasetDir, "tiles_xyz")
 
 	// 1. Direct loose XYZ tile check on disk (from Custom Local Tiles or tile cache)
-	for _, ext := range []string{".png", ".jpg", ".jpeg", ".pbf", ".mvt"} {
-		loosePath := filepath.Join(xyzCacheDir, fmt.Sprintf("%d", z), fmt.Sprintf("%d", x), fmt.Sprintf("%d%s", y, ext))
-		if fileExists(loosePath) {
-			b, rErr := os.ReadFile(loosePath)
-			if rErr == nil && len(b) > 0 {
-				cType := "image/png"
-				if ext == ".jpg" || ext == ".jpeg" {
-					cType = "image/jpeg"
-				} else if ext == ".pbf" || ext == ".mvt" {
-					cType = "application/vnd.mapbox-vector-tile"
-				}
-				w.Header().Set("Content-Type", cType)
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				w.Header().Set("Cache-Control", "public, max-age=86400")
-				_, _ = w.Write(b)
-				return
+	exts := []string{".png", ".jpg", ".jpeg", ".pbf", ".mvt"}
+	if reqExt == ".pbf" || reqExt == ".mvt" || strings.Contains(r.Header.Get("Accept"), "mapbox-vector-tile") || strings.Contains(r.Header.Get("Accept"), "protobuf") {
+		exts = []string{".pbf", ".mvt", ".png", ".jpg", ".jpeg"}
+	} else if reqExt == ".jpg" || reqExt == ".jpeg" {
+		exts = []string{".jpg", ".jpeg", ".png", ".pbf", ".mvt"}
+	} else if reqExt == ".png" {
+		exts = []string{".png", ".jpg", ".jpeg", ".pbf", ".mvt"}
+	}
+
+	findLooseTile := func(extList []string) (string, string) {
+		for _, ext := range extList {
+			direct := filepath.Join(xyzCacheDir, fmt.Sprintf("%d", z), fmt.Sprintf("%d", x), fmt.Sprintf("%d%s", y, ext))
+			if fileExists(direct) {
+				return direct, ext
 			}
+			// Search vector and raster subdirectories
+			for _, sub := range []string{"vector", "raster"} {
+				subDir := filepath.Join(xyzCacheDir, sub)
+				if entries, err := os.ReadDir(subDir); err == nil {
+					for _, entry := range entries {
+						if entry.IsDir() {
+							p := filepath.Join(subDir, entry.Name(), fmt.Sprintf("%d", z), fmt.Sprintf("%d", x), fmt.Sprintf("%d%s", y, ext))
+							if fileExists(p) {
+								return p, ext
+							}
+						}
+					}
+				}
+			}
+		}
+		return "", ""
+	}
+
+	if loosePath, ext := findLooseTile(exts); loosePath != "" {
+		b, rErr := os.ReadFile(loosePath)
+		if rErr == nil && len(b) > 0 {
+			cType := "image/png"
+			if ext == ".jpg" || ext == ".jpeg" {
+				cType = "image/jpeg"
+			} else if ext == ".pbf" || ext == ".mvt" {
+				cType = "application/vnd.mapbox-vector-tile"
+			}
+			w.Header().Set("Content-Type", cType)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			_, _ = w.Write(b)
+			return
 		}
 	}
 

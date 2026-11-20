@@ -62,6 +62,7 @@ function resourceIds(datasetId) {
     vectorSource: `${prefix}-vector-source`,
     vectorFill: `${prefix}-vector-fill`,
     vectorLine: `${prefix}-vector-line`,
+    vectorCircle: `${prefix}-vector-circle`,
     annotationSource: `${prefix}-annotation-source`,
     annotationLabel: `${prefix}-annotation-label`,
     controlSource: `${prefix}-control-source`,
@@ -1090,7 +1091,63 @@ export default function WorkspaceMap({
         setVisibility(map, [ids.rasterLayer], isLayerVisible)
       }
 
-      // 1.1 Vector and OCR overlays omitted to prioritize clean single raster pipeline (AI Upscaling + Background Removal + Manipulation)
+      // 1.1 Vector overlays rendering (GeoPackage, Shapefile, GeoJSON polygons, lines, points)
+      const vectorData = overlayDataByDataset[member.dataset_id]?.vectors
+      if (vectorData && vectorData.features && vectorData.features.length > 0) {
+        if (!map.getSource(ids.vectorSource)) {
+          map.addSource(ids.vectorSource, {
+            type: "geojson",
+            data: vectorData,
+          })
+        } else {
+          const src = map.getSource(ids.vectorSource)
+          if (src && typeof src.setData === "function") {
+            src.setData(vectorData)
+          }
+        }
+
+        if (!map.getLayer(ids.vectorFill)) {
+          map.addLayer({
+            id: ids.vectorFill,
+            type: "fill",
+            source: ids.vectorSource,
+            filter: ["==", "$type", "Polygon"],
+            paint: {
+              "fill-color": "#3b82f6",
+              "fill-opacity": 0.35,
+            },
+          })
+        }
+        if (!map.getLayer(ids.vectorLine)) {
+          map.addLayer({
+            id: ids.vectorLine,
+            type: "line",
+            source: ids.vectorSource,
+            paint: {
+              "line-color": "#2563eb",
+              "line-width": 2,
+            },
+          })
+        }
+        if (!map.getLayer(ids.vectorCircle)) {
+          map.addLayer({
+            id: ids.vectorCircle,
+            type: "circle",
+            source: ids.vectorSource,
+            filter: ["==", "$type", "Point"],
+            paint: {
+              "circle-radius": 6,
+              "circle-color": "#ef4444",
+              "circle-stroke-width": 1.5,
+              "circle-stroke-color": "#ffffff",
+            },
+          })
+        }
+
+        setVisibility(map, [ids.vectorFill, ids.vectorLine, ids.vectorCircle], isLayerVisible)
+      } else {
+        setVisibility(map, [ids.vectorFill, ids.vectorLine, ids.vectorCircle], false)
+      }
     })
 
     // 2. Point Layers (Control Points & Geographic Icon Points)

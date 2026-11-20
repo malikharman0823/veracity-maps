@@ -896,7 +896,21 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
 
         read_kwargs = {}
         if layer_name:
-            read_kwargs["layer"] = layer_name
+            # Check if layer_name matches an actual layer in the GeoPackage/vector container
+            try:
+                available_layers = [str(r[0]) for r in pyogrio.list_layers(src_path)]
+                if layer_name in available_layers:
+                    read_kwargs["layer"] = layer_name
+                else:
+                    target_low = layer_name.lower().replace("-", "_").replace(" ", "_")
+                    for av in available_layers:
+                        av_low = av.lower().replace("-", "_").replace(" ", "_")
+                        if av_low == target_low or target_low in av_low or av_low in target_low:
+                            read_kwargs["layer"] = av
+                            break
+            except Exception:
+                pass
+
         gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
         if gdf.empty:
             return {"success": False, "error": "Vector dataset contains 0 features"}
@@ -912,6 +926,20 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
             return geom
 
         gdf["geometry"] = gdf["geometry"].apply(_to_2d)
+
+        # Detect primary geometry type
+        geom_type = "Unknown"
+        non_empty = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]
+        if not non_empty.empty:
+            first_gtype = str(non_empty.geometry.iloc[0].geom_type)
+            if "Point" in first_gtype:
+                geom_type = "Point"
+            elif "Line" in first_gtype:
+                geom_type = "LineString"
+            elif "Polygon" in first_gtype:
+                geom_type = "Polygon"
+            else:
+                geom_type = first_gtype
 
         # Convert non-serializable columns
         for col in gdf.columns:
@@ -934,11 +962,25 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
                 if f.endswith(".pbf") or f.endswith(".mvt"):
                     tile_count += 1
 
+        # Also write GeoJSON for this vector layer into sibling geojson directory
+        layer_slug = os.path.basename(os.path.normpath(out_dir))
+        geojson_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(out_dir))), "geojson")
+        os.makedirs(geojson_dir, exist_ok=True)
+        geojson_path = os.path.join(geojson_dir, f"{layer_slug}.geojson")
+        has_geojson = False
+        try:
+            gdf.to_file(geojson_path, driver="GeoJSON")
+            has_geojson = os.path.exists(geojson_path)
+        except Exception:
+            pass
+
         return {
             "success": True,
-            "layer_name": layer_name or "vector",
+            "layer_name": layer_name or layer_slug,
             "feature_count": len(gdf),
             "tile_count": tile_count,
+            "geometry_type": geom_type,
+            "geojson_file": geojson_path if has_geojson else "",
             "min_zoom": int(min_zoom),
             "max_zoom": int(max_zoom),
             "out_dir": out_dir,

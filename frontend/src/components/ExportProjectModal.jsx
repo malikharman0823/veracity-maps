@@ -49,6 +49,7 @@ export default function ExportProjectModal({
   manifest,
   buildings = [],
   datasets = [],
+  gisLayers = [],
   primaryDatasetId,
   onExport,
   exporting = false,
@@ -65,9 +66,10 @@ export default function ExportProjectModal({
       members: manifest?.members || [],
       datasets: datasets || [],
       buildings: buildings || [],
+      gisLayers: gisLayers || [],
       primaryDatasetId,
     })
-  }, [buildings, datasets, manifest?.members, primaryDatasetId])
+  }, [buildings, datasets, gisLayers, manifest?.members, primaryDatasetId])
 
   // Selection states
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -623,9 +625,9 @@ export default function ExportProjectModal({
                                   <span className="text-xs font-medium text-neutral-900 dark:text-white truncate">
                                     {item.name}
                                   </span>
-                                  {item.count !== undefined && item.count > 0 && (
+                                  {((item.count !== undefined && item.count > 0) || (item.featureCount !== undefined && item.featureCount > 0)) && (
                                     <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-100 dark:bg-[#2a2a2a] text-neutral-600 dark:text-neutral-300">
-                                      {item.count} pt{item.count !== 1 ? "s" : ""}
+                                      {item.count ?? item.featureCount} {item.geometryType ? `${item.geometryType.toLowerCase()}${item.featureCount !== 1 ? "s" : ""}` : "pts"}
                                     </span>
                                   )}
                                 </div>

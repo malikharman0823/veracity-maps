@@ -3,6 +3,7 @@ package tests
 import (
 	"archive/zip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -339,3 +340,217 @@ func TestCustomLocalTiles_HTTPHandlerExportDefault(t *testing.T) {
 		t.Errorf("expected filename Custom_Local_Tiles.zip, got %s", expResp.Filename)
 	}
 }
+
+func TestCustomLocalTiles_VectorLayersVisibilityAndExport(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
+		UploadDir:          filepath.Join(tempDir, "uploads"),
+		ProcessedDir:       filepath.Join(tempDir, "processed"),
+		MaxUploadSizeBytes: 100 * 1024 * 1024,
+	}
+	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
+	if err != nil {
+		t.Fatalf("failed creating storage manager: %v", err)
+	}
+	repo := repository.NewSessionRepository()
+	sess := repo.CreateSession()
+	sessionID := sess.ID
+
+	dsService := services.NewDatasetService(cfg, repo, sm)
+	exportService := services.NewExportService(repo, sm)
+
+	// 1. Primary raster dataset
+	rasterID := "ds_raster_main"
+	rasterDir := sm.GetDatasetDir(sessionID, rasterID)
+	_ = os.MkdirAll(rasterDir, 0755)
+	rasterFile := filepath.Join(rasterDir, "aerial.png")
+	if err := writeCustomTilesTestImage(rasterFile, 256, 256); err != nil {
+		t.Fatalf("failed writing raster test image: %v", err)
+	}
+	rasterDs := &models.Dataset{
+		ID:                 rasterID,
+		SessionID:          sessionID,
+		Filename:           "aerial.png",
+		FileSize:           1024,
+		ContentType:        "image/png",
+		StoragePath:        rasterFile,
+		GeoreferenceStatus: "completed",
+		ExtractedMetadata: map[string]interface{}{
+			"bounds": map[string]interface{}{
+				"min_x": 10.0,
+				"min_y": 20.0,
+				"max_x": 10.05,
+				"max_y": 20.05,
+			},
+		},
+		MapLayer: map[string]interface{}{
+			"bounds": map[string]interface{}{
+				"min_x": 10.0,
+				"min_y": 20.0,
+				"max_x": 10.05,
+				"max_y": 20.05,
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = repo.InsertDataset(sessionID, rasterDs)
+
+	// 2. Vector dataset (GeoPackage / GeoJSON points)
+	vectorID := "ds_vector_points"
+	vectorDir := sm.GetDatasetDir(sessionID, vectorID)
+	_ = os.MkdirAll(vectorDir, 0755)
+	geojsonFile := filepath.Join(vectorDir, "landmarks.geojson")
+	sampleGeoJSON := `{
+		"type": "FeatureCollection",
+		"features": [
+			{
+				"type": "Feature",
+				"geometry": {"type": "Point", "coordinates": [10.02, 20.02]},
+				"properties": {"name": "Tower A", "category": "Landmark"}
+			},
+			{
+				"type": "Feature",
+				"geometry": {"type": "Point", "coordinates": [10.04, 20.04]},
+				"properties": {"name": "Gate 1", "category": "Access"}
+			}
+		]
+	}`
+	_ = os.WriteFile(geojsonFile, []byte(sampleGeoJSON), 0644)
+
+	vectorDs := &models.Dataset{
+		ID:                 vectorID,
+		SessionID:          sessionID,
+		Filename:           "landmarks.geojson",
+		FileSize:           int64(len(sampleGeoJSON)),
+		ContentType:        "application/geo+json",
+		StoragePath:        geojsonFile,
+		GeoreferenceStatus: "completed",
+		ExtractedMetadata: map[string]interface{}{
+			"document_type": "vector",
+			"feature_count": 2,
+			"geometry_type": "Point",
+			"content": &models.ContentComposition{
+				HasRaster: false,
+				HasVector: true,
+			},
+			"bounds": map[string]interface{}{
+				"min_x": 10.02,
+				"min_y": 20.02,
+				"max_x": 10.04,
+				"max_y": 20.04,
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = repo.InsertDataset(sessionID, vectorDs)
+
+	// 3. Export Custom Local Tiles including vector layer
+	zipPath, filename, err := exportService.GenerateSelectiveExport(sessionID, rasterID, services.SelectiveExportParams{
+		Format:      "custom_local_tiles",
+		ProjectName: "Vector Export Project",
+		LayerIDs:    []string{rasterID, vectorID},
+	})
+	if err != nil {
+		t.Fatalf("GenerateSelectiveExport failed: %v", err)
+	}
+	if filename != "Custom_Local_Tiles.zip" {
+		t.Errorf("expected Custom_Local_Tiles.zip, got %s", filename)
+	}
+
+	// 4. Verify contents inside zip
+	rZip, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("failed opening exported zip: %v", err)
+	}
+	defer rZip.Close()
+
+	var tileConfigData []byte
+	var styleData []byte
+	var hasVectorGeoJSON bool
+	for _, f := range rZip.File {
+		if f.Name == "Custom_Local_Tiles/tile_config.json" {
+			rc, _ := f.Open()
+			tileConfigData, _ = io.ReadAll(rc)
+			_ = rc.Close()
+		}
+		if f.Name == "Custom_Local_Tiles/styles/map_style.json" {
+			rc, _ := f.Open()
+			styleData, _ = io.ReadAll(rc)
+			_ = rc.Close()
+		}
+		if strings.Contains(f.Name, "geojson/landmarks.geojson") {
+			hasVectorGeoJSON = true
+		}
+	}
+
+	if len(tileConfigData) == 0 {
+		t.Fatalf("missing Custom_Local_Tiles/tile_config.json in archive")
+	}
+
+	var tileCfg services.CustomLocalTilesConfig
+	if err := json.Unmarshal(tileConfigData, &tileCfg); err != nil {
+		t.Fatalf("failed parsing tile_config.json: %v", err)
+	}
+
+	if len(tileCfg.VectorLayers) == 0 {
+		t.Fatalf("expected at least 1 vector layer in tile_config.json, got 0")
+	}
+	vecLyr := tileCfg.VectorLayers[0]
+	if vecLyr.ID != "landmarks" {
+		t.Errorf("expected vector layer ID 'landmarks', got '%s'", vecLyr.ID)
+	}
+	if vecLyr.TileURL != "./vector/landmarks/{z}/{x}/{y}.pbf" {
+		t.Errorf("expected tile URL './vector/landmarks/{z}/{x}/{y}.pbf', got '%s'", vecLyr.TileURL)
+	}
+	if !hasVectorGeoJSON {
+		t.Errorf("expected vector GeoJSON to be bundled in archive")
+	}
+
+	// Verify style has vector source and layer
+	if len(styleData) == 0 {
+		t.Fatalf("missing map_style.json")
+	}
+	styleStr := string(styleData)
+	if !strings.Contains(styleStr, "vector_source_landmarks") {
+		t.Errorf("map_style.json missing vector source: %s", styleStr)
+	}
+	if !strings.Contains(styleStr, "vector_pt_landmarks") {
+		t.Errorf("map_style.json missing vector point layer: %s", styleStr)
+	}
+
+	// 5. Test re-opening the package
+	extractDir := filepath.Join(tempDir, "reopen_extract")
+	_ = os.MkdirAll(extractDir, 0755)
+	for _, f := range rZip.File {
+		outP := filepath.Join(extractDir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			_ = os.MkdirAll(outP, 0755)
+			continue
+		}
+		_ = os.MkdirAll(filepath.Dir(outP), 0755)
+		rc, _ := f.Open()
+		wOut, _ := os.Create(outP)
+		_, _ = io.Copy(wOut, rc)
+		_ = rc.Close()
+		_ = wOut.Close()
+	}
+
+	reopenedDsID := "ds_reopened_custom_tiles"
+	reopenedDir := sm.GetDatasetDir(sessionID, reopenedDsID)
+	reopened, reErr := dsService.ReopenCustomLocalTilesFromPath(sessionID, reopenedDsID, reopenedDir, extractDir, zipPath, "Custom_Local_Tiles.zip", 1024, "hash", "Custom_Local_Tiles/tile_config.json")
+	if reErr != nil {
+		t.Fatalf("ReopenCustomLocalTilesFromPath failed: %v", reErr)
+	}
+	if reopened == nil {
+		t.Fatalf("reopened dataset is nil")
+	}
+
+	comp, ok := reopened.ExtractedMetadata["content"].(*models.ContentComposition)
+	if !ok || comp == nil || !comp.HasVector {
+		t.Errorf("expected reopened dataset to have HasVector == true")
+	}
+}
+

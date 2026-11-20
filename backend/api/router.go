@@ -1209,6 +1209,22 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if len(parts) >= 5 && parts[1] == "vector" {
+			if len(parts) == 5 {
+				rt.datasetsH.ServeTile(w, r, datasetID, parts[2], parts[3], parts[4])
+				return
+			}
+			if len(parts) == 6 {
+				rt.datasetsH.ServeTile(w, r, datasetID, parts[3], parts[4], parts[5])
+				return
+			}
+		}
+
+		if len(parts) == 6 && parts[1] == "tiles" && parts[2] == "vector" {
+			rt.datasetsH.ServeTile(w, r, datasetID, parts[3], parts[4], parts[5])
+			return
+		}
+
 		if len(parts) >= 3 && parts[1] == "workspace" {
 			sub := parts[2]
 			switch sub {
