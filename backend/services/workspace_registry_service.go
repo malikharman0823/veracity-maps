@@ -475,7 +475,7 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 					}
 				}
 			}
-			if extErr == nil && extRes != nil {
+			if extRes != nil {
 				extracted = extRes
 				if len(extRes.Bounds) == 4 {
 					layerBounds = extRes.Bounds
@@ -507,7 +507,7 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 			if cErr != nil {
 				return nil, nil, cErr
 			}
-			if cErr == nil && createdLyr != nil {
+			if createdLyr != nil {
 				gisLayerID = createdLyr.LayerID
 				// Apply distinct default styling per layer
 				_, _ = s.gisService.UpdateLayerStyle(importCtx, gisLayerID, userID, models.UpdateStyleRequest{

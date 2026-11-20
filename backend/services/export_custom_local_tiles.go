@@ -134,7 +134,7 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 			}
 		}
 	}
-	if _, ok := datasetMap[primaryDatasetID]; !ok && primaryDs != nil {
+	if _, ok := datasetMap[primaryDatasetID]; !ok {
 		datasetMap[primaryDatasetID] = primaryDs
 	}
 
@@ -1055,6 +1055,12 @@ func (s *ExportService) getOrCreateCachedRasterTiles(ctx context.Context, render
 }
 
 func (s *ExportService) getOrCreateCachedVectorTiles(ctx context.Context, srcPath, vectorTileDir, layerSlug string, minZ, maxZ int) (*pythonVectorTileResult, int, error) {
+	select {
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
+	default:
+	}
+
 	cacheKey := computeVectorContentHash(srcPath, layerSlug, minZ, maxZ)
 	cacheDir := s.getTileCacheDir(layerSlug, cacheKey)
 
@@ -1748,7 +1754,7 @@ func buildMapLibreStyleDoc(name string, bounds, center []float64, initZoom int, 
 		},
 	})
 
-	return map[string]interface{}{
+	doc := map[string]interface{}{
 		"version": 8,
 		"name":    name,
 		"center":  center,
@@ -1756,4 +1762,11 @@ func buildMapLibreStyleDoc(name string, bounds, center []float64, initZoom int, 
 		"sources": sources,
 		"layers":  layers,
 	}
+	if len(bounds) >= 4 {
+		doc["metadata"] = map[string]interface{}{
+			"bounds": bounds,
+		}
+	}
+
+	return doc
 }

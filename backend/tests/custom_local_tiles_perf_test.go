@@ -22,10 +22,9 @@ import (
 func TestCustomLocalTiles_PerformanceOptimization_EmptyTileSkippingAndCaching(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	if err != nil {
@@ -180,10 +179,9 @@ func TestCustomLocalTiles_PerformanceOptimization_EmptyTileSkippingAndCaching(t 
 func TestCustomLocalTiles_ExportProgressEndpoints(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, _ := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	repo := repository.NewSessionRepository()
@@ -269,10 +267,9 @@ func TestCustomLocalTiles_ExportProgressEndpoints(t *testing.T) {
 func TestCustomLocalTiles_FastZipStoreMethod(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
-		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
-		UploadDir:          filepath.Join(tempDir, "uploads"),
-		ProcessedDir:       filepath.Join(tempDir, "processed"),
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
+		SessionStorageDir: filepath.Join(tempDir, "sessions"),
+		UploadDir:         filepath.Join(tempDir, "uploads"),
+		ProcessedDir:      filepath.Join(tempDir, "processed"),
 	}
 	sm, _ := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
 	repo := repository.NewSessionRepository()
@@ -319,13 +316,14 @@ func TestCustomLocalTiles_FastZipStoreMethod(t *testing.T) {
 
 	for _, f := range zr.File {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if ext == ".png" || ext == ".jpg" {
+		switch ext {
+		case ".png", ".jpg":
 			// Fast packaging requirement: already-compressed tiles must use zip.Store (0)
 			if f.Method != zip.Store {
 				t.Errorf("expected tile %s to use zip.Store (%d), but got %d", f.Name, zip.Store, f.Method)
 			}
 			checkedImageTile = true
-		} else if ext == ".json" || ext == ".geojson" {
+		case ".json", ".geojson":
 			// Text files must use zip.Deflate (8)
 			if f.Method != zip.Deflate {
 				t.Errorf("expected text %s to use zip.Deflate (%d), but got %d", f.Name, zip.Deflate, f.Method)

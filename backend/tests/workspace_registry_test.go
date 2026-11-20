@@ -180,9 +180,10 @@ func TestWorkspaceRegistry_DynamicGeoPackageAndRecords(t *testing.T) {
 			t.Fatalf("expected 2 selectively imported layers, got %d", len(parsed.Data.Layers))
 		}
 		for _, l := range parsed.Data.Layers {
-			if l.SourceLayerName == "city_districts" {
+			switch l.SourceLayerName {
+			case "city_districts":
 				districtsLayerID = l.ID
-			} else if l.SourceLayerName == "charging_hubs" {
+			case "charging_hubs":
 				hubsLayerID = l.ID
 			}
 		}
