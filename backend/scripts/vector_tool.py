@@ -930,31 +930,6 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
 
         gdf["geometry"] = gdf["geometry"].apply(_to_2d)
 
-        # Apply coordinate precision rounding to 6 decimal places (~0.1m) to eliminate micro-jitter and maximize compression
-        if HAS_SHAPELY and hasattr(shapely, "set_precision"):
-            try:
-                gdf["geometry"] = shapely.set_precision(gdf["geometry"], grid_size=0.000001)
-            except Exception:
-                pass
-
-        # Duplicate feature reduction: drop identical geometry/attribute duplicates
-        try:
-            geom_col = gdf.geometry.name
-            gdf = gdf.drop_duplicates(subset=[geom_col])
-        except Exception:
-            pass
-
-        # Filter out internal, temporary, or oversize columns from vector tile payload
-        cols_to_drop = []
-        for col in gdf.columns:
-            if col in ("geometry", gdf.geometry.name):
-                continue
-            col_str = str(col).lower()
-            if col_str.startswith("__") or col_str.startswith("_raw") or "geometry_wkt" in col_str:
-                cols_to_drop.append(col)
-        if cols_to_drop:
-            gdf = gdf.drop(columns=cols_to_drop)
-
         # Detect primary geometry type
         geom_type = "Unknown"
         non_empty = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]

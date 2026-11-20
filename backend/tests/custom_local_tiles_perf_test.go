@@ -293,7 +293,7 @@ func TestCustomLocalTiles_ExportProgressEndpoints(t *testing.T) {
 	}
 }
 
-func TestCustomLocalTiles_FastZipStoreMethod(t *testing.T) {
+func TestCustomLocalTiles_ZipArchiveDeflateCompression(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
 		SessionStorageDir: filepath.Join(tempDir, "sessions"),
@@ -347,13 +347,13 @@ func TestCustomLocalTiles_FastZipStoreMethod(t *testing.T) {
 		ext := strings.ToLower(filepath.Ext(f.Name))
 		switch ext {
 		case ".png", ".jpg":
-			// Fast packaging requirement: already-compressed tiles must use zip.Store (0)
-			if f.Method != zip.Store {
-				t.Errorf("expected tile %s to use zip.Store (%d), but got %d", f.Name, zip.Store, f.Method)
+			// Standard ZIP package compression: all files use zip.Deflate (8)
+			if f.Method != zip.Deflate {
+				t.Errorf("expected tile %s to use zip.Deflate (%d), but got %d", f.Name, zip.Deflate, f.Method)
 			}
 			checkedImageTile = true
 		case ".json", ".geojson":
-			// Text files must use zip.Deflate (8)
+			// Text files use zip.Deflate (8)
 			if f.Method != zip.Deflate {
 				t.Errorf("expected text %s to use zip.Deflate (%d), but got %d", f.Name, zip.Deflate, f.Method)
 			}
@@ -362,7 +362,7 @@ func TestCustomLocalTiles_FastZipStoreMethod(t *testing.T) {
 	}
 
 	if !checkedImageTile {
-		t.Errorf("no raster tiles found in archive to verify zip.Store method")
+		t.Errorf("no raster tiles found in archive to verify zip.Deflate method")
 	}
 	if !checkedJSONFile {
 		t.Errorf("no JSON/GeoJSON files found in archive to verify zip.Deflate method")

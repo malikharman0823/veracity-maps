@@ -312,16 +312,9 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 			return err
 		}
 
-		ext := strings.ToLower(filepath.Ext(clean))
-		method := zip.Deflate
-		// Fast streaming: images are already compressed; storing them avoids expensive re-compression
-		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" {
-			method = zip.Store
-		}
-
 		header := &zip.FileHeader{
 			Name:     clean,
-			Method:   method,
+			Method:   zip.Deflate,
 			Modified: fi.ModTime(),
 		}
 		w, err := archive.CreateHeader(header)
