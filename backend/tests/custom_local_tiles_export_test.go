@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -550,5 +551,181 @@ func TestCustomLocalTiles_VectorLayersVisibilityAndExport(t *testing.T) {
 	comp, ok := reopened.ExtractedMetadata["content"].(*models.ContentComposition)
 	if !ok || comp == nil || !comp.HasVector {
 		t.Errorf("expected reopened dataset to have HasVector == true")
+	}
+}
+
+func TestCustomLocalTiles_ReferenceFormatStructure(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		SessionStorageDir:  filepath.Join(tempDir, "sessions"),
+		UploadDir:          filepath.Join(tempDir, "uploads"),
+		ProcessedDir:       filepath.Join(tempDir, "processed"),
+		MaxUploadSizeBytes: 100 * 1024 * 1024,
+	}
+	sm, err := storage.NewStorageManager(cfg.SessionStorageDir, cfg.UploadDir, cfg.ProcessedDir)
+	if err != nil {
+		t.Fatalf("failed creating storage manager: %v", err)
+	}
+	repo := repository.NewSessionRepository()
+	sess := repo.CreateSession()
+	sessionID := sess.ID
+
+	exportService := services.NewExportService(repo, sm)
+
+	dsID := "ds_test_ref_format"
+	dsDir := sm.GetDatasetDir(sessionID, dsID)
+	_ = os.MkdirAll(dsDir, 0755)
+	rawPNG := filepath.Join(dsDir, "base_map.png")
+	if err := writeCustomTilesTestImage(rawPNG, 512, 512); err != nil {
+		t.Fatalf("failed writing test image: %v", err)
+	}
+
+	bounds := []float64{75.538628, 27.400206, 77.977592, 29.256837}
+	dataset := &models.Dataset{
+		ID:                 dsID,
+		SessionID:          sessionID,
+		Filename:           "base_map.png",
+		FileSize:           2048,
+		ContentType:        "image/png",
+		StoragePath:        rawPNG,
+		GeoreferenceStatus: "completed",
+		TileStatus:         "completed",
+		ExtractedMetadata: map[string]interface{}{
+			"width":   512,
+			"height":  512,
+			"crs":     "EPSG:4326",
+			"minzoom": 7,
+			"maxzoom": 7,
+			"bounds": map[string]interface{}{
+				"min_x": bounds[0],
+				"min_y": bounds[1],
+				"max_x": bounds[2],
+				"max_y": bounds[3],
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = repo.InsertDataset(sessionID, dataset)
+
+	minZ := 7
+	maxZ := 7
+	initZ := 7
+	zipPath, _, err := exportService.GenerateSelectiveExport(sessionID, dsID, services.SelectiveExportParams{
+		Format:      "custom_local_tiles",
+		ProjectName: "Delhi NCR Tile Project",
+		LayerIDs:    []string{dsID},
+		Options: &services.SelectiveExportOptions{
+			ZoomConfig: &services.ZoomConfiguration{
+				MinZoom:     &minZ,
+				MaxZoom:     &maxZ,
+				InitialZoom: &initZ,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("open zip failed: %v", err)
+	}
+	defer zr.Close()
+
+	entries := make(map[string]*zip.File)
+	for _, f := range zr.File {
+		entries[f.Name] = f
+	}
+
+	// 1. Verify root files matching reference format E:\New folder\New folder
+	requiredRootFiles := []string{
+		"metadata.json",
+		"index.html",
+		"leaflet.html",
+		"openlayers.html",
+		"googlemaps.html",
+		"doc.kml",
+		"tile_config.json",
+		"manifest.json",
+		"project.json",
+	}
+	for _, rf := range requiredRootFiles {
+		if _, ok := entries[rf]; !ok {
+			t.Errorf("expected root file '%s' missing from exported zip package", rf)
+		}
+	}
+
+	// 2. Verify metadata.json schema matches MapTiler Engine reference format
+	if metaFile, ok := entries["metadata.json"]; ok {
+		rc, _ := metaFile.Open()
+		var metaDoc map[string]interface{}
+		_ = json.NewDecoder(rc).Decode(&metaDoc)
+		_ = rc.Close()
+
+		if metaDoc["version"] != "1.1.0" {
+			t.Errorf("expected metadata.json version '1.1.0', got '%v'", metaDoc["version"])
+		}
+		if metaDoc["type"] != "overlay" {
+			t.Errorf("expected metadata.json type 'overlay', got '%v'", metaDoc["type"])
+		}
+		if metaDoc["format"] != "hybrid" {
+			t.Errorf("expected metadata.json format 'hybrid', got '%v'", metaDoc["format"])
+		}
+		if metaDoc["profile"] != "mercator" {
+			t.Errorf("expected metadata.json profile 'mercator', got '%v'", metaDoc["profile"])
+		}
+		if metaDoc["scale"] != "1.000000" {
+			t.Errorf("expected metadata.json scale '1.000000', got '%v'", metaDoc["scale"])
+		}
+	}
+
+	// 3. Verify root tile structure: both extensionless {z}/{x}/{y} and {z}/{x}/{y}.png and companion {z}/{x}/{y}.kml
+	hasRootExtlessTile := false
+	hasRootPNGTile := false
+	hasRootKMLTile := false
+	for name := range entries {
+		parts := strings.Split(name, "/")
+		if len(parts) == 3 {
+			if _, errZ := strconv.Atoi(parts[0]); errZ == nil {
+				if _, errX := strconv.Atoi(parts[1]); errX == nil {
+					yFile := parts[2]
+					if strings.HasSuffix(yFile, ".png") {
+						hasRootPNGTile = true
+					} else if strings.HasSuffix(yFile, ".kml") {
+						hasRootKMLTile = true
+					} else if _, errY := strconv.Atoi(yFile); errY == nil {
+						hasRootExtlessTile = true
+					}
+				}
+			}
+		}
+	}
+
+	if !hasRootExtlessTile {
+		t.Errorf("expected root-level extensionless XYZ tiles matching reference format (e.g. 7/90/53)")
+	}
+	if !hasRootPNGTile {
+		t.Errorf("expected root-level PNG XYZ tiles (e.g. 7/90/53.png)")
+	}
+	if !hasRootKMLTile {
+		t.Errorf("expected root-level companion KML tiles (e.g. 7/90/53.kml)")
+	}
+
+	// 4. Verify leaflet.html contains L.tileLayer('{z}/{x}/{y}' and mapExtent
+	if leafletFile, ok := entries["leaflet.html"]; ok {
+		rc, _ := leafletFile.Open()
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		content := string(b)
+		if !strings.Contains(content, "{z}/{x}/{y}") {
+			t.Errorf("leaflet.html missing {z}/{x}/{y} tile URL")
+		}
+		if !strings.Contains(content, "mapExtent") {
+			t.Errorf("leaflet.html missing mapExtent")
+		}
+		if !strings.Contains(content, "slider") {
+			t.Errorf("leaflet.html missing opacity slider")
+		}
 	}
 }

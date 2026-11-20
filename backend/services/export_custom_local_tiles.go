@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -473,7 +474,7 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		rasterQuality = opts.ImageQuality
 	}
 	var rasterConfigLayers []TileConfigRasterLayer
-	for _, ds := range rasterDatasets {
+	for rIdx, ds := range rasterDatasets {
 		if ctx.Err() != nil {
 			s.ProgressManager().FailExport(primaryDatasetID, ctx.Err())
 			return "", "", fmt.Errorf("EXPORT_CANCELLED: %w", ctx.Err())
@@ -546,6 +547,9 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 		s.ProgressManager().UpdateTileMetrics(primaryDatasetID, completedTilesCount+cachedTilesReusedCount, totalExpectedTiles, emptyTilesSkippedCount, cachedTilesReusedCount, layerSlug)
 
 		// Walk layerTileDir and add tiles to zip under Custom_Local_Tiles/raster/<layerSlug>/{z}/{x}/{y}.ext
+		// For primary/first raster, also package at root as {z}/{x}/{y}, {z}/{x}/{y}.ext, and companion {z}/{x}/{y}.kml
+		// exactly matching reference format at E:\New folder\New folder
+		isPrimaryRaster := (rIdx == 0)
 		_ = filepath.Walk(layerTileDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() {
 				return nil
@@ -558,6 +562,31 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 			archivePath := fmt.Sprintf("Custom_Local_Tiles/raster/%s/%s", layerSlug, relSlash)
 			_ = addFileToZip(archivePath, path)
 			_ = addFileToZip(fmt.Sprintf("raster/%s/%s", layerSlug, relSlash), path)
+
+			if isPrimaryRaster {
+				// 1. Root {z}/{x}/{y}.png (for standard XYZ tile requests)
+				_ = addFileToZip(relSlash, path)
+				_ = addFileToZip(fmt.Sprintf("Custom_Local_Tiles/%s", relSlash), path)
+
+				// 2. Root extensionless {z}/{x}/{y} (exact MapTiler format matching reference folder)
+				ext := filepath.Ext(relSlash)
+				if ext != "" {
+					extless := strings.TrimSuffix(relSlash, ext)
+					_ = addFileToZip(extless, path)
+					_ = addFileToZip(fmt.Sprintf("Custom_Local_Tiles/%s", extless), path)
+
+					// 3. Companion {y}.kml for Google Earth SuperOverlay
+					parts := strings.Split(extless, "/")
+					if len(parts) >= 3 {
+						zNum, _ := strconv.Atoi(parts[0])
+						xNum, _ := strconv.Atoi(parts[1])
+						yNum, _ := strconv.Atoi(parts[2])
+						tileKML := generateTileKML(zNum, xNum, yNum)
+						_ = addBytesToZip(fmt.Sprintf("%d/%d/%d.kml", zNum, xNum, yNum), []byte(tileKML))
+						_ = addBytesToZip(fmt.Sprintf("Custom_Local_Tiles/%d/%d/%d.kml", zNum, xNum, yNum), []byte(tileKML))
+					}
+				}
+			}
 			return nil
 		})
 
@@ -898,6 +927,95 @@ func (s *ExportService) GenerateCustomLocalTilesExport(sessionID, primaryDataset
 	manifestData, _ := json.MarshalIndent(manifestDoc, "", "  ")
 	_ = addBytesToZip("Custom_Local_Tiles/tile_manifest.json", manifestData)
 	_ = addBytesToZip("tile_manifest.json", manifestData)
+
+	// Generate viewer and metadata files matching reference package format E:\New folder\New folder
+	var vectorGeoJSONItems []vectorGeoJSONItem
+	for _, v := range vectorConfigLayers {
+		stagedGJ := filepath.Join(stageDir, "geojson", v.ID+".geojson")
+		if rawGJ, err := os.ReadFile(stagedGJ); err == nil && len(rawGJ) > 0 {
+			vectorGeoJSONItems = append(vectorGeoJSONItems, vectorGeoJSONItem{
+				Name: v.Name,
+				JSON: string(rawGJ),
+			})
+		}
+	}
+	if len(allControlPoints) > 0 {
+		vectorGeoJSONItems = append(vectorGeoJSONItems, vectorGeoJSONItem{
+			Name: "Control Points",
+			JSON: string(cpData),
+		})
+	}
+	if len(allIconPoints) > 0 {
+		vectorGeoJSONItems = append(vectorGeoJSONItems, vectorGeoJSONItem{
+			Name: "Icon Points",
+			JSON: string(ipData),
+		})
+	}
+	if len(lmData) > 50 {
+		vectorGeoJSONItems = append(vectorGeoJSONItems, vectorGeoJSONItem{
+			Name: "Landmarks",
+			JSON: string(lmData),
+		})
+	}
+	if len(arData) > 50 {
+		vectorGeoJSONItems = append(vectorGeoJSONItems, vectorGeoJSONItem{
+			Name: "Areas",
+			JSON: string(arData),
+		})
+	}
+
+	// 1. metadata.json matching MapTiler Engine reference format
+	maptilerMeta := map[string]interface{}{
+		"name":        projectName,
+		"version":     "1.1.0",
+		"description": fmt.Sprintf("Exported from Veracity Maps - %s", projectName),
+		"attribution": "<a href=\"https://www.maptiler.com/engine/\">Rendered with MapTiler Engine</a>, non-commercial use only",
+		"type":        "overlay",
+		"format":      "hybrid",
+		"minzoom":     fmt.Sprintf("%d", minZoom),
+		"maxzoom":     fmt.Sprintf("%d", maxZoom),
+		"scale":       "1.000000",
+		"bounds":      unionBounds,
+		"profile":     "mercator",
+		// Veracity Maps / Viewscape extensions
+		"vector_layers":  vectorConfigLayers,
+		"raster_layers":  rasterConfigLayers,
+		"control_points": allControlPoints,
+		"icon_points":    allIconPoints,
+	}
+	maptilerMetaData, _ := json.MarshalIndent(maptilerMeta, "", "  ")
+	_ = addBytesToZip("Custom_Local_Tiles/metadata.json", maptilerMetaData)
+	_ = addBytesToZip("metadata.json", maptilerMetaData)
+
+	// 2. index.html matching MapTiler Tileviewer
+	indexHTML := generateIndexHTML(projectName, unionBounds, minZoom, maxZoom)
+	_ = addBytesToZip("Custom_Local_Tiles/index.html", []byte(indexHTML))
+	_ = addBytesToZip("index.html", []byte(indexHTML))
+
+	// 3. leaflet.html matching MapTiler Leaflet viewer + vector layers
+	leafletHTML := generateLeafletHTML(projectName, unionBounds, minZoom, maxZoom, vectorGeoJSONItems)
+	_ = addBytesToZip("Custom_Local_Tiles/leaflet.html", []byte(leafletHTML))
+	_ = addBytesToZip("leaflet.html", []byte(leafletHTML))
+
+	// 4. openlayers.html matching MapTiler OpenLayers viewer + vector layers
+	openlayersHTML := generateOpenLayersHTML(projectName, unionBounds, minZoom, maxZoom, vectorGeoJSONItems)
+	_ = addBytesToZip("Custom_Local_Tiles/openlayers.html", []byte(openlayersHTML))
+	_ = addBytesToZip("openlayers.html", []byte(openlayersHTML))
+
+	// 5. googlemaps.html matching MapTiler Google Maps viewer
+	googlemapsHTML := generateGoogleMapsHTML(projectName, unionBounds, minZoom, maxZoom)
+	_ = addBytesToZip("Custom_Local_Tiles/googlemaps.html", []byte(googlemapsHTML))
+	_ = addBytesToZip("googlemaps.html", []byte(googlemapsHTML))
+
+	// 6. doc.kml matching Google Earth SuperOverlay
+	docKML := generateDocKML(projectName, unionBounds, minZoom)
+	_ = addBytesToZip("Custom_Local_Tiles/doc.kml", []byte(docKML))
+	_ = addBytesToZip("doc.kml", []byte(docKML))
+
+	// 7. viewer.html MapLibre viewer for advanced styling
+	viewerHTML := generateViewerHTML(projectName, unionBounds, center, initZoom)
+	_ = addBytesToZip("Custom_Local_Tiles/viewer.html", []byte(viewerHTML))
+	_ = addBytesToZip("viewer.html", []byte(viewerHTML))
 
 	_ = archive.Close()
 	_ = zipFile.Close()
@@ -1776,4 +1894,389 @@ func buildMapLibreStyleDoc(name string, bounds, center []float64, initZoom int, 
 	}
 
 	return doc
+}
+
+type vectorGeoJSONItem struct {
+	Name string
+	JSON string
+}
+
+func generateTileKML(z, x, y int) string {
+	bbox := gis.TileToLatLngBounds(x, y, z) // [west, south, east, north]
+	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+<Style>
+<ListStyle id="hideChildren">
+<listItemType>checkHideChildren</listItemType>
+</ListStyle>
+</Style>
+<GroundOverlay>
+<drawOrder>%d</drawOrder>
+<Icon>
+<href>%d</href>
+</Icon>
+<LatLonBox>
+<west>%.8f</west>
+<north>%.8f</north>
+<east>%.8f</east>
+<south>%.8f</south>
+</LatLonBox>
+</GroundOverlay>
+</Document>
+</kml>`, z, y, bbox[0], bbox[3], bbox[2], bbox[1])
+}
+
+func generateDocKML(name string, bounds []float64, minZoom int) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	centerLon := (west + east) / 2.0
+	centerLat := (south + north) / 2.0
+	minX, minY := gis.LatLngToTile(north, west, minZoom)
+	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+<Style>
+<ListStyle id="hideChildren">
+<listItemType>checkHideChildren</listItemType>
+</ListStyle>
+</Style>
+<name>%s</name>
+<NetworkLink>
+<name>%d/%d/%d</name>
+<Region>
+<Lod>
+<minLodPixels>-1</minLodPixels>
+<maxLodPixels>-1</maxLodPixels>
+</Lod>
+<LatLonAltBox>
+<west>%.8f</west>
+<north>%.8f</north>
+<east>%.8f</east>
+<south>%.8f</south>
+</LatLonAltBox>
+</Region>
+<Link>
+<href>%d/%d/%d.kml</href>
+<viewRefreshMode>onRegion</viewRefreshMode>
+</Link>
+</NetworkLink>
+<LookAt>
+<longitude>%.8f</longitude>
+<latitude>%.8f</latitude>
+<altitude>0</altitude>
+<range>50000</range>
+<tilt>0</tilt>
+<heading>0</heading>
+</LookAt>
+</Document>
+</kml>`, name, minZoom, minX, minY, west, north, east, south, minZoom, minX, minY, centerLon, centerLat)
+}
+
+func generateIndexHTML(name string, bounds []float64, minZoom, maxZoom int) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>%s</title>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" href="https://cdn.maptiler.com/tileviewer/v1/index.css" type="text/css"/>
+    <script src="https://cdn.maptiler.com/tileviewer/v1/index.js"></script>
+  </head>
+  <body>
+    <script type="text/javascript">
+      // var GOOGLEMAPS_KEY = 'YOUR-API-KEY';
+      var data = {
+        "name": %q,
+        "version": "1.0.0",
+        "description": "",
+        "type": "overlay",
+        "format": "hybrid",
+        "minzoom": "%d",
+        "maxzoom": "%d",
+        "bounds": "%.8f,%.8f,%.8f,%.8f",
+        "scale": "1.000000",
+        "profile": "mercator"
+      };
+      tileserver(data);
+    </script>
+  </body>
+</html>`, name, name, minZoom, maxZoom, west, south, east, north)
+}
+
+func generateLeafletHTML(name string, bounds []float64, minZoom, maxZoom int, vectorItems []vectorGeoJSONItem) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	var vectorJS strings.Builder
+	for i, item := range vectorItems {
+		cleanJSON := strings.TrimSpace(item.JSON)
+		if cleanJSON == "" {
+			continue
+		}
+		varName := fmt.Sprintf("vecData_%d", i)
+		vectorJS.WriteString(fmt.Sprintf("    var %s = %s;\n", varName, cleanJSON))
+		vectorJS.WriteString(fmt.Sprintf("    renderGeoJSON(%q, %s, vectorColors[colorIdx++ %%%% vectorColors.length]);\n\n", item.Name, varName))
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>%s</title>
+    <meta http-equiv="imagetoolbar" content="no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css">
+    <link rel="stylesheet" href="https://cdn.rawgit.com/ardhi/Leaflet.MousePosition/master/src/L.Control.MousePosition.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js" type="text/javascript"></script>
+    <script src="https://cdn.rawgit.com/ardhi/Leaflet.MousePosition/master/src/L.Control.MousePosition.js" type="text/javascript"></script>
+    <style>
+      body { margin:0; padding:0; width:100%%%%; height:100%%%%; background: #ffffff; font-family: sans-serif; }
+      #map { position:absolute; top:0; bottom:0; width:100%%%%; z-index: 1; }
+      #slider{ position: absolute; top: 10px; right: 10px; z-index: 1000; }
+    </style>
+  </head>
+<body>
+  <div id="map"></div>
+  <input id="slider" type="range" min="0" max="1" step="0.1" value="1" oninput="if(layer) layer.setOpacity(this.value)">
+  <script type="text/javascript">
+    var mapExtent = [%.8f, %.8f, %.8f, %.8f];
+    var crs = L.CRS.EPSG3857;
+    var mapMinZoom = %d;
+    var mapMaxZoom = %d;
+    var bounds = new L.LatLngBounds(
+      new L.LatLng(mapExtent[1], mapExtent[0]),
+      new L.LatLng(mapExtent[3], mapExtent[2]));
+    var map = L.map('map').fitBounds(bounds);
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    var layer;
+    var options = {
+      minZoom: mapMinZoom,
+      maxZoom: mapMaxZoom,
+      opacity: 1.0,
+      attribution: '<a href="https://www.maptiler.com/engine/">Rendered with MapTiler Engine</a>',
+      tms: false,
+    };
+    layer = L.tileLayer('{z}/{x}/{y}', options).addTo(map);
+
+    var overlays = { "Raster Tiles": layer };
+    var vectorColors = ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2", "#4f46e5"];
+    var colorIdx = 0;
+
+    function renderGeoJSON(name, data, color) {
+      if (!data || !data.features || data.features.length === 0) return;
+      var lyr = L.geoJSON(data, {
+        style: function(feat) {
+          return { color: color, weight: 2.5, opacity: 0.9, fillOpacity: 0.35 };
+        },
+        pointToLayer: function(feat, latlng) {
+          return L.circleMarker(latlng, {
+            radius: 6,
+            fillColor: color,
+            color: "#ffffff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.85
+          });
+        },
+        onEachFeature: function(feat, l) {
+          if (feat.properties) {
+            var html = '<div style="font-size:12px;max-height:180px;overflow-y:auto;">';
+            html += '<b>' + (feat.properties.name || name) + '</b><br/>';
+            for (var k in feat.properties) {
+              if (k !== 'name') html += '<b>' + k + ':</b> ' + feat.properties[k] + '<br/>';
+            }
+            html += '</div>';
+            l.bindPopup(html);
+          }
+        }
+      }).addTo(map);
+      overlays[name] = lyr;
+    }
+
+%s
+    L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
+  </script>
+</body>
+</html>`, name, west, south, east, north, minZoom, maxZoom, vectorJS.String())
+}
+
+func generateOpenLayersHTML(name string, bounds []float64, minZoom, maxZoom int, vectorItems []vectorGeoJSONItem) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	centerLon := (west + east) / 2.0
+	centerLat := (south + north) / 2.0
+	initZoom := (minZoom + maxZoom) / 2
+
+	var vectorJS strings.Builder
+	for i, item := range vectorItems {
+		cleanJSON := strings.TrimSpace(item.JSON)
+		if cleanJSON == "" {
+			continue
+		}
+		varName := fmt.Sprintf("vecData_%d", i)
+		vectorJS.WriteString(fmt.Sprintf("var %s = %s;\n", varName, cleanJSON))
+		vectorJS.WriteString(fmt.Sprintf(`layers.push(new ol.layer.Vector({
+  source: new ol.source.Vector({
+    features: new ol.format.GeoJSON().readFeatures(%s, { featureProjection: 'EPSG:3857' })
+  }),
+  style: new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: '#2563eb', width: 2 }),
+    fill: new ol.style.Fill({ color: 'rgba(37, 99, 235, 0.25)' }),
+    image: new ol.style.Circle({ radius: 6, fill: new ol.style.Fill({ color: '#2563eb' }), stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 }) })
+  })
+}));
+`, varName))
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<title>%s</title>
+<meta http-equiv="imagetoolbar" content="no"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style type="text/css">
+html, body { margin:0; padding: 0; height: 100%%%%; width: 100%%%%; font-family: sans-serif; }
+body { width:100%%%%; height:100%%%%; background: #ffffff; }
+#map { position: absolute; height: 100%%%%; width: 100%%%%; }
+#slider { position: absolute; top: 10px; right: 10px; z-index: 1000; }
+</style>
+<link rel="stylesheet" href="https://cdn.maptiler.com/ol/v6.12.0/ol.css" type="text/css">
+<script src="https://cdnjs.cloudflare.com/polyfill/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL,fetch,Function.prototype.bind,es5&flags=always,gated&unknown=polyfill" type="text/javascript"></script>
+<script src="https://cdn.maptiler.com/ol/v6.12.0/ol.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="map"></div>
+<input id="slider" type="range" min="0" max="1" step="0.1" value="1" oninput="layer.setOpacity(parseFloat(this.value))">
+<script type="text/javascript">
+var mapExtent = ol.proj.transformExtent([%.8f, %.8f, %.8f, %.8f], 'EPSG:4326', 'EPSG:3857');
+var mapMinZoom = %d;
+var mapMaxZoom = %d;
+var layer = new ol.layer.Tile({
+  extent: mapExtent,
+  source: new ol.source.XYZ({
+    attributions: '<a href="https://www.maptiler.com/engine/">Rendered with MapTiler Engine</a>',
+    url: "{z}/{x}/{y}",
+    tilePixelRatio: 1.00000000,
+    minZoom: mapMinZoom,
+    maxZoom: mapMaxZoom,
+  })
+});
+var mapLayer = new ol.layer.Tile({
+  source: new ol.source.OSM(),
+});
+
+var layers = [mapLayer, layer];
+
+%s
+var map = new ol.Map({
+  target: 'map',
+  layers: layers,
+  view: new ol.View({
+    center: ol.proj.fromLonLat([%.8f, %.8f]),
+    zoom: %d
+  })
+});
+</script>
+</body>
+</html>`, name, west, south, east, north, minZoom, maxZoom, vectorJS.String(), centerLon, centerLat, initZoom)
+}
+
+func generateGoogleMapsHTML(name string, bounds []float64, minZoom, maxZoom int) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	centerLon := (west + east) / 2.0
+	centerLat := (south + north) / 2.0
+	initZoom := (minZoom + maxZoom) / 2
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<title>%s</title>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<style type="text/css">
+html, body { overflow: hidden; padding: 0; margin: 0; width: 100%%%%; height: 100%%%%; font-family: sans-serif; }
+#map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+</style>
+<script type="text/javascript" src="https://maps.google.com/maps/api/js?sensor=false"></script>
+<script type="text/javascript">
+var map;
+var mapBounds = new google.maps.LatLngBounds(
+    new google.maps.LatLng(%.8f, %.8f),
+    new google.maps.LatLng(%.8f, %.8f));
+var mapMinZoom = %d;
+var mapMaxZoom = %d;
+var maptiler = new google.maps.ImageMapType({
+    getTileUrl: function(coord, zoom) { 
+        var proj = map.getProjection();
+        var z2 = Math.pow(2, zoom);
+        var tileXSize = 256 / z2;
+        var tileYSize = 256 / z2;
+        var tileBounds = new google.maps.LatLngBounds(
+            proj.fromPointToLatLng(new google.maps.Point(coord.x * tileXSize, (coord.y + 1) * tileYSize)),
+            proj.fromPointToLatLng(new google.maps.Point((coord.x + 1) * tileXSize, coord.y * tileYSize))
+        );
+        var x = coord.x >= 0 ? coord.x : z2 + coord.x;
+        var y = coord.y;
+        if (mapBounds.intersects(tileBounds) && (mapMinZoom <= zoom) && (zoom <= mapMaxZoom))
+            return zoom + "/" + x + "/" + y;
+        else
+            return "https://www.maptiler.com/img/none.png";
+    },
+    tileSize: new google.maps.Size(256, 256),
+    isPng: false,
+    name: "Rendered with MapTiler Engine",
+    alt: "Rendered with MapTiler Engine",
+    opacity: 1.0
+});
+function init() {
+    var opts = {
+        tilt: 0,
+        streetViewControl: false,
+        center: new google.maps.LatLng(%.8f, %.8f),
+        zoom: %d
+    };
+    map = new google.maps.Map(document.getElementById("map"), opts);
+    map.setMapTypeId('satellite');
+    map.overlayMapTypes.insertAt(0, maptiler);
+}
+</script>
+</head>
+<body onload="init()">
+<div id="map"></div>
+</body>
+</html>`, name, south, west, north, east, minZoom, maxZoom, centerLat, centerLon, initZoom)
+}
+
+func generateViewerHTML(name string, bounds, center []float64, initZoom int) string {
+	west, south, east, north := bounds[0], bounds[1], bounds[2], bounds[3]
+	centerLng := center[0]
+	centerLat := center[1]
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>%s</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%%%%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = new maplibregl.Map({
+      container: 'map',
+      style: './styles/map_style.json',
+      center: [%.6f, %.6f],
+      zoom: %d,
+      maxBounds: [[%.6f, %.6f], [%.6f, %.6f]]
+    });
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  </script>
+</body>
+</html>`, name, centerLng, centerLat, initZoom, west, south, east, north)
 }

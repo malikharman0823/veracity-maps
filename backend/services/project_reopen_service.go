@@ -1910,7 +1910,8 @@ func (s *DatasetService) ReopenCustomLocalTilesFromPath(sessionID, primaryDatase
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(p))
-		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".pbf" || ext == ".mvt" {
+		isKnownTileExt := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".pbf" || ext == ".mvt"
+		if isKnownTileExt || ext == "" {
 			rel, rErr := filepath.Rel(extractDir, p)
 			if rErr == nil {
 				parts := strings.Split(filepath.ToSlash(rel), "/")
@@ -1920,25 +1921,28 @@ func (s *DatasetService) ReopenCustomLocalTilesFromPath(sessionID, primaryDatase
 					y := parts[len(parts)-1]
 					if _, errZ := strconv.Atoi(z); errZ == nil {
 						if _, errX := strconv.Atoi(x); errX == nil {
-							dest := filepath.Join(xyzDir, z, x, y)
-							_ = os.MkdirAll(filepath.Dir(dest), 0755)
-							_ = storage.CopyFile(p, dest)
+							yNumStr := strings.TrimSuffix(y, filepath.Ext(y))
+							if _, errY := strconv.Atoi(yNumStr); errY == nil {
+								dest := filepath.Join(xyzDir, z, x, y)
+								_ = os.MkdirAll(filepath.Dir(dest), 0755)
+								_ = storage.CopyFile(p, dest)
 
-							// Also preserve nested path if under vector/ or raster/
-							relClean := filepath.ToSlash(rel)
-							if strings.Contains(relClean, "vector/") || strings.Contains(relClean, "raster/") {
-								idx := strings.Index(relClean, "vector/")
-								if idx < 0 {
-									idx = strings.Index(relClean, "raster/")
+								// Also preserve nested path if under vector/ or raster/
+								relClean := filepath.ToSlash(rel)
+								if strings.Contains(relClean, "vector/") || strings.Contains(relClean, "raster/") {
+									idx := strings.Index(relClean, "vector/")
+									if idx < 0 {
+										idx = strings.Index(relClean, "raster/")
+									}
+									nestedRel := relClean[idx:]
+									nestedDest := filepath.Join(xyzDir, filepath.FromSlash(nestedRel))
+									_ = os.MkdirAll(filepath.Dir(nestedDest), 0755)
+									_ = storage.CopyFile(p, nestedDest)
 								}
-								nestedRel := relClean[idx:]
-								nestedDest := filepath.Join(xyzDir, filepath.FromSlash(nestedRel))
-								_ = os.MkdirAll(filepath.Dir(nestedDest), 0755)
-								_ = storage.CopyFile(p, nestedDest)
-							}
 
-							if (ext == ".png" || ext == ".jpg") && previewSampleTile == "" {
-								previewSampleTile = p
+								if (ext == ".png" || ext == ".jpg" || ext == "") && previewSampleTile == "" {
+									previewSampleTile = p
+								}
 							}
 						}
 					}
