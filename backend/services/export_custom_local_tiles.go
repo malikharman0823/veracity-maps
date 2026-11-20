@@ -1054,6 +1054,13 @@ func (s *ExportService) getOrCreateCachedVectorTiles(ctx context.Context, srcPat
 	default:
 	}
 
+	if maxZ > 14 {
+		maxZ = 14
+	}
+	if minZ > maxZ {
+		minZ = maxZ
+	}
+
 	cacheKey := computeVectorContentHash(srcPath, layerSlug, minZ, maxZ)
 	cacheDir := s.getTileCacheDir(layerSlug, cacheKey)
 
@@ -1098,7 +1105,7 @@ func (s *ExportService) getOrCreateCachedVectorTiles(ctx context.Context, srcPat
 		}
 	}
 
-	vRes, vErr := s.generateVectorTilesWithPython(srcPath, vectorTileDir, layerSlug, minZ, maxZ)
+	vRes, vErr := s.generateVectorTilesWithPython(ctx, srcPath, vectorTileDir, layerSlug, minZ, maxZ)
 	if vErr != nil {
 		return nil, 0, vErr
 	}
@@ -1345,7 +1352,7 @@ type pythonVectorTileResult struct {
 	Error        string `json:"error,omitempty"`
 }
 
-func (s *ExportService) generateVectorTilesWithPython(srcPath, outDir, layerName string, minZoom, maxZoom int) (*pythonVectorTileResult, error) {
+func (s *ExportService) generateVectorTilesWithPython(ctx context.Context, srcPath, outDir, layerName string, minZoom, maxZoom int) (*pythonVectorTileResult, error) {
 	pythonExe := "python"
 	candidates := []string{
 		"backend/.venv/Scripts/python.exe",
@@ -1373,7 +1380,10 @@ func (s *ExportService) generateVectorTilesWithPython(srcPath, outDir, layerName
 		}
 	}
 
-	cmd := exec.Command(pythonExe, scriptPath, "generate_vector_tiles", srcPath, outDir, layerName, fmt.Sprintf("%d", minZoom), fmt.Sprintf("%d", maxZoom))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, pythonExe, scriptPath, "generate_vector_tiles", srcPath, outDir, layerName, fmt.Sprintf("%d", minZoom), fmt.Sprintf("%d", maxZoom))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1644,11 +1654,15 @@ func buildMapLibreStyleDoc(name string, bounds, center []float64, initZoom int, 
 	// Vector layer sources and layers
 	for _, v := range vectors {
 		srcID := "vector_source_" + v.ID
+		vecSrcMaxZ := v.MaxZoom
+		if vecSrcMaxZ > 14 {
+			vecSrcMaxZ = 14
+		}
 		sources[srcID] = map[string]interface{}{
 			"type":    "vector",
 			"tiles":   []string{v.TileURL},
 			"minzoom": v.MinZoom,
-			"maxzoom": v.MaxZoom,
+			"maxzoom": vecSrcMaxZ,
 		}
 		if v.GeoJSONURL != "" {
 			sources["vector_geojson_"+v.ID] = map[string]interface{}{

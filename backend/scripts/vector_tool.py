@@ -951,12 +951,20 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
                 if "datetime" in dt or "object" in dt:
                     gdf[col] = gdf[col].astype(str)
 
+        # In standard MVT specifications (Mapbox/MapLibre), vector tiles are generated up to
+        # zoom 14 (or 15). MapLibre GL natively overzooms vector tiles smoothly to zoom 24+
+        # with zero distortion, avoiding exponential tile generation beyond zoom 14.
+        max_zoom_val = min(int(max_zoom), 14)
+        min_zoom_val = min(int(min_zoom), max_zoom_val)
+        if min_zoom_val < 0:
+            min_zoom_val = 0
+
         pyogrio.write_dataframe(
             gdf,
             out_dir,
             driver="MVT",
-            MINZOOM=int(min_zoom),
-            MAXZOOM=int(max_zoom),
+            MINZOOM=min_zoom_val,
+            MAXZOOM=max_zoom_val,
             COMPRESS="YES",
         )
 
