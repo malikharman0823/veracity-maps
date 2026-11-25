@@ -7,11 +7,14 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
+  Download,
+  FolderArchive,
 } from "lucide-react"
 import {
   publishWebTileMap,
   listPublishedMaps,
   revokePublishedMap,
+  exportCustomLocalTilesZip,
   API_URL,
 } from "../api"
 
@@ -44,6 +47,7 @@ export default function ExportProjectModal({
   const [loadingPublished, setLoadingPublished] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState("")
+  const [downloadingLocal, setDownloadingLocal] = useState(false)
   const [copiedKey, setCopiedKey] = useState("")
 
   // Load active published Custom Web Tile URLs when modal opens
@@ -121,6 +125,41 @@ export default function ExportProjectModal({
     }
   }
 
+  const handleDownloadCustomLocalTiles = async () => {
+    if (downloadingLocal) return
+    setDownloadingLocal(true)
+    setPublishError("")
+    try {
+      const { blob, filename } = await exportCustomLocalTilesZip({
+        workspace_id: workspaceId || primaryDatasetId,
+        project_id: workspaceId || primaryDatasetId,
+        dataset_id: primaryDatasetId,
+        name: projectName,
+        mode: "combined",
+        layer_order: layerOrder,
+        layer_stack: Array.isArray(layerStack)
+          ? layerStack.map(({ kind, id, name }) => ({ kind, id, name }))
+          : [],
+      })
+      const blobUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      setPublishError(
+        err?.response?.data?.error?.details ||
+          err?.response?.data?.error?.message ||
+          "Failed to generate Custom Local Tiles ZIP."
+      )
+    } finally {
+      setDownloadingLocal(false)
+    }
+  }
+
   const handleRevoke = async (pubId) => {
     try {
       setPublishError("")
@@ -153,10 +192,10 @@ export default function ExportProjectModal({
             </div>
             <div>
               <h2 id="export-modal-title" className="text-sm font-bold text-neutral-900 dark:text-white">
-                Export Custom Web Tile
+                Export Map Tiles
               </h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Publish all rasters and vectors as a Custom Web Tile URL
+                Custom Web Tile URL &amp; Custom Local Tiles (XYZ ZIP)
               </p>
             </div>
           </div>
@@ -277,6 +316,37 @@ export default function ExportProjectModal({
                 })}
               </div>
             )}
+          </div>
+
+          {/* Custom Local Tiles (.zip) — Strict V-Mapplotter / VTAS XYZ Format */}
+          <div className="p-4 rounded-[10px] border border-neutral-200 dark:border-[#2e2e2e] bg-neutral-50/70 dark:bg-[#202020] space-y-3">
+            <div className="flex items-center gap-2">
+              <FolderArchive className="size-4 text-amber-500 shrink-0" />
+              <h3 className="text-xs font-bold text-neutral-900 dark:text-white">
+                Custom Local Tiles (.zip)
+              </h3>
+            </div>
+            <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+              Combines all rasters and vector polygons/lines (excluding points) in your current layer stack order into a single <span className="font-mono">{"{z}/{x}/{y}.png"}</span> XYZ tile package (<span className="font-mono">metadata.json</span>, <span className="font-mono">tilemapresource.xml</span>, <span className="font-mono">leaflet.html</span>, <span className="font-mono">index.html</span>).
+            </p>
+            <button
+              type="button"
+              disabled={downloadingLocal || !hasContent}
+              onClick={handleDownloadCustomLocalTiles}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-[6px] text-xs font-bold bg-sky-500 hover:bg-sky-600 text-white disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed transition-colors"
+            >
+              {downloadingLocal ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Generating XYZ Tile ZIP…</span>
+                </>
+              ) : (
+                <>
+                  <Download className="size-3.5" />
+                  <span>Download Custom Local Tiles (.zip)</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 

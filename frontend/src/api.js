@@ -2178,6 +2178,19 @@ export async function updateWorkspaceRaster(workspaceId, rasterId, payload) {
   return response.data.data
 }
 
+export async function exportCustomLocalTilesZip(payload) {
+  const response = await client.post("/api/export/custom-local-tiles", payload, {
+    responseType: "blob",
+    timeout: 600_000,
+  })
+  const disposition = response.headers?.["content-disposition"] || ""
+  const match = /filename="?([^"]+)"?/i.exec(disposition)
+  return {
+    blob: response.data,
+    filename: match ? match[1] : "veracity_webtiles_xyz.zip",
+  }
+}
+
 
 
 

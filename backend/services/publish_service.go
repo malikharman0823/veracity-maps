@@ -1757,3 +1757,146 @@ func (s *PublishService) RenderPublishedRasterTile(ctx context.Context, pm *mode
 	}
 	return data, nil
 }
+
+// determineLocalWebTilesZoomRange chooses a fast, crisp zoom pyramid range matching the
+// geographic extent (e.g. z15-z19 for a campus/floorplan like p3_webtiles_xyz, z10-z14 for a city).
+func determineLocalWebTilesZoomRange(bounds []float64, reqMin, reqMax *int) (int, int) {
+	minZ, maxZ := 12, 16
+	if len(bounds) == 4 {
+		span := math.Max(math.Abs(bounds[2]-bounds[0]), math.Abs(bounds[3]-bounds[1]))
+		switch {
+		case span <= 0.03:
+			minZ, maxZ = 15, 19
+		case span <= 0.12:
+			minZ, maxZ = 13, 16
+		case span <= 0.60:
+			minZ, maxZ = 10, 14
+		case span <= 3.0:
+			minZ, maxZ = 8, 11
+		default:
+			minZ, maxZ = 5, 8
+		}
+	}
+	if reqMin != nil && *reqMin >= 0 && *reqMin <= 20 {
+		minZ = *reqMin
+	}
+	if reqMax != nil && *reqMax >= minZ && *reqMax <= 20 {
+		maxZ = *reqMax
+	}
+	if maxZ-minZ > 5 {
+		maxZ = minZ + 5
+	}
+	return minZ, maxZ
+}
+
+// ExportCustomLocalTilesZIP renders ALL visible raster and vector layers (polygons & lines only,
+// excluding points) in the exact Photoshop layer_stack order into a single combined XYZ tile layer
+// packaged strictly in the V-Mapplotter / VTAS webtiles_xyz ZIP format:
+//
+//	metadata.json, tilemapresource.xml, leaflet.html, index.html, {z}/{x}/{y}.png
+func (s *PublishService) ExportCustomLocalTilesZIP(
+	ctx context.Context,
+	sessionID, ownerID string,
+	req models.PublishMapRequest,
+) (zipBytes []byte, filename string, err error) {
+	req.Mode = models.PublishModeCombined
+	pubFlag := false
+	req.IsPublic = &pubFlag
+
+	// Reuse PublishMap's full raster/vector/corners/layer_stack discovery, then clean up the ephemeral record
+	pm, err := s.PublishMap(ctx, sessionID, ownerID, req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() {
+		s.mu.Lock()
+		delete(s.records, pm.MapID)
+		s.persistToDiskLocked()
+		s.mu.Unlock()
+		_ = storage.SafeRemoveAll(filepath.Join(filepath.Dir(s.storePath), "composite_cache", pm.MapID))
+	}()
+
+	if len(pm.Bounds) != 4 {
+		return nil, "", fmt.Errorf("%w: no georeferenced bounds available for local webtiles export", models.ErrInvalidPublishRequest)
+	}
+
+	specPath, err := s.resolveCompositeSpecPath(pm)
+	if err != nil {
+		return nil, "", err
+	}
+	rawSpec, err := os.ReadFile(specPath)
+	if err != nil {
+		return nil, "", err
+	}
+	var specDoc map[string]interface{}
+	if err := json.Unmarshal(rawSpec, &specDoc); err != nil {
+		return nil, "", err
+	}
+
+	minZ, maxZ := determineLocalWebTilesZoomRange(pm.Bounds, req.MinZoom, req.MaxZoom)
+	projName := strings.TrimSpace(pm.Name)
+	if projName == "" {
+		projName = "veracity_map"
+	}
+	specDoc["name"] = projName
+	specDoc["min_zoom"] = minZ
+	specDoc["max_zoom"] = maxZ
+
+	tmpDir, err := os.MkdirTemp("", "veracity_local_webtiles_*")
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = storage.SafeRemoveAll(tmpDir) }()
+
+	localSpecPath := filepath.Join(tmpDir, "spec.json")
+	specBytes, _ := json.MarshalIndent(specDoc, "", "  ")
+	if err := os.WriteFile(localSpecPath, specBytes, 0644); err != nil {
+		return nil, "", err
+	}
+	outZipPath := filepath.Join(tmpDir, "out.zip")
+
+	pythonExe := "python"
+	for _, c := range []string{
+		"backend/.venv/Scripts/python.exe",
+		".venv/Scripts/python.exe",
+		"../.venv/Scripts/python.exe",
+		"../backend/.venv/Scripts/python.exe",
+		"backend/.venv/bin/python",
+		".venv/bin/python",
+	} {
+		if fileExists(c) {
+			pythonExe = c
+			break
+		}
+	}
+	scriptPath := "backend/scripts/render_local_webtiles_zip.py"
+	if !fileExists(scriptPath) {
+		for _, cs := range []string{
+			"scripts/render_local_webtiles_zip.py",
+			"../scripts/render_local_webtiles_zip.py",
+			"../backend/scripts/render_local_webtiles_zip.py",
+		} {
+			if fileExists(cs) {
+				scriptPath = cs
+				break
+			}
+		}
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, pythonExe, scriptPath, localSpecPath, outZipPath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, "", fmt.Errorf("custom local tiles generation failed: %v: %s", err, stderr.String())
+	}
+
+	zipBytes, err = os.ReadFile(outZipPath)
+	if err != nil || len(zipBytes) == 0 {
+		return nil, "", fmt.Errorf("failed to read generated custom local tiles zip: %v", err)
+	}
+	filename = safeStem(projName) + "_webtiles_xyz.zip"
+	return zipBytes, filename, nil
+}

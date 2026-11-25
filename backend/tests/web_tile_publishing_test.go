@@ -1,10 +1,12 @@
 package tests
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -377,6 +379,59 @@ func TestCombinedRasterAndVectorWebTilePublishing(t *testing.T) {
 	}
 	if stackRasIdx == -1 || stackVecIdx == -1 || stackRasIdx <= stackVecIdx {
 		t.Fatalf("expected raster layer above vector layer in layer_stack style.json; stackRasIdx=%d, stackVecIdx=%d", stackRasIdx, stackVecIdx)
+	}
+
+	// =========================================================================
+	// 1d. Strict Custom Local Tiles XYZ ZIP Export (p3_webtiles_xyz format, no points)
+	// =========================================================================
+	localBody, _ := json.Marshal(map[string]interface{}{
+		"workspace_id": rasterDs.ID,
+		"name":         "p3",
+		"min_zoom":     12,
+		"max_zoom":     13,
+		"layer_stack": []map[string]interface{}{
+			{"kind": "raster", "id": rasterDs.ID, "name": "campus_aerial.png"},
+			{"kind": "vector", "name": "hospitals"},
+		},
+	})
+	recLocal := httptest.NewRecorder()
+	reqLocal := httptest.NewRequest(http.MethodPost, "/api/export/custom-local-tiles", bytes.NewReader(localBody))
+	reqLocal.Header.Set("Content-Type", "application/json")
+	reqLocal.Header.Set("Authorization", "Bearer "+aliceToken)
+	reqLocal.Header.Set("X-Session-ID", sessionID)
+	handler.ServeHTTP(recLocal, reqLocal)
+	if recLocal.Code != http.StatusOK {
+		t.Fatalf("expected 200 for custom local tiles zip, got %d (%s)", recLocal.Code, recLocal.Body.String())
+	}
+	zr, zErr := zip.NewReader(bytes.NewReader(recLocal.Body.Bytes()), int64(recLocal.Body.Len()))
+	if zErr != nil {
+		t.Fatalf("invalid zip returned by custom local tiles export: %v", zErr)
+	}
+	entrySet := make(map[string]*zip.File)
+	pngTileCount := 0
+	for _, f := range zr.File {
+		entrySet[f.Name] = f
+		if strings.HasSuffix(f.Name, ".png") {
+			pngTileCount++
+		}
+	}
+	for _, required := range []string{"metadata.json", "tilemapresource.xml", "leaflet.html", "index.html"} {
+		if _, ok := entrySet[required]; !ok {
+			t.Fatalf("custom local tiles zip missing required root file %q", required)
+		}
+	}
+	if pngTileCount == 0 {
+		t.Fatalf("custom local tiles zip contained 0 PNG tiles")
+	}
+	// Verify strict metadata.json contract
+	rcMeta, _ := entrySet["metadata.json"].Open()
+	metaBytes, _ := io.ReadAll(rcMeta)
+	_ = rcMeta.Close()
+	var localMeta map[string]interface{}
+	_ = json.Unmarshal(metaBytes, &localMeta)
+	if localMeta["version"] != "1.1.0" || localMeta["description"] != "V-Mapplotter Output for VTAS" ||
+		localMeta["type"] != "overlay" || localMeta["format"] != "png" || localMeta["profile"] != "mercator" || localMeta["crs"] != "EPSG:3857" {
+		t.Fatalf("metadata.json does not strictly match p3_webtiles_xyz format: %+v", localMeta)
 	}
 
 	// =========================================================================

@@ -140,6 +140,35 @@ func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request, user *mo
 	})
 }
 
+// ExportCustomLocalTiles handles POST /api/export/custom-local-tiles
+// and streams a strict V-Mapplotter / VTAS webtiles_xyz ZIP combining all visible
+// raster and non-point vector layers as a single XYZ PNG tile layer in exact layer_stack order.
+func (h *Handler) ExportCustomLocalTiles(w http.ResponseWriter, r *http.Request, user *models.User, sessionID string) {
+	if r.Method != http.MethodPost {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST method is supported", nil, nil)
+		return
+	}
+	var req models.PublishMapRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid export request payload", err.Error(), nil)
+		return
+	}
+	ownerID := ""
+	if user != nil {
+		ownerID = user.ID
+	}
+	zipBytes, filename, err := h.svc.ExportCustomLocalTilesZIP(r.Context(), sessionID, ownerID, req)
+	if err != nil {
+		writePublishErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Length", strconv.Itoa(len(zipBytes)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(zipBytes)
+}
+
 // Revoke handles DELETE /api/publish/{mapId} and POST /api/publish/{mapId}/revoke.
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request, user *models.User, mapID string) {
 	if r.Method != http.MethodDelete && r.Method != http.MethodPost {

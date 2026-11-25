@@ -276,6 +276,12 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 	//   GET    /tiles/{map_id}/raster/{layer_id}/{z}/{x}/{y}.{png|jpg}
 	//   GET    /tiles/{map_id}/vector/{layer_id}/{z}/{x}/{y}.pbf
 	if rt.publishH != nil {
+		if path == "/api/export/custom-local-tiles" || path == "/export/custom-local-tiles" {
+			user := GetUser(r)
+			sessionID := strings.TrimSpace(r.Header.Get("X-Session-ID"))
+			rt.publishH.ExportCustomLocalTiles(w, r, user, sessionID)
+			return
+		}
 		if path == "/api/publish" || path == "/publish" {
 			user := GetUser(r)
 			if r.Method == http.MethodPost {
