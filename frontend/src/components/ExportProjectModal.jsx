@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Download,
   FolderArchive,
+  ArrowUpDown,
 } from "lucide-react"
 import {
   publishWebTileMap,
@@ -229,22 +230,22 @@ export default function ExportProjectModal({
               Generate a shareable Custom Web Tile URL (<span className="font-mono">{"{0}/{1}/{2}.png"}</span>) combining all raster and vector layers in this project.
             </p>
 
-            <div className="px-2.5 py-2 rounded-[6px] border border-neutral-200 dark:border-[#303030] bg-white dark:bg-[#171717] space-y-1">
-              <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="text-neutral-500 dark:text-neutral-400">Export Layer Order:</span>
-                <span className="font-semibold text-[#24b47e] dark:text-[#3ecf8e]">
-                  {layerStack.length > 0
-                    ? `Workspace Stack (${layerStack.length} layers)`
-                    : layerOrder[0] === "raster"
-                      ? "Raster above Vector"
-                      : "Vector above Raster"}
+            <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-[6px] border border-neutral-200 dark:border-[#303030] bg-white dark:bg-[#171717]">
+              <div className="text-[11px]">
+                <span className="text-neutral-500 dark:text-neutral-400">Layer Stack: </span>
+                <span className="font-semibold text-neutral-900 dark:text-white">
+                  {layerOrder[0] === "raster" ? "Raster above Vector" : "Vector above Raster"}
                 </span>
               </div>
-              {layerStack.length > 0 && (
-                <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
-                  Top → Bottom: {layerStack.slice(0, 4).map((l) => l.name).join(" › ")}
-                  {layerStack.length > 4 ? ` (+${layerStack.length - 4} more)` : ""}
-                </div>
+              {onToggleLayerOrder && (
+                <button
+                  type="button"
+                  onClick={onToggleLayerOrder}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-[5px] border border-neutral-300 dark:border-[#3a3a3a] hover:border-[#3ecf8e] text-[10.5px] font-semibold text-neutral-700 dark:text-neutral-200 cursor-pointer transition-colors"
+                >
+                  <ArrowUpDown className="size-3 text-[#3ecf8e]" />
+                  <span>Swap Order</span>
+                </button>
               )}
             </div>
 
