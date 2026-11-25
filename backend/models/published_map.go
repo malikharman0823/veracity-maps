@@ -20,20 +20,22 @@ const (
 
 // PublishedRasterLayer stores metadata and persistent tile directory for one published raster layer.
 type PublishedRasterLayer struct {
-	LayerID      string    `json:"layer_id"`
-	DatasetID    string    `json:"dataset_id,omitempty"`
-	Name         string    `json:"name"`
-	Format       string    `json:"format"` // "png" or "jpg"
-	TileDir      string    `json:"-"`      // internal disk directory (never exposed in public JSON)
-	TileURL      string    `json:"tile_url"`
-	MetadataURL  string    `json:"metadata_url"`
-	SourceCRS    string    `json:"source_crs"`
-	Bounds       []float64 `json:"bounds,omitempty"`
-	MinZoom      int       `json:"min_zoom"`
-	MaxZoom      int       `json:"max_zoom"`
-	Opacity      float64   `json:"opacity"`
-	Visible      bool      `json:"visible"`
-	DisplayOrder int       `json:"display_order"`
+	LayerID      string      `json:"layer_id"`
+	DatasetID    string      `json:"dataset_id,omitempty"`
+	Name         string      `json:"name"`
+	Format       string      `json:"format"` // "png" or "jpg"
+	TileDir      string      `json:"-"`      // internal disk directory (never exposed in public JSON)
+	ImagePath    string      `json:"-"`      // internal source/processed raster path for dynamic z0-z22 rendering
+	TileURL      string      `json:"tile_url"`
+	MetadataURL  string      `json:"metadata_url"`
+	SourceCRS    string      `json:"source_crs"`
+	Bounds       []float64   `json:"bounds,omitempty"`
+	Corners      [][]float64 `json:"corners,omitempty"` // optional 4 WGS84 [lng, lat] corners [TL, TR, BR, BL] for rotated affine rasters
+	MinZoom      int         `json:"min_zoom"`
+	MaxZoom      int         `json:"max_zoom"`
+	Opacity      float64     `json:"opacity"`
+	Visible      bool        `json:"visible"`
+	DisplayOrder int         `json:"display_order"`
 }
 
 // PublishedVectorLayer stores metadata, style, and persistent MVT directory for one published vector layer.

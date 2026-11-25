@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -230,6 +231,55 @@ func TestCombinedRasterAndVectorWebTilePublishing(t *testing.T) {
 	handler.ServeHTTP(rec304, req304)
 	if rec304.Code != http.StatusNotModified {
 		t.Fatalf("expected 304 Not Modified on matching ETag, got %d", rec304.Code)
+	}
+
+	// Verify published raster tile serves actual visible PNG pixels (regression check for empty tile_cache bug)
+	// SF bounds [-122.42, 37.77, -122.40, 37.79] intersect z=12, x=655, y=1583
+	recRT := httptest.NewRecorder()
+	reqRT := httptest.NewRequest(http.MethodGet, "/tiles/"+combID+"/raster/campus_aerial/12/655/1583.png", nil)
+	handler.ServeHTTP(recRT, reqRT)
+	if recRT.Code != http.StatusOK {
+		t.Fatalf("expected 200 for published raster tile, got %d (%s)", recRT.Code, recRT.Body.String())
+	}
+	rtImg, rtErr := png.Decode(bytes.NewReader(recRT.Body.Bytes()))
+	if rtErr != nil {
+		t.Fatalf("failed to decode published raster PNG tile: %v", rtErr)
+	}
+	nonTransparentRaster := 0
+	for py := rtImg.Bounds().Min.Y; py < rtImg.Bounds().Max.Y; py++ {
+		for px := rtImg.Bounds().Min.X; px < rtImg.Bounds().Max.X; px++ {
+			_, _, _, a := rtImg.At(px, py).RGBA()
+			if a > 0 {
+				nonTransparentRaster++
+			}
+		}
+	}
+	if nonTransparentRaster == 0 {
+		t.Fatalf("published raster tile 12/655/1583.png was completely transparent (0 visible pixels)")
+	}
+
+	// Verify composite PNG tile (/tiles/{map_id}/composite/{z}/{x}/{y}.png) also renders raster pixels
+	recComp := httptest.NewRecorder()
+	reqComp := httptest.NewRequest(http.MethodGet, "/tiles/"+combID+"/composite/12/655/1583.png", nil)
+	handler.ServeHTTP(recComp, reqComp)
+	if recComp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for composite PNG tile, got %d (%s)", recComp.Code, recComp.Body.String())
+	}
+	compImg, compErr := png.Decode(bytes.NewReader(recComp.Body.Bytes()))
+	if compErr != nil {
+		t.Fatalf("failed to decode composite PNG tile: %v", compErr)
+	}
+	nonTransparentComp := 0
+	for py := compImg.Bounds().Min.Y; py < compImg.Bounds().Max.Y; py++ {
+		for px := compImg.Bounds().Min.X; px < compImg.Bounds().Max.X; px++ {
+			_, _, _, a := compImg.At(px, py).RGBA()
+			if a > 0 {
+				nonTransparentComp++
+			}
+		}
+	}
+	if nonTransparentComp == 0 {
+		t.Fatalf("composite tile 12/655/1583.png was completely transparent (0 visible pixels)")
 	}
 
 	// Verify individual layer TileJSON metadata (/tiles/{map_id}/vector/hospitals/metadata.json)

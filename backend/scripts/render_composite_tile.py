@@ -74,8 +74,64 @@ def lonlat_to_3857(lon: float, lat: float):
 def composite_raster_layer(canvas: Image.Image, rl: dict, z: int, x: int, y: int, tminx, tminy, tmaxx, tmaxy):
     tile_dir = rl.get("tile_dir") or ""
     opacity = float(rl.get("opacity", 1.0) or 1.0)
+    src_img_path = rl.get("image_path") or ""
+    corners = rl.get("corners") or []
+    bounds = rl.get("bounds") or []
 
-    # 1. Fast path: exact matching raster tile exists at z/x/y
+    # 1. Exact rotated/affine projection when 4 WGS84 corners [TL, TR, BR, BL] + source image exist
+    if src_img_path and os.path.isfile(src_img_path) and isinstance(corners, list) and len(corners) == 4:
+        try:
+            import cv2
+            import numpy as np
+
+            dst_3857 = [lonlat_to_3857(float(c[0]), float(c[1])) for c in corners]
+            c_minx = min(p[0] for p in dst_3857)
+            c_maxx = max(p[0] for p in dst_3857)
+            c_miny = min(p[1] for p in dst_3857)
+            c_maxy = max(p[1] for p in dst_3857)
+            if c_maxx <= tminx or c_minx >= tmaxx or c_maxy <= tminy or c_miny >= tmaxy:
+                return
+
+            cw, ch = canvas.size
+            tspan_x = tmaxx - tminx
+            tspan_y = tmaxy - tminy
+            dst_pts = np.array(
+                [
+                    [
+                        (px - tminx) / tspan_x * cw,
+                        (tmaxy - py) / tspan_y * ch,
+                    ]
+                    for (px, py) in dst_3857
+                ],
+                dtype=np.float32,
+            )
+
+            src = Image.open(src_img_path).convert("RGBA")
+            sw, sh = src.size
+            src_arr = np.array(src, dtype=np.uint8)
+            src_pts = np.array(
+                [[0.0, 0.0], [float(sw), 0.0], [float(sw), float(sh)], [0.0, float(sh)]],
+                dtype=np.float32,
+            )
+
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            warped = cv2.warpPerspective(
+                src_arr,
+                M,
+                (cw, ch),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0, 0),
+            )
+            if opacity < 0.999:
+                warped[:, :, 3] = np.clip(warped[:, :, 3].astype(np.float32) * opacity, 0, 255).astype(np.uint8)
+            overlay = Image.fromarray(warped, mode="RGBA")
+            canvas.alpha_composite(overlay)
+            return
+        except Exception:
+            pass
+
+    # 2. Fast path: exact matching pre-rendered raster tile exists at z/x/y
     if tile_dir and os.path.isdir(tile_dir):
         for ext in (".png", ".jpg", ".jpeg", ""):
             cand = os.path.join(tile_dir, str(z), str(x), f"{y}{ext}")
@@ -93,9 +149,7 @@ def composite_raster_layer(canvas: Image.Image, rl: dict, z: int, x: int, y: int
                 except Exception:
                     pass
 
-    # 2. Fallback for any zoom (z0-z18): project source raster image into this tile's 3857 bbox
-    src_img_path = rl.get("image_path") or ""
-    bounds = rl.get("bounds") or []
+    # 3. Fallback for any zoom (z0-z22): project axis-aligned source raster image into this tile's 3857 bbox
     if not src_img_path or not os.path.isfile(src_img_path) or len(bounds) != 4:
         return
 

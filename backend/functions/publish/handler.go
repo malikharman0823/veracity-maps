@@ -410,27 +410,64 @@ func (h *Handler) ServePublishedTile(w http.ResponseWriter, r *http.Request, use
 	} else {
 		var tilePath string
 		var resolveErr error
-		tilePath, ext, resolveErr = h.svc.ResolvePublishedTilePath(pm, layerType, layerID, zStr, xStr, yClean)
-		if errors.Is(resolveErr, models.ErrPublishedMapNotFound) {
-			models.WriteError(w, http.StatusNotFound, "LAYER_NOT_FOUND", "Published layer not found in map", nil, nil)
-			return
-		}
-		if resolveErr != nil || tilePath == "" {
-			if w.Header().Get("Access-Control-Allow-Origin") == "" {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+		// For rotated affine rasters (4 corners), prefer dynamic affine-warped PNG rendering
+		// so orientation matches the workspace pixel-for-pixel across all zoom levels.
+		preferDynamicRaster := false
+		if strings.EqualFold(layerType, "raster") {
+			for _, rl := range pm.RasterLayers {
+				if rl.LayerID == layerID && len(rl.Corners) == 4 && rl.ImagePath != "" {
+					preferDynamicRaster = true
+					break
+				}
 			}
-			w.WriteHeader(http.StatusNoContent)
-			return
+		}
+		if preferDynamicRaster {
+			if dynData, dynErr := h.svc.RenderPublishedRasterTile(r.Context(), pm, layerID, z, x, y); dynErr == nil {
+				if len(dynData) == 0 {
+					if w.Header().Get("Access-Control-Allow-Origin") == "" {
+						w.Header().Set("Access-Control-Allow-Origin", "*")
+					}
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				data = dynData
+				ext = ".png"
+			}
 		}
 
-		var rErr error
-		data, rErr = os.ReadFile(tilePath)
-		if rErr != nil || len(data) == 0 {
-			if w.Header().Get("Access-Control-Allow-Origin") == "" {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+		if len(data) == 0 {
+			tilePath, ext, resolveErr = h.svc.ResolvePublishedTilePath(pm, layerType, layerID, zStr, xStr, yClean)
+			if errors.Is(resolveErr, models.ErrPublishedMapNotFound) {
+				models.WriteError(w, http.StatusNotFound, "LAYER_NOT_FOUND", "Published layer not found in map", nil, nil)
+				return
 			}
-			w.WriteHeader(http.StatusNoContent)
-			return
+			if (resolveErr != nil || tilePath == "") && strings.EqualFold(layerType, "raster") {
+				// Dynamic z0-z22 fallback when a raster tile wasn't pre-rendered for this zoom level
+				if dynData, dynErr := h.svc.RenderPublishedRasterTile(r.Context(), pm, layerID, z, x, y); dynErr == nil && len(dynData) > 0 {
+					data = dynData
+					ext = ".png"
+				}
+			}
+		}
+
+		if len(data) == 0 {
+			if resolveErr != nil || tilePath == "" {
+				if w.Header().Get("Access-Control-Allow-Origin") == "" {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			var rErr error
+			data, rErr = os.ReadFile(tilePath)
+			if rErr != nil || len(data) == 0 {
+				if w.Header().Get("Access-Control-Allow-Origin") == "" {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 	}
 

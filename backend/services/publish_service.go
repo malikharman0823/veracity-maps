@@ -26,9 +26,10 @@ import (
 
 // publishedMapRecord is the on-disk JSON persistence wrapper (includes internal TileDir paths).
 type publishedMapRecord struct {
-	Map            models.PublishedMap `json:"map"`
-	RasterTileDirs map[string]string   `json:"raster_tile_dirs"`
-	VectorTileDirs map[string]string   `json:"vector_tile_dirs"`
+	Map              models.PublishedMap `json:"map"`
+	RasterTileDirs   map[string]string   `json:"raster_tile_dirs"`
+	RasterImagePaths map[string]string   `json:"raster_image_paths,omitempty"`
+	VectorTileDirs   map[string]string   `json:"vector_tile_dirs"`
 }
 
 // PublishService manages Combined, Raster-only, and Vector-only Web Tile publishing,
@@ -103,6 +104,9 @@ func (s *PublishService) loadFromDisk() {
 			if dir, ok := rec.RasterTileDirs[pm.RasterLayers[i].LayerID]; ok {
 				pm.RasterLayers[i].TileDir = dir
 			}
+			if imgP, ok := rec.RasterImagePaths[pm.RasterLayers[i].LayerID]; ok {
+				pm.RasterLayers[i].ImagePath = imgP
+			}
 		}
 		for i := range pm.VectorLayers {
 			if dir, ok := rec.VectorTileDirs[pm.VectorLayers[i].LayerID]; ok {
@@ -118,17 +122,22 @@ func (s *PublishService) persistToDiskLocked() {
 	list := make([]publishedMapRecord, 0, len(s.records))
 	for _, pm := range s.records {
 		rDirs := make(map[string]string, len(pm.RasterLayers))
+		rImgs := make(map[string]string, len(pm.RasterLayers))
 		for _, rl := range pm.RasterLayers {
 			rDirs[rl.LayerID] = rl.TileDir
+			if rl.ImagePath != "" {
+				rImgs[rl.LayerID] = rl.ImagePath
+			}
 		}
 		vDirs := make(map[string]string, len(pm.VectorLayers))
 		for _, vl := range pm.VectorLayers {
 			vDirs[vl.LayerID] = vl.TileDir
 		}
 		list = append(list, publishedMapRecord{
-			Map:            *pm,
-			RasterTileDirs: rDirs,
-			VectorTileDirs: vDirs,
+			Map:              *pm,
+			RasterTileDirs:   rDirs,
+			RasterImagePaths: rImgs,
+			VectorTileDirs:   vDirs,
 		})
 	}
 	if b, err := json.MarshalIndent(list, "", "  "); err == nil {
@@ -344,15 +353,18 @@ func (s *PublishService) PublishMap(
 
 			// Reuse existing loose tiles_xyz or persistent tile_cache without regenerating!
 			var tileDir string
+			var renderPath string
+			if s.exportSvc != nil {
+				renderPath = s.exportSvc.resolveExportRasterPath(ds)
+			}
+			if renderPath == "" || !fileExists(renderPath) {
+				renderPath = ds.StoragePath
+			}
 			dsDir := resolveDatasetDirectory(s.storage, ds)
 			candXYZ := filepath.Join(dsDir, "tiles_xyz")
 			if dirContainsExtension(candXYZ, "."+tileFmt) {
 				tileDir = candXYZ
 			} else if s.exportSvc != nil {
-				renderPath := s.exportSvc.resolveExportRasterPath(ds)
-				if renderPath == "" || !fileExists(renderPath) {
-					renderPath = ds.StoragePath
-				}
 				rMinZ := minZoom
 				rMaxZ := maxZoom
 				if rMinZ < 10 && (dsBounds[2]-dsBounds[0]) < 1.0 {
@@ -363,15 +375,18 @@ func (s *PublishService) PublishMap(
 				}
 				cacheKey := computeRasterContentHash(renderPath, dsBounds, rMinZ, rMaxZ, tileFmt, 85)
 				cacheDir := s.exportSvc.getTileCacheDir(layerID, cacheKey)
-				// Ensure tiles exist in persistent cacheDir (reuses if already cached!)
+				// Ensure tiles exist in persistent cacheDir (filepath.Base(tmpStage) MUST equal layerID!)
 				if !fileExists(filepath.Join(cacheDir, "cache_manifest.json")) {
-					tmpStage := filepath.Join(os.TempDir(), "veracity_pub_stage_"+layerID+"_"+cacheKey)
+					tmpParent := filepath.Join(os.TempDir(), "veracity_pub_stage_"+cacheKey)
+					tmpStage := filepath.Join(tmpParent, layerID)
 					_ = os.MkdirAll(tmpStage, 0755)
 					_, _, _ = s.exportSvc.getOrCreateCachedRasterTiles(ctx, renderPath, dsBounds, rMinZ, rMaxZ, tileFmt, 85, tmpStage)
-					_ = storage.SafeRemoveAll(tmpStage)
+					_ = storage.SafeRemoveAll(tmpParent)
 				}
 				tileDir = cacheDir
 			}
+
+			dsCorners := extractDatasetCorners(ds)
 
 			opacity := 1.0
 			visible := true
@@ -401,10 +416,12 @@ func (s *PublishService) PublishMap(
 				Name:         ds.Filename,
 				Format:       tileFmt,
 				TileDir:      tileDir,
+				ImagePath:    renderPath,
 				TileURL:      fmt.Sprintf("/tiles/%s/raster/%s/{z}/{x}/{y}.%s", mapID, layerID, tileFmt),
 				MetadataURL:  fmt.Sprintf("/tiles/%s/raster/%s/metadata.json", mapID, layerID),
 				SourceCRS:    srcCRS,
 				Bounds:       dsBounds,
+				Corners:      dsCorners,
 				MinZoom:      minZoom,
 				MaxZoom:      maxZoom,
 				Opacity:      opacity,
@@ -1017,19 +1034,82 @@ func (s *PublishService) BuildLayerTileJSON(pm *models.PublishedMap, layerType, 
 	}
 }
 
+// extractDatasetCorners derives the 4 WGS84 [lng, lat] corners [TL, TR, BR, BL]
+// from a dataset's affine transform (or explicit corners metadata) so rotated
+// georeferenced rasters render with exact orientation in published & composite tiles.
+func extractDatasetCorners(ds *models.Dataset) [][]float64 {
+	if ds == nil || ds.ExtractedMetadata == nil {
+		return nil
+	}
+	// 1. Explicit corners in ExtractedMetadata["corners"]
+	if rawCorners, ok := ds.ExtractedMetadata["corners"]; ok {
+		if cList, ok2 := rawCorners.([][]float64); ok2 && len(cList) == 4 {
+			return cList
+		}
+		if ifaceList, ok2 := rawCorners.([]interface{}); ok2 && len(ifaceList) == 4 {
+			out := make([][]float64, 0, 4)
+			for _, item := range ifaceList {
+				if pair, ok3 := item.([]interface{}); ok3 && len(pair) == 2 {
+					out = append(out, []float64{getDim(pair[0]), getDim(pair[1])})
+				}
+			}
+			if len(out) == 4 {
+				return out
+			}
+		}
+	}
+	// 2. Compute from 6-element affine transform [a, -b, c, d, -e, f] + width/height
+	var t []float64
+	if tf, ok := ds.ExtractedMetadata["transform"].([]float64); ok && len(tf) == 6 {
+		t = tf
+	} else if ti, ok := ds.ExtractedMetadata["transform"].([]interface{}); ok && len(ti) == 6 {
+		t = make([]float64, 6)
+		for i := 0; i < 6; i++ {
+			t[i] = getDim(ti[i])
+		}
+	}
+	if len(t) == 6 {
+		w := getDim(ds.ExtractedMetadata["width"])
+		h := getDim(ds.ExtractedMetadata["height"])
+		if w > 0 && h > 0 {
+			a, b, c := t[0], -t[1], t[2]
+			d, e, f := t[3], -t[4], t[5]
+			return [][]float64{
+				{c, f},
+				{a*w + c, d*w + f},
+				{a*w + b*h + c, d*w + e*h + f},
+				{b*h + c, e*h + f},
+			}
+		}
+	}
+	return nil
+}
+
 // ResolvePublishedTilePath locates the tile file on disk for a published raster or vector layer.
 func (s *PublishService) ResolvePublishedTilePath(pm *models.PublishedMap, layerType, layerID, zStr, xStr, yClean string) (string, string, error) {
 	switch strings.ToLower(layerType) {
 	case "raster":
 		for _, rl := range pm.RasterLayers {
 			if rl.LayerID == layerID {
-				if rl.TileDir == "" {
-					return "", "", os.ErrNotExist
+				candidateDirs := make([]string, 0, 2)
+				if rl.TileDir != "" {
+					candidateDirs = append(candidateDirs, rl.TileDir)
+					// Backwards-compat fallback for previously published maps whose tiles were written under veracity_pub_stage_<base>_<hash>
+					baseName := filepath.Base(rl.TileDir)
+					if idx := strings.LastIndex(baseName, "_"); idx > 0 {
+						hashPart := baseName[idx+1:]
+						legacyDir := filepath.Join(filepath.Dir(rl.TileDir), "veracity_pub_stage_"+baseName+"_"+hashPart)
+						if dirExists(legacyDir) {
+							candidateDirs = append(candidateDirs, legacyDir)
+						}
+					}
 				}
-				for _, ext := range []string{"." + rl.Format, ".png", ".jpg", ".jpeg"} {
-					cand := filepath.Join(rl.TileDir, zStr, xStr, yClean+ext)
-					if fileExists(cand) {
-						return cand, ext, nil
+				for _, dir := range candidateDirs {
+					for _, ext := range []string{"." + rl.Format, ".png", ".jpg", ".jpeg"} {
+						cand := filepath.Join(dir, zStr, xStr, yClean+ext)
+						if fileExists(cand) {
+							return cand, ext, nil
+						}
 					}
 				}
 				return "", "", os.ErrNotExist
@@ -1169,8 +1249,31 @@ func (s *PublishService) resolveCompositeSpecPath(pm *models.PublishedMap) (stri
 
 	rasterSpecs := make([]map[string]interface{}, 0, len(pm.RasterLayers))
 	for _, rl := range pm.RasterLayers {
-		imgPath := ""
-		if rl.TileDir != "" {
+		imgPath := rl.ImagePath
+		if imgPath != "" && !fileExists(imgPath) {
+			imgPath = ""
+		}
+		// Fallback 1: look up active dataset by DatasetID to find source/processed raster image
+		if imgPath == "" && rl.DatasetID != "" && s.sessionRepo != nil {
+			for _, ds := range s.sessionRepo.ListAllDatasets() {
+				if ds != nil && ds.ID == rl.DatasetID {
+					if s.exportSvc != nil {
+						if rp := s.exportSvc.resolveExportRasterPath(ds); rp != "" && fileExists(rp) {
+							imgPath = rp
+						}
+					}
+					if imgPath == "" && ds.StoragePath != "" && fileExists(ds.StoragePath) {
+						imgPath = ds.StoragePath
+					}
+					if len(rl.Corners) == 0 {
+						rl.Corners = extractDatasetCorners(ds)
+					}
+					break
+				}
+			}
+		}
+		// Fallback 2: check parent directory of TileDir
+		if imgPath == "" && rl.TileDir != "" {
 			parent := filepath.Dir(rl.TileDir)
 			if entries, err := os.ReadDir(parent); err == nil {
 				for _, ent := range entries {
@@ -1185,11 +1288,23 @@ func (s *PublishService) resolveCompositeSpecPath(pm *models.PublishedMap) (stri
 				}
 			}
 		}
+		effectiveTileDir := rl.TileDir
+		if effectiveTileDir != "" && !dirContainsExtension(effectiveTileDir, "."+rl.Format) && !dirContainsExtension(effectiveTileDir, ".png") {
+			baseName := filepath.Base(effectiveTileDir)
+			if idx := strings.LastIndex(baseName, "_"); idx > 0 {
+				hashPart := baseName[idx+1:]
+				legacyDir := filepath.Join(filepath.Dir(effectiveTileDir), "veracity_pub_stage_"+baseName+"_"+hashPart)
+				if dirExists(legacyDir) {
+					effectiveTileDir = legacyDir
+				}
+			}
+		}
 		rasterSpecs = append(rasterSpecs, map[string]interface{}{
 			"layer_id":   rl.LayerID,
-			"tile_dir":   rl.TileDir,
+			"tile_dir":   effectiveTileDir,
 			"image_path": imgPath,
 			"bounds":     rl.Bounds,
+			"corners":    rl.Corners,
 			"opacity":    rl.Opacity,
 			"visible":    rl.Visible,
 		})
@@ -1348,6 +1463,147 @@ func (s *PublishService) RenderCompositePNGTile(ctx context.Context, pm *models.
 	data, err := os.ReadFile(cachePath)
 	if err != nil || len(data) == 0 {
 		return getTransparent256PNG(), nil
+	}
+	return data, nil
+}
+
+// RenderPublishedRasterTile dynamically renders and caches a single 256x256 PNG tile
+// for a published raster layer at any zoom (z0-z22), preserving rotated 4-corner affine
+// geometry when present. Returns (nil, nil) when (z, x, y) is outside the raster's bounds.
+func (s *PublishService) RenderPublishedRasterTile(ctx context.Context, pm *models.PublishedMap, layerID string, z, x, y int) ([]byte, error) {
+	if pm == nil {
+		return nil, models.ErrPublishedMapNotFound
+	}
+	var target *models.PublishedRasterLayer
+	for i := range pm.RasterLayers {
+		if pm.RasterLayers[i].LayerID == layerID {
+			target = &pm.RasterLayers[i]
+			break
+		}
+	}
+	if target == nil {
+		return nil, models.ErrPublishedMapNotFound
+	}
+	// Fast bounds check
+	if len(target.Bounds) == 4 {
+		tw, ts, te, tn := xyzTileToWGS84Bounds(z, x, y)
+		bw, bs, be, bn := target.Bounds[0], target.Bounds[1], target.Bounds[2], target.Bounds[3]
+		if te < bw || tw > be || tn < bs || ts > bn {
+			return nil, nil
+		}
+	}
+
+	cacheRoot := filepath.Join(filepath.Dir(s.storePath), "composite_cache", pm.MapID, "raster_"+layerID)
+	cachePath := filepath.Join(cacheRoot, fmt.Sprintf("%d", z), fmt.Sprintf("%d", x), fmt.Sprintf("%d.png", y))
+	if data, err := os.ReadFile(cachePath); err == nil && len(data) > 0 {
+		return data, nil
+	}
+
+	lockKey := fmt.Sprintf("raster:%s:%s:%d:%d:%d", pm.MapID, layerID, z, x, y)
+	actual, _ := s.tileLocks.LoadOrStore(lockKey, &sync.Mutex{})
+	mu := actual.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if data, err := os.ReadFile(cachePath); err == nil && len(data) > 0 {
+		return data, nil
+	}
+
+	imgPath := target.ImagePath
+	if imgPath != "" && !fileExists(imgPath) {
+		imgPath = ""
+	}
+	if imgPath == "" && target.DatasetID != "" && s.sessionRepo != nil {
+		for _, ds := range s.sessionRepo.ListAllDatasets() {
+			if ds != nil && ds.ID == target.DatasetID {
+				if s.exportSvc != nil {
+					if rp := s.exportSvc.resolveExportRasterPath(ds); rp != "" && fileExists(rp) {
+						imgPath = rp
+					}
+				}
+				if imgPath == "" && ds.StoragePath != "" && fileExists(ds.StoragePath) {
+					imgPath = ds.StoragePath
+				}
+				if len(target.Corners) == 0 {
+					target.Corners = extractDatasetCorners(ds)
+				}
+				break
+			}
+		}
+	}
+	if imgPath == "" {
+		return nil, os.ErrNotExist
+	}
+
+	if err := os.MkdirAll(cacheRoot, 0755); err != nil {
+		return nil, err
+	}
+	specPath := filepath.Join(cacheRoot, "spec.json")
+	specDoc := map[string]interface{}{
+		"map_id": pm.MapID,
+		"bounds": target.Bounds,
+		"raster_layers": []map[string]interface{}{
+			{
+				"layer_id":   target.LayerID,
+				"tile_dir":   "",
+				"image_path": imgPath,
+				"bounds":     target.Bounds,
+				"corners":    target.Corners,
+				"opacity":    1.0, // MapLibre applies paint.raster-opacity
+				"visible":    true,
+			},
+		},
+		"vector_layers": []interface{}{},
+	}
+	if b, err := json.MarshalIndent(specDoc, "", "  "); err == nil {
+		_ = os.WriteFile(specPath, b, 0644)
+	}
+
+	pythonExe := "python"
+	for _, c := range []string{
+		"backend/.venv/Scripts/python.exe",
+		".venv/Scripts/python.exe",
+		"../.venv/Scripts/python.exe",
+		"../backend/.venv/Scripts/python.exe",
+	} {
+		if fileExists(c) {
+			pythonExe = c
+			break
+		}
+	}
+	scriptPath := "backend/scripts/render_composite_tile.py"
+	if !fileExists(scriptPath) {
+		for _, cs := range []string{
+			"scripts/render_composite_tile.py",
+			"../scripts/render_composite_tile.py",
+			"../backend/scripts/render_composite_tile.py",
+		} {
+			if fileExists(cs) {
+				scriptPath = cs
+				break
+			}
+		}
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(
+		ctx,
+		pythonExe,
+		scriptPath,
+		specPath,
+		fmt.Sprintf("%d", z),
+		fmt.Sprintf("%d", x),
+		fmt.Sprintf("%d", y),
+		cachePath,
+	)
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil || len(data) == 0 {
+		return nil, os.ErrNotExist
 	}
 	return data, nil
 }
