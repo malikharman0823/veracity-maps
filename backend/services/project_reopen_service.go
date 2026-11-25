@@ -45,14 +45,14 @@ func isProjectArchiveZip(zipPath string) (bool, error) {
 		if lower == "project.json" || lower == "mapstudio.json" || lower == "style.json" || lower == "metadata/layer_config.json" {
 			return true, nil
 		}
-		if lower == "manifest.json" {
+		if lower == "manifest.json" || lower == "viewscape/manifest.json" {
 			rc, rErr := f.Open()
 			if rErr == nil {
 				var mDoc map[string]interface{}
 				decErr := json.NewDecoder(io.LimitReader(rc, 256*1024)).Decode(&mDoc)
 				_ = rc.Close()
 				if decErr == nil && mDoc != nil {
-					if mDoc["format_version"] != nil || mDoc["project_mbtiles"] != nil || mDoc["format_name"] != nil || mDoc["primary_dataset_id"] != nil || mDoc["format"] != nil || mDoc["schema_version"] != nil || mDoc["datasets"] != nil {
+					if mDoc["format_version"] != nil || mDoc["project_mbtiles"] != nil || mDoc["format_name"] != nil || mDoc["primary_dataset_id"] != nil || mDoc["format"] != nil || mDoc["schema_version"] != nil || mDoc["datasets"] != nil || mDoc["package_type"] != nil {
 						return true, nil
 					}
 				}
@@ -258,6 +258,10 @@ func (s *DatasetService) InspectProjectPackage(sessionID string, fileHeader *mul
 	relFiles, err := s.extractAndValidateZip(stagedFile, extractDir)
 	if err != nil {
 		return nil, err
+	}
+
+	if vsManifestRel := findViewscapeManifestRel(extractDir, relFiles); vsManifestRel != "" {
+		return inspectViewscapePackage(extractDir, vsManifestRel, fileHeader.Filename, written)
 	}
 
 	var tileConfigRel string
@@ -924,6 +928,10 @@ func (s *DatasetService) ReopenProjectZipFromPath(sessionID, primaryDatasetID, p
 	if err != nil {
 		_ = storage.SafeRemoveAll(primaryDatasetDir)
 		return nil, err
+	}
+
+	if vsManifestRel := findViewscapeManifestRel(extractDir, relFiles); vsManifestRel != "" {
+		return s.ReopenViewscapeFromPath(sessionID, primaryDatasetID, primaryDatasetDir, extractDir, zipPath, filename, size, fileHash, vsManifestRel)
 	}
 
 	var tileConfigRel string

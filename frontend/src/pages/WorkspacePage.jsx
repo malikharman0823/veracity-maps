@@ -721,12 +721,36 @@ export default function WorkspacePage() {
     } catch {}
   }
 
+  const resolvedExportDatasetId =
+    id ||
+    workspace.manifest?.members?.[0]?.dataset_id ||
+    gisLayers.find((l) => l?.dataset_id)?.dataset_id ||
+    exportModalDatasets.find((d) => d?.id)?.id ||
+    null
+
   async function handlePerformExport(payload) {
     if (exporting || workspace.saveState === "saving") return
+    const firstLayerId = payload?.layer_ids?.[0]
+    const matchedGisDatasetId = firstLayerId
+      ? gisLayers.find((l) => l.layer_id === firstLayerId || l.dataset_id === firstLayerId)?.dataset_id
+      : null
+    const matchedExportDatasetId = firstLayerId
+      ? exportModalDatasets.find((d) => d.id === firstLayerId)?.id
+      : null
+    const targetDatasetId =
+      id || matchedExportDatasetId || matchedGisDatasetId || resolvedExportDatasetId
+
+    if (!targetDatasetId) {
+      const msg = "Upload or add at least one raster or vector dataset before exporting a Viewscape ZIP."
+      setExportError(msg)
+      workspace.setError(msg)
+      return
+    }
+
     setExporting(true)
     setExportError(null)
     try {
-      await downloadProjectExport(id, workspace.manifest?.name, payload)
+      await downloadProjectExport(targetDatasetId, workspace.manifest?.name || currentMap?.name, payload)
       setExportModalOpen(false)
     } catch (requestError) {
       const err = readableApiError(requestError, "Unable to export workspace package.")
@@ -1878,7 +1902,9 @@ export default function WorkspacePage() {
         buildings={exportModalBuildings}
         datasets={exportModalDatasets}
         gisLayers={gisLayers}
-        primaryDatasetId={id}
+        primaryDatasetId={resolvedExportDatasetId}
+        workspaceId={gisMapId}
+        activeBaseLayer={activeBaseLayer}
         onExport={handlePerformExport}
         exporting={exporting}
         error={exportError}

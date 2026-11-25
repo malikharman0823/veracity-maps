@@ -24,9 +24,11 @@ import (
 )
 
 type ExportService struct {
-	repo     *repository.SessionRepository
-	storage  *storage.StorageManager
-	progress *ExportProgressManager
+	repo             *repository.SessionRepository
+	storage          *storage.StorageManager
+	progress         *ExportProgressManager
+	gisService       *GISService
+	baseLayerService *BaseLayerService
 }
 
 func NewExportService(repo *repository.SessionRepository, sm *storage.StorageManager) *ExportService {
@@ -35,6 +37,16 @@ func NewExportService(repo *repository.SessionRepository, sm *storage.StorageMan
 		storage:  sm,
 		progress: NewExportProgressManager(),
 	}
+}
+
+// SetGISService connects GISService so exports include workspace vector layers, styles, and MVT tiles.
+func (s *ExportService) SetGISService(gs *GISService) {
+	s.gisService = gs
+}
+
+// SetBaseLayerService connects BaseLayerService so exports include workspace base layer configs and local tiles.
+func (s *ExportService) SetBaseLayerService(bls *BaseLayerService) {
+	s.baseLayerService = bls
 }
 
 // ProgressManager returns the progress manager instance.
@@ -247,6 +259,26 @@ func (s *ExportService) GenerateExport(sessionID, datasetID, format string) (str
 	var outPath, outName string
 
 	switch format {
+	case "viewscape_raster", "raster_layers":
+		outPath, outName, err = s.GenerateViewscapeExport(sessionID, datasetID, SelectiveExportParams{
+			Format:  "viewscape_raster",
+			Options: DefaultSelectiveExportOptions(),
+		}, ViewscapeModeRaster)
+	case "viewscape_vector", "vector_layers":
+		outPath, outName, err = s.GenerateViewscapeExport(sessionID, datasetID, SelectiveExportParams{
+			Format:  "viewscape_vector",
+			Options: DefaultSelectiveExportOptions(),
+		}, ViewscapeModeVector)
+	case "viewscape_base", "base_layers":
+		outPath, outName, err = s.GenerateViewscapeExport(sessionID, datasetID, SelectiveExportParams{
+			Format:  "viewscape_base",
+			Options: DefaultSelectiveExportOptions(),
+		}, ViewscapeModeBase)
+	case "viewscape_complete", "complete_viewscape", "viewscape":
+		outPath, outName, err = s.GenerateViewscapeExport(sessionID, datasetID, SelectiveExportParams{
+			Format:  "viewscape_complete",
+			Options: DefaultSelectiveExportOptions(),
+		}, ViewscapeModeComplete)
 	case "custom_local_tiles", "custom-local-tiles", "local_tiles":
 		opts := DefaultSelectiveExportOptions()
 		outPath, outName, err = s.GenerateCustomLocalTilesExport(sessionID, datasetID, SelectiveExportParams{

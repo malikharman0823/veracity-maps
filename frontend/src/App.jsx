@@ -15,10 +15,23 @@ const LoginPage = lazy(() => import("./pages/LoginPage"))
 const RegisterPage = lazy(() => import("./pages/RegisterPage"))
 const DashboardPage = lazy(() => import("./pages/DashboardPage"))
 const ProfilePage = lazy(() => import("./pages/ProfilePage"))
+const PublishedMapViewerPage = lazy(() => import("./pages/PublishedMapViewerPage"))
 
 function DatasetWorkspaceRedirect() {
   const { id } = useParams()
   return <Navigate to={`/datasets/${id}/workspace`} replace />
+}
+
+function SmartMapRoute() {
+  const { mapId } = useParams()
+  if (mapId && mapId.startsWith("pub_")) {
+    return <PublishedMapViewerPage />
+  }
+  return (
+    <ProtectedRoute>
+      <DashboardLayout />
+    </ProtectedRoute>
+  )
 }
 
 export default function App() {
@@ -35,9 +48,13 @@ export default function App() {
               }
             >
               <Routes>
-                {/* Public Auth Routes */}
+                {/* Public Auth & Published Map Viewer Routes (No Workspace Session Required) */}
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/published/:mapId" element={<PublishedMapViewerPage />} />
+                <Route path="/maps/:mapId" element={<SmartMapRoute />}>
+                  <Route index element={<WorkspacePage />} />
+                </Route>
 
                 {/* All Protected Routes Share the Global Navigation Sidebar */}
                 <Route
@@ -56,7 +73,6 @@ export default function App() {
                   <Route path="/maps/:mapId/setup" element={<WorkspaceSetupPage />} />
                   <Route path="/workspace-setup" element={<WorkspaceSetupPage />} />
                   <Route path="/maps/:mapId/edit" element={<WorkspacePage />} />
-                  <Route path="/maps/:mapId" element={<WorkspacePage />} />
 
                   {/* Project and Mapspace Independent Map Editor Routes */}
                   <Route path="/projects/:projectId/maps/:mapId/edit" element={<WorkspacePage />} />

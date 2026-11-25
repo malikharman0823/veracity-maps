@@ -2,15 +2,22 @@ import axios from "axios"
 import { findDatasetSessionId, isBackendSessionId } from "./lib/sessionLoading"
 import { syncUploadSession } from "./lib/uploadSession"
 
-function requiredSetting(name) {
-  const value = import.meta.env[name]
-  if (!value) throw new Error(`Missing required frontend setting: ${name}`)
-  return value
+function resolveApiUrl() {
+  const configured = (import.meta.env.VITE_API_URL || "").trim()
+  if (configured && configured.toLowerCase() !== "same-origin") {
+    return configured.replace(/\/$/, "")
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, "")
+  }
+  return "http://localhost:8000"
 }
 
-export const API_URL = requiredSetting("VITE_API_URL").replace(/\/$/, "")
-export const BASEMAP_TILE_URL = requiredSetting("VITE_BASEMAP_TILE_URL")
-export const BASEMAP_ATTRIBUTION = requiredSetting("VITE_BASEMAP_ATTRIBUTION")
+export const API_URL = resolveApiUrl()
+export const BASEMAP_TILE_URL =
+  import.meta.env.VITE_BASEMAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+export const BASEMAP_ATTRIBUTION =
+  import.meta.env.VITE_BASEMAP_ATTRIBUTION || "© OpenStreetMap contributors"
 
 export const SESSION_STORAGE_KEY = "veracity_maps_active_session_id"
 export const AUTH_TOKEN_KEY = "veracity_maps_auth_token"
@@ -788,6 +795,14 @@ export async function downloadProjectExport(datasetId, projectName, exportPayloa
     fallback = `${safeDownloadStem(projectName)}.mbtiles`
   } else if (exportPayload?.format === "base_layer" || exportPayload?.format === "basemap") {
     fallback = "veracity-base-map.zip"
+  } else if (exportPayload?.format === "viewscape_raster") {
+    fallback = `${safeDownloadStem(projectName)}_raster_layers.zip`
+  } else if (exportPayload?.format === "viewscape_vector") {
+    fallback = `${safeDownloadStem(projectName)}_vector_layers.zip`
+  } else if (exportPayload?.format === "viewscape_base") {
+    fallback = `${safeDownloadStem(projectName)}_base_layers.zip`
+  } else if (exportPayload?.format === "viewscape_complete") {
+    fallback = `${safeDownloadStem(projectName)}_viewscape.zip`
   }
   const filename = safeDownloadFilename(
     responseFilename(response.headers.get?.("content-disposition") || response.headers["content-disposition"]),
@@ -1448,6 +1463,30 @@ export async function revokeShareLink(mapId, linkId) {
   const response = await client.delete(
     `/api/maps/${encodeURIComponent(mapId)}/share-links/${encodeURIComponent(linkId)}`
   )
+  return response.data.data
+}
+
+// --- Combined / Raster / Vector Web Tile Publishing APIs ---
+
+export async function publishWebTileMap(payload) {
+  const response = await client.post("/api/publish", payload)
+  return response.data.data
+}
+
+export async function listPublishedMaps(workspaceId = "") {
+  const params = workspaceId ? { workspace_id: workspaceId } : {}
+  const response = await client.get("/api/publish", { params })
+  return response.data.data?.published_maps || []
+}
+
+export async function revokePublishedMap(mapId) {
+  const response = await client.delete(`/api/publish/${encodeURIComponent(mapId)}`)
+  return response.data.data
+}
+
+export async function getPublishedMap(mapId, token = "") {
+  const params = token ? { token } : {}
+  const response = await client.get(`/api/published-maps/${encodeURIComponent(mapId)}`, { params })
   return response.data.data
 }
 

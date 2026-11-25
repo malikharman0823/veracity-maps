@@ -523,6 +523,15 @@ export default function ThreeGroupLayersPanel({
                         )}
                       </div>
 
+                      {(layer.metadata?.vector_tiles || layer.rendering_source?.vector_tiles) && (
+                        <span
+                          className="px-1 py-0.2 rounded text-[8.5px] font-mono font-bold bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] shrink-0"
+                          title="Local XYZ MVT Vector Tiles"
+                        >
+                          MVT
+                        </span>
+                      )}
+
                       <span className="text-[9.5px] font-mono text-neutral-400 shrink-0">
                         {layer.feature_count ?? 0}
                       </span>

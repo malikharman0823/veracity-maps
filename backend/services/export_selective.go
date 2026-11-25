@@ -27,18 +27,19 @@ type ZoomConfiguration struct {
 
 // SelectiveExportOptions controls what supporting assets and metadata are included in a project .zip package.
 type SelectiveExportOptions struct {
-	IncludeBuildingConfig   bool               `json:"include_building_configuration"`
-	IncludeControlPoints    bool               `json:"include_control_points"`
-	IncludeIcons            bool               `json:"include_icons"`
-	IncludeLayerStyles      bool               `json:"include_layer_styles"`
-	IncludeOriginalRasters  bool               `json:"include_original_rasters"`
-	IncludeProcessedRasters bool               `json:"include_processed_rasters"`
-	IncludeBaseMapSettings  bool               `json:"include_base_map_settings"`
-	IncludeProjectMetadata  bool               `json:"include_project_metadata"`
-	ZoomConfig              *ZoomConfiguration `json:"zoom_config,omitempty"`
-	TileSize                int                `json:"tile_size,omitempty"`
-	RasterFormat            string             `json:"raster_format,omitempty"`
-	ImageQuality            int                `json:"image_quality,omitempty"`
+	IncludeBuildingConfig   bool                     `json:"include_building_configuration"`
+	IncludeControlPoints    bool                     `json:"include_control_points"`
+	IncludeIcons            bool                     `json:"include_icons"`
+	IncludeLayerStyles      bool                     `json:"include_layer_styles"`
+	IncludeOriginalRasters  bool                     `json:"include_original_rasters"`
+	IncludeProcessedRasters bool                     `json:"include_processed_rasters"`
+	IncludeBaseMapSettings  bool                     `json:"include_base_map_settings"`
+	IncludeProjectMetadata  bool                     `json:"include_project_metadata"`
+	ZoomConfig              *ZoomConfiguration       `json:"zoom_config,omitempty"`
+	TileSize                int                      `json:"tile_size,omitempty"`
+	RasterFormat            string                   `json:"raster_format,omitempty"`
+	ImageQuality            int                      `json:"image_quality,omitempty"`
+	BaseLayerSources        []map[string]interface{} `json:"base_layer_sources,omitempty"`
 }
 
 // DefaultSelectiveExportOptions returns defaults for MBTiles-backed project .zip exports.
@@ -63,6 +64,7 @@ func DefaultSelectiveExportOptions() *SelectiveExportOptions {
 type SelectiveExportParams struct {
 	Format      string
 	ProjectName string
+	WorkspaceID string
 	BuildingIDs []string
 	FloorIDs    []string
 	LayerIDs    []string
@@ -129,6 +131,18 @@ func (s *ExportService) GenerateSelectiveExport(sessionID, primaryDatasetID stri
 	normFormat := strings.ToLower(strings.TrimSpace(params.Format))
 	if normFormat == "custom_local_tiles" || normFormat == "custom-local-tiles" || normFormat == "local_tiles" {
 		return s.GenerateCustomLocalTilesExport(sessionID, primaryDatasetID, params)
+	}
+	if normFormat == "viewscape_raster" || normFormat == "raster_layers" {
+		return s.GenerateViewscapeExport(sessionID, primaryDatasetID, params, ViewscapeModeRaster)
+	}
+	if normFormat == "viewscape_vector" || normFormat == "vector_layers" {
+		return s.GenerateViewscapeExport(sessionID, primaryDatasetID, params, ViewscapeModeVector)
+	}
+	if normFormat == "viewscape_base" || normFormat == "base_layers" {
+		return s.GenerateViewscapeExport(sessionID, primaryDatasetID, params, ViewscapeModeBase)
+	}
+	if normFormat == "viewscape_complete" || normFormat == "complete_viewscape" || normFormat == "viewscape" {
+		return s.GenerateViewscapeExport(sessionID, primaryDatasetID, params, ViewscapeModeComplete)
 	}
 	if normFormat == "base_layer" || normFormat == "basemap" {
 		return s.exportBaseLayerFile(primaryDs, exportDir)

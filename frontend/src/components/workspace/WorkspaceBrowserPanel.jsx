@@ -493,31 +493,15 @@ export default function WorkspaceBrowserPanel({
           )}
         </TreeSection>
 
-        <TreeSection id="map_services" label="Map Services" icon={Radio} count={mapViews.length || 6}>
-          {(mapViews.length > 0
-            ? mapViews.filter((v) => (v.type || v.view_type) !== "custom")
-            : [
-                { type: "world", name: "World Map (OSM)" },
-                { type: "satellite", name: "Satellite Imagery" },
-                { type: "streets", name: "Streets" },
-                { type: "terrain", name: "Terrain" },
-                { type: "light", name: "Light Basemap" },
-                { type: "dark", name: "Dark Basemap" },
-              ]
-          ).map((svc, idx) => {
-            const vType = svc.type || svc.view_type || `svc_${idx}`
-            return (
-              <button
-                key={vType}
-                type="button"
-                onClick={() => onSelectMapView?.(vType)}
-                className="w-full text-left flex items-center justify-between gap-1 px-1.5 py-1 rounded-[3px] hover:bg-neutral-200/70 dark:hover:bg-[#303030] text-[11px] cursor-pointer"
-              >
-                <span className="truncate">{svc.name}</span>
-                <Eye className="size-3 text-neutral-400 shrink-0" />
-              </button>
-            )
-          })}
+        <TreeSection id="map_services" label="Map Services" icon={Radio} count={1}>
+          <button
+            type="button"
+            onClick={() => onSelectMapView?.("world")}
+            className="w-full text-left flex items-center justify-between gap-1 px-1.5 py-1 rounded-[3px] hover:bg-neutral-200/70 dark:hover:bg-[#303030] text-[11px] cursor-pointer"
+          >
+            <span className="truncate">Default World Map (OSM)</span>
+            <Eye className="size-3 text-neutral-400 shrink-0" />
+          </button>
         </TreeSection>
 
         <TreeSection

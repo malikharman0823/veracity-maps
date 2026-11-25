@@ -16,6 +16,7 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/processing"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
+	"github.com/malikharman0823/veracity-maps/functions/publish"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/functions/workspaceregistry"
 	"github.com/malikharman0823/veracity-maps/models"
@@ -40,6 +41,19 @@ type Router struct {
 	procH      *processing.Handler
 	baseLayerH *baselayers.Handler
 	wsRegH     *workspaceregistry.Handler
+	publishH   *publish.Handler
+}
+
+func (rt *Router) SetPublishHandler(ph *publish.Handler) {
+	rt.publishH = ph
+	if ph != nil && ph.GetService() != nil {
+		if rt.gisH != nil {
+			ph.GetService().SetGISService(rt.gisH.GetService())
+		}
+		if rt.mapsH != nil {
+			ph.GetService().SetMapRepo(rt.mapsH.GetMapRepo())
+		}
+	}
 }
 
 func (rt *Router) SetMapsHandler(mh *maps.Handler) {
@@ -62,6 +76,9 @@ func (rt *Router) SetBaseLayerHandler(blh *baselayers.Handler) {
 	rt.baseLayerH = blh
 	if blh != nil && rt.mapsH != nil {
 		blh.GetService().SetMapRepo(rt.mapsH.GetMapRepo())
+	}
+	if blh != nil && rt.exportH != nil && rt.exportH.GetService() != nil {
+		rt.exportH.GetService().SetBaseLayerService(blh.GetService())
 	}
 }
 
@@ -87,6 +104,9 @@ func (rt *Router) SetGISHandler(gh *gis.Handler) {
 		rt.procH = processing.NewHandler(services.NewProcessingService(repository.NewMemoryProcessingRepository(), gh.GetService(), mr, rt.repo, ""))
 		if rt.wsRegH != nil {
 			rt.wsRegH.GetService().SetGISService(gh.GetService())
+		}
+		if rt.exportH != nil && rt.exportH.GetService() != nil {
+			rt.exportH.GetService().SetGISService(gh.GetService())
 		}
 	}
 }
@@ -241,6 +261,105 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		if token != "" {
 			rt.mapsH.ResolveShareLink(w, r, token)
 			return
+		}
+	}
+
+	// 1a-publish. Combined / Raster / Vector Web Tile Publishing Endpoints
+	//   POST   /api/publish
+	//   GET    /api/publish
+	//   DELETE /api/publish/{map_id}
+	//   POST   /api/publish/{map_id}/revoke
+	//   GET    /api/published-maps/{map_id}
+	//   GET    /maps/{map_id}              (published map_id starting with pub_)
+	//   GET    /maps/{map_id}/style.json
+	//   GET    /tiles/{map_id}/{layer_type}/{layer_id}/metadata.json
+	//   GET    /tiles/{map_id}/raster/{layer_id}/{z}/{x}/{y}.{png|jpg}
+	//   GET    /tiles/{map_id}/vector/{layer_id}/{z}/{x}/{y}.pbf
+	if rt.publishH != nil {
+		if path == "/api/publish" || path == "/publish" {
+			user := GetUser(r)
+			if r.Method == http.MethodPost {
+				rt.publishH.Publish(w, r, user, "")
+				return
+			}
+			if r.Method == http.MethodGet {
+				rt.publishH.ListPublished(w, r, user, "")
+				return
+			}
+		}
+		if strings.HasPrefix(path, "/api/publish/") || strings.HasPrefix(path, "/publish/") {
+			rem := strings.TrimPrefix(path, "/api/publish/")
+			rem = strings.TrimPrefix(rem, "/publish/")
+			parts := strings.Split(rem, "/")
+			user := GetUser(r)
+			if len(parts) == 1 && parts[0] != "" {
+				rt.publishH.Revoke(w, r, user, parts[0])
+				return
+			}
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "revoke" {
+				rt.publishH.Revoke(w, r, user, parts[0])
+				return
+			}
+		}
+		if strings.HasPrefix(path, "/api/published-maps/") {
+			mapID := strings.TrimPrefix(path, "/api/published-maps/")
+			if mapID != "" && !strings.Contains(mapID, "/") {
+				rt.publishH.GetPublishedMap(w, r, GetUser(r), mapID, true)
+				return
+			}
+		}
+		if strings.HasPrefix(path, "/tiles/") || strings.HasPrefix(path, "/api/tiles/") {
+			rem := strings.TrimPrefix(path, "/api/tiles/")
+			rem = strings.TrimPrefix(rem, "/tiles/")
+			parts := strings.Split(rem, "/")
+			// /tiles/{map_id}/{layer_type}/{layer_id}/metadata.json
+			if len(parts) == 4 && parts[3] == "metadata.json" {
+				rt.publishH.GetLayerMetadata(w, r, GetUser(r), parts[0], parts[1], parts[2])
+				return
+			}
+			// /tiles/{map_id}/composite/{z}/{x}/{y}.png (Viewscape-compatible composite PNG tile)
+			if len(parts) == 5 && parts[1] == "composite" {
+				rt.publishH.ServeCompositeTile(w, r, GetUser(r), parts[0], parts[2], parts[3], parts[4])
+				return
+			}
+			// /tiles/{map_id}/{layer_type}/{layer_id}/{z}/{x}/{y}.{ext}
+			if len(parts) == 6 && (parts[1] == "raster" || parts[1] == "vector") {
+				rt.publishH.ServePublishedTile(w, r, GetUser(r), parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
+				return
+			}
+		}
+		if path == "/favicon.ico" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if strings.HasPrefix(path, "/static/maplibre/") {
+			rt.publishH.ServeStaticMapLibre(w, r, strings.TrimPrefix(path, "/static/maplibre/"))
+			return
+		}
+		if strings.HasPrefix(path, "/maps/") || strings.HasPrefix(path, "/api/maps/") {
+			rem := strings.TrimPrefix(path, "/api/maps/")
+			rem = strings.TrimPrefix(rem, "/maps/")
+			parts := strings.Split(rem, "/")
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "style.json" {
+				rt.publishH.GetStyleJSON(w, r, GetUser(r), parts[0])
+				return
+			}
+			if len(parts) == 3 && parts[0] != "" && parts[1] == "download" && (parts[2] == "pbf" || parts[2] == "tile.pbf") {
+				rt.publishH.DownloadPublishedPBF(w, r, GetUser(r), parts[0], parts[2] == "tile.pbf")
+				return
+			}
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "publish" && r.Method == http.MethodPost {
+				rt.publishH.Publish(w, r, GetUser(r), parts[0])
+				return
+			}
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "published" && r.Method == http.MethodGet {
+				rt.publishH.ListPublished(w, r, GetUser(r), parts[0])
+				return
+			}
+			if len(parts) == 1 && strings.HasPrefix(parts[0], "pub_") && r.Method == http.MethodGet {
+				rt.publishH.GetPublishedMap(w, r, GetUser(r), parts[0], strings.HasPrefix(path, "/api/"))
+				return
+			}
 		}
 	}
 
@@ -1221,6 +1340,21 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Local Vector Tiles endpoints:
+		//   GET /datasets/{id}/vector-tiles/{layerSlug}/{z}/{x}/{y}.pbf
+		//   GET /datasets/{id}/vector-tiles/{layerSlug}/metadata.json
+		//   GET /datasets/{id}/vector-tiles/{layerSlug}/style.json
+		if parts[1] == "vector-tiles" {
+			if len(parts) == 4 && (parts[3] == "metadata.json" || parts[3] == "style.json") {
+				rt.datasetsH.ServeVectorTileAsset(w, r, datasetID, parts[2], parts[3])
+				return
+			}
+			if len(parts) == 6 {
+				rt.datasetsH.ServeVectorTile(w, r, datasetID, parts[2], parts[3], parts[4], parts[5])
+				return
+			}
+		}
+
 		if len(parts) >= 5 && parts[1] == "vector" {
 			if len(parts) == 5 {
 				rt.datasetsH.ServeTile(w, r, datasetID, parts[2], parts[3], parts[4])
@@ -1838,6 +1972,10 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	if serveSPA(w, r) {
+		return
 	}
 
 	models.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Endpoint not found: "+r.URL.Path, nil, nil)

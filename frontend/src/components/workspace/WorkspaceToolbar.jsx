@@ -264,54 +264,6 @@ export default function WorkspaceToolbar({
       </button>
       <ToolBtn icon={Globe} label="Coordinate System (CRS)" shortcut={shortcutFor("crs_manager")} onClick={onOpenCRSModal} />
 
-      <Sep />
-
-      {/* 7. Base Layer & Map View Switcher */}
-      <div className="flex items-center gap-1 shrink-0">
-        <select
-          aria-label="Map View Mode"
-          title="Switch Base Map View"
-          value={currentViewType}
-          onChange={(e) => {
-            const val = e.target.value
-            if (val === "custom" && (!activeBaseLayer || activeBaseLayer.is_default)) {
-              onOpenBaseLayerModal?.()
-              return
-            }
-            onSelectMapView?.(val)
-          }}
-          className="h-7 px-2 rounded-[4px] border border-neutral-300 dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] text-[11px] font-medium text-neutral-800 dark:text-neutral-100 outline-none focus:border-[#3ecf8e] cursor-pointer"
-        >
-          {(mapViews.length > 0
-            ? mapViews
-            : [
-                { type: "world", name: "World Map" },
-                { type: "satellite", name: "Satellite" },
-                { type: "streets", name: "Streets" },
-                { type: "terrain", name: "Terrain" },
-                { type: "light", name: "Light" },
-                { type: "dark", name: "Dark" },
-                { type: "custom", name: "Custom Base" },
-              ]
-          ).map((mv, idx) => {
-            const vType = mv.type || mv.view_type || `view_${idx}`
-            return (
-              <option key={vType} value={vType}>
-                {vType === "custom" && activeBaseLayer && !activeBaseLayer.is_default
-                  ? `Custom: ${activeBaseLayer.name}`
-                  : mv.name}
-              </option>
-            )
-          })}
-        </select>
-        <ToolBtn
-          icon={Compass}
-          label="Base Layer Selector"
-          shortcut={shortcutFor("base_layer")}
-          onClick={onOpenBaseLayerModal}
-        />
-      </div>
-
       {/* Right-aligned Dock Panel Toggles & Shortcuts */}
       <div className="ml-auto flex items-center gap-0.5 pl-2 shrink-0">
         <ToolBtn

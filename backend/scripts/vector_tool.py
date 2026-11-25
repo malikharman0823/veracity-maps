@@ -882,6 +882,444 @@ def reproject_raster_file(src_path, dst_path, source_crs, target_crs):
         return {"success": False, "error": str(e)}
 
 
+def _slugify_layer_name(name):
+    import re
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "layer").strip())
+    s = s.strip("._-").lower()
+    if len(s) > 80:
+        s = s[:80]
+    return s or "layer"
+
+
+def _build_vector_tile_style(layer_slug, display_name, geom_type, color="#3ecf8e", fields=None, min_zoom=0, max_zoom=14):
+    """Generates a MapLibre-compatible style.json with interactive point/line/polygon layers."""
+    gt = (geom_type or "").lower()
+    popup_fields = [f["name"] for f in (fields or []) if isinstance(f, dict) and f.get("name") and not str(f["name"]).startswith("_")]
+    layers = []
+
+    if "polygon" in gt or gt in ("geometry", "unknown", ""):
+        layers.append({
+            "id": f"{layer_slug}-fill",
+            "type": "fill",
+            "source": layer_slug,
+            "source-layer": layer_slug,
+            "filter": ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+            "paint": {
+                "fill-color": color,
+                "fill-opacity": 0.28,
+                "fill-outline-color": color,
+            },
+        })
+    if "line" in gt or "polygon" in gt or gt in ("geometry", "unknown", ""):
+        layers.append({
+            "id": f"{layer_slug}-line",
+            "type": "line",
+            "source": layer_slug,
+            "source-layer": layer_slug,
+            "filter": ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+            "paint": {
+                "line-color": color,
+                "line-width": 2.2,
+                "line-opacity": 0.92,
+            },
+        })
+    if "point" in gt or gt in ("geometry", "unknown", ""):
+        layers.append({
+            "id": f"{layer_slug}-circle",
+            "type": "circle",
+            "source": layer_slug,
+            "source-layer": layer_slug,
+            "filter": ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+            "paint": {
+                "circle-color": color,
+                "circle-radius": [
+                    "interpolate", ["linear"], ["zoom"],
+                    3, 4,
+                    8, 5.5,
+                    12, 7,
+                    16, 9.5,
+                ],
+                "circle-stroke-color": "#ffffff",
+                "circle-stroke-width": 2,
+                "circle-opacity": 0.95,
+            },
+        })
+
+    return {
+        "version": 8,
+        "name": display_name or layer_slug,
+        "source_layer": layer_slug,
+        "geometry_type": geom_type or "Geometry",
+        "minzoom": int(min_zoom),
+        "maxzoom": int(max_zoom),
+        "color": color,
+        "interaction": {
+            "interactive": True,
+            "clickable": True,
+            "hoverable": True,
+            "promote_id": "feature_id",
+            "source_layer": layer_slug,
+            "popup_fields": popup_fields,
+            "hover_highlight": {
+                "circle_radius_boost": 2.5,
+                "circle_stroke_color": "#facc15",
+                "circle_stroke_width": 3,
+                "line_color": "#facc15",
+                "line_width": 4,
+                "fill_opacity": 0.45,
+            },
+        },
+        "layers": layers,
+    }
+
+
+def _convert_single_layer_to_mvt(src_path, layer_root_dir, layer_name=None, min_zoom=0, max_zoom=14, color="#3ecf8e"):
+    """
+    Converts a single vector layer into:
+      <layer_root_dir>/
+        metadata.json
+        style.json
+        tiles/
+          {z}/{x}/{y}.pbf
+    Reprojects geometries to EPSG:3857 for MVT tile generation while preserving
+    original CRS in metadata, feature IDs, geometry types, and all attributes.
+    """
+    if not HAS_PYOGRIO or not HAS_GEOPANDAS:
+        return {"success": False, "error": "pyogrio and geopandas required for vector tile generation"}
+    if not os.path.exists(src_path):
+        return {"success": False, "error": f"Source file does not exist: {src_path}"}
+
+    ext = os.path.splitext(src_path)[1].lower()
+    read_kwargs = {"fid_as_index": True}
+    actual_layer_name = layer_name
+    if layer_name and ext in (".gpkg", ".kml", ".gml", ".fgb"):
+        try:
+            available_layers = [str(r[0]) for r in pyogrio.list_layers(src_path)]
+            if layer_name in available_layers:
+                read_kwargs["layer"] = layer_name
+                actual_layer_name = layer_name
+            else:
+                target_low = layer_name.lower().replace("-", "_").replace(" ", "_")
+                for av in available_layers:
+                    av_low = av.lower().replace("-", "_").replace(" ", "_")
+                    if av_low == target_low or target_low in av_low or av_low in target_low:
+                        read_kwargs["layer"] = av
+                        actual_layer_name = av
+                        break
+        except Exception:
+            pass
+
+    source_crs = ""
+    try:
+        info_kwargs = {"layer": read_kwargs["layer"]} if "layer" in read_kwargs else {}
+        info = pyogrio.read_info(src_path, force_feature_count=True, **info_kwargs)
+        source_crs = normalize_crs_str(info.get("crs"))
+    except Exception:
+        info = {}
+
+    try:
+        gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
+    except Exception:
+        read_kwargs.pop("fid_as_index", None)
+        gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
+
+    # Handle non-spatial attribute tables with lat/lon columns
+    has_geom = hasattr(gdf, "geometry") and gdf.geometry is not None and gdf._geometry_column_name in gdf.columns
+    if not has_geom:
+        lat_col, lon_col = detect_lat_lon_columns(list(gdf.columns))
+        if lat_col and lon_col and HAS_SHAPELY:
+            pts = []
+            valid_mask = []
+            for _, row in gdf.iterrows():
+                try:
+                    lat_v = float(row[lat_col])
+                    lon_v = float(row[lon_col])
+                    if math.isfinite(lat_v) and math.isfinite(lon_v) and -90 <= lat_v <= 90 and -180 <= lon_v <= 180:
+                        pts.append(Point(lon_v, lat_v))
+                        valid_mask.append(True)
+                    else:
+                        valid_mask.append(False)
+                except Exception:
+                    valid_mask.append(False)
+            gdf = gdf.loc[valid_mask].copy()
+            gdf = gpd.GeoDataFrame(gdf, geometry=pts, crs="EPSG:4326")
+            source_crs = source_crs or "EPSG:4326"
+            has_geom = True
+        else:
+            return {"success": False, "error": f"Layer '{actual_layer_name or src_path}' has no geometry"}
+
+    if gdf.empty:
+        return {"success": False, "error": "Vector dataset contains 0 features"}
+
+    if not source_crs and gdf.crs is not None:
+        source_crs = normalize_crs_str(gdf.crs)
+    if not source_crs:
+        source_crs = "EPSG:4326"
+    if gdf.crs is None:
+        gdf = gdf.set_crs(source_crs, allow_override=True)
+
+    # Preserve original feature IDs cleanly in attributes for MVT queryRenderedFeatures
+    orig_fids = [str(idx) for idx in gdf.index.tolist()]
+    gdf = gdf.reset_index(drop=True)
+    if "feature_id" not in gdf.columns:
+        gdf["feature_id"] = orig_fids
+    gdf["_source_feature_id"] = orig_fids
+    layer_slug = _slugify_layer_name(actual_layer_name or os.path.splitext(os.path.basename(src_path))[0])
+    gdf["_source_layer"] = layer_slug
+
+    # Force 2D and repair invalid geometries (vectorized for high throughput on large GeoPackages)
+    geom_col = gdf.geometry.name
+    gdf = gdf[gdf[geom_col].notnull() & ~gdf[geom_col].is_empty].copy()
+    if gdf.empty:
+        return {"success": False, "error": "Vector dataset contains 0 valid non-empty geometries"}
+
+    if HAS_SHAPELY and hasattr(shapely, "force_2d"):
+        try:
+            gdf[geom_col] = shapely.force_2d(gdf[geom_col].values)
+        except Exception:
+            gdf[geom_col] = gdf[geom_col].apply(lambda g: shapely.force_2d(g) if g is not None and not g.is_empty else g)
+
+    # Detect all geometry types present (vectorized unique)
+    observed_types = []
+    seen_t = set()
+    for gt in gdf[geom_col].geom_type.unique().tolist():
+        norm_t = normalize_geom_type(gt)
+        if norm_t not in seen_t:
+            seen_t.add(norm_t)
+            observed_types.append(norm_t)
+
+    # Only run make_valid on non-point layers if any invalid geometries exist
+    if HAS_SHAPELY and hasattr(shapely, "make_valid") and not set(observed_types).issubset({"Point", "MultiPoint"}):
+        try:
+            invalid_mask = ~gdf[geom_col].is_valid
+            if invalid_mask.any():
+                gdf.loc[invalid_mask, geom_col] = shapely.make_valid(gdf.loc[invalid_mask, geom_col].values)
+        except Exception:
+            pass
+
+    primary_geom_type = observed_types[0] if len(observed_types) == 1 else (
+        "Point" if set(observed_types).issubset({"Point", "MultiPoint"}) else
+        "LineString" if set(observed_types).issubset({"LineString", "MultiLineString"}) else
+        "Polygon" if set(observed_types).issubset({"Polygon", "MultiPolygon"}) else
+        "Geometry"
+    )
+
+    # Compute WGS84 bounds for metadata and MapLibre source bounds
+    gdf_wgs84 = gdf.to_crs("EPSG:4326") if gdf.crs.to_epsg() != 4326 else gdf
+    tb = gdf_wgs84.total_bounds
+    wgs84_bounds = [float(tb[0]), float(tb[1]), float(tb[2]), float(tb[3])] if len(tb) == 4 and all(math.isfinite(x) for x in tb) else None
+
+    # Reproject explicitly to EPSG:3857 for MVT tile generation
+    gdf_3857 = gdf.to_crs("EPSG:3857") if gdf.crs.to_epsg() != 3857 else gdf
+
+    # Collect attribute schema and sanitize non-serializable types (vectorized)
+    fields_meta = []
+    for col in gdf_3857.columns:
+        if col == geom_col:
+            continue
+        dt = str(gdf_3857[col].dtype).lower()
+        norm_t = "string"
+        if "int" in dt:
+            norm_t = "integer"
+        elif "float" in dt or "double" in dt:
+            norm_t = "float"
+        elif "bool" in dt:
+            norm_t = "boolean"
+        if not str(col).startswith("_"):
+            fields_meta.append({"name": str(col), "type": norm_t})
+        if "datetime" in dt or "object" in dt:
+            gdf_3857[col] = gdf_3857[col].fillna("").astype(str)
+
+    # Adaptive max zoom keeps large/wide-extent GeoPackages fast while MapLibre overzooms cleanly to z24
+    max_zoom_val = min(max(int(max_zoom), 0), 14)
+    if wgs84_bounds and len(wgs84_bounds) == 4:
+        span = max(abs(wgs84_bounds[2] - wgs84_bounds[0]), abs(wgs84_bounds[3] - wgs84_bounds[1]))
+        if span > 10.0:
+            max_zoom_val = min(max_zoom_val, 6)
+        elif span > 2.0:
+            max_zoom_val = min(max_zoom_val, 8)
+        elif span > 0.25:
+            max_zoom_val = min(max_zoom_val, 10)
+        else:
+            max_zoom_val = min(max_zoom_val, 12)
+    if len(gdf_3857) > 10000:
+        max_zoom_val = min(max_zoom_val, 6)
+    elif len(gdf_3857) > 5000:
+        max_zoom_val = min(max_zoom_val, 8)
+    min_zoom_val = min(max(int(min_zoom), 0), max_zoom_val)
+
+    # Prepare <layer_root_dir>/tiles directory (GDAL MVT creates the target dir)
+    tiles_dir = os.path.join(layer_root_dir, "tiles")
+    shutil.rmtree(tiles_dir, ignore_errors=True)
+    os.makedirs(layer_root_dir, exist_ok=True)
+
+    pyogrio.write_dataframe(
+        gdf_3857,
+        tiles_dir,
+        driver="MVT",
+        layer=layer_slug,
+        MINZOOM=min_zoom_val,
+        MAXZOOM=max_zoom_val,
+        COMPRESS="YES",
+    )
+
+    tile_count = 0
+    zoom_levels = set()
+    for root, dirs, files in os.walk(tiles_dir):
+        for f in files:
+            if f.endswith(".pbf") or f.endswith(".mvt"):
+                tile_count += 1
+                rel = os.path.relpath(os.path.join(root, f), tiles_dir)
+                parts = rel.replace("\\", "/").split("/")
+                if len(parts) >= 3 and parts[0].isdigit():
+                    zoom_levels.add(int(parts[0]))
+
+    # Remove GDAL's internal tiles/metadata.json so tiles/ only holds z/x/y.pbf
+    gdal_meta_path = os.path.join(tiles_dir, "metadata.json")
+    gdal_tile_meta = None
+    if os.path.exists(gdal_meta_path):
+        try:
+            with open(gdal_meta_path, "r", encoding="utf-8") as mf:
+                gdal_tile_meta = json.load(mf)
+        except Exception:
+            pass
+        try:
+            os.remove(gdal_meta_path)
+        except Exception:
+            pass
+
+    center = None
+    if wgs84_bounds and len(wgs84_bounds) == 4:
+        center = [(wgs84_bounds[0] + wgs84_bounds[2]) / 2.0, (wgs84_bounds[1] + wgs84_bounds[3]) / 2.0]
+
+    metadata_doc = {
+        "layer_slug": layer_slug,
+        "layer_name": actual_layer_name or layer_slug,
+        "source_layer": layer_slug,
+        "format": "pbf",
+        "encoding": "gzip",
+        "tile_scheme": "xyz",
+        "tile_crs": "EPSG:3857",
+        "source_crs": source_crs,
+        "bounds_crs": "EPSG:4326",
+        "bounds": wgs84_bounds,
+        "center": center,
+        "min_zoom": min_zoom_val,
+        "max_zoom": max_zoom_val,
+        "available_zooms": sorted(zoom_levels),
+        "geometry_type": primary_geom_type,
+        "geometry_types": observed_types,
+        "feature_count": int(len(gdf_3857)),
+        "tile_count": tile_count,
+        "fields": fields_meta,
+        "promote_id": "feature_id",
+        "interactive": True,
+        "tiles_path": "tiles/{z}/{x}/{y}.pbf",
+        "style_path": "style.json",
+    }
+    if gdal_tile_meta is not None:
+        metadata_doc["mvt_generator_metadata"] = gdal_tile_meta
+
+    metadata_path = os.path.join(layer_root_dir, "metadata.json")
+    with open(metadata_path, "w", encoding="utf-8") as mf:
+        json.dump(metadata_doc, mf, indent=2)
+
+    style_doc = _build_vector_tile_style(
+        layer_slug=layer_slug,
+        display_name=actual_layer_name or layer_slug,
+        geom_type=primary_geom_type,
+        color=color,
+        fields=fields_meta,
+        min_zoom=min_zoom_val,
+        max_zoom=max_zoom_val,
+    )
+    style_path = os.path.join(layer_root_dir, "style.json")
+    with open(style_path, "w", encoding="utf-8") as sf:
+        json.dump(style_doc, sf, indent=2)
+
+    return {
+        "success": True,
+        "layer_slug": layer_slug,
+        "layer_name": actual_layer_name or layer_slug,
+        "source_layer": layer_slug,
+        "source_crs": source_crs,
+        "tile_crs": "EPSG:3857",
+        "geometry_type": primary_geom_type,
+        "geometry_types": observed_types,
+        "feature_count": int(len(gdf_3857)),
+        "tile_count": tile_count,
+        "bounds": wgs84_bounds,
+        "center": center,
+        "min_zoom": min_zoom_val,
+        "max_zoom": max_zoom_val,
+        "fields": fields_meta,
+        "layer_dir": layer_root_dir,
+        "tiles_dir": tiles_dir,
+        "metadata_path": metadata_path,
+        "style_path": style_path,
+    }
+
+
+def convert_gpkg_to_vector_tiles(src_path, vector_tiles_root, layer_names=None, min_zoom=0, max_zoom=14):
+    """
+    Converts all (or specified) internal vector layers of a GeoPackage or vector dataset into:
+      <vector_tiles_root>/
+        <layer_slug>/
+          metadata.json
+          style.json
+          tiles/{z}/{x}/{y}.pbf
+    """
+    try:
+        if not HAS_PYOGRIO or not HAS_GEOPANDAS:
+            return {"success": False, "error": "pyogrio and geopandas required for vector tile generation"}
+        if not os.path.exists(src_path):
+            return {"success": False, "error": f"Source file does not exist: {src_path}"}
+
+        os.makedirs(vector_tiles_root, exist_ok=True)
+        palette = ["#3ecf8e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#ef4444", "#84cc16"]
+
+        target_layers = []
+        if layer_names:
+            target_layers = [ln.strip() for ln in layer_names if ln and ln.strip()]
+        else:
+            try:
+                raw_lyrs = pyogrio.list_layers(src_path)
+                target_layers = [str(r[0]) for r in raw_lyrs if r is not None and len(r) > 0]
+            except Exception:
+                target_layers = [None]
+
+        results = []
+        errors = []
+        for idx, lname in enumerate(target_layers):
+            slug = _slugify_layer_name(lname or os.path.splitext(os.path.basename(src_path))[0])
+            layer_dir = os.path.join(vector_tiles_root, slug)
+            color = palette[idx % len(palette)]
+            res = _convert_single_layer_to_mvt(
+                src_path=src_path,
+                layer_root_dir=layer_dir,
+                layer_name=lname,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+                color=color,
+            )
+            if res.get("success"):
+                results.append(res)
+            else:
+                errors.append({"layer_name": lname or slug, "error": res.get("error", "conversion failed")})
+
+        if not results:
+            return {"success": False, "error": errors[0]["error"] if errors else "No vector layers could be converted", "errors": errors}
+
+        return {
+            "success": True,
+            "vector_tiles_root": vector_tiles_root,
+            "layers": results,
+            "errors": errors,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zoom=16):
     try:
         if not HAS_PYOGRIO or not HAS_GEOPANDAS:
@@ -894,7 +1332,7 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
         parent_dir = os.path.dirname(os.path.abspath(out_dir))
         os.makedirs(parent_dir, exist_ok=True)
 
-        read_kwargs = {}
+        read_kwargs = {"fid_as_index": True}
         if layer_name:
             # Check if layer_name matches an actual layer in the GeoPackage/vector container
             try:
@@ -911,12 +1349,26 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
             except Exception:
                 pass
 
-        gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
+        try:
+            gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
+        except Exception:
+            read_kwargs.pop("fid_as_index", None)
+            gdf = pyogrio.read_dataframe(src_path, **read_kwargs)
         if gdf.empty:
             return {"success": False, "error": "Vector dataset contains 0 features"}
 
-        if gdf.crs is not None and not gdf.crs.equals("EPSG:4326"):
-            gdf = gdf.to_crs("EPSG:4326")
+        orig_fids = [str(idx) for idx in gdf.index.tolist()]
+        gdf = gdf.reset_index(drop=True)
+        if "feature_id" not in gdf.columns:
+            gdf["feature_id"] = orig_fids
+        gdf["_source_feature_id"] = orig_fids
+
+        layer_slug = _slugify_layer_name(layer_name or os.path.basename(os.path.normpath(out_dir)))
+        gdf["_source_layer"] = layer_slug
+
+        source_crs = normalize_crs_str(gdf.crs) if gdf.crs is not None else "EPSG:4326"
+        if gdf.crs is None:
+            gdf = gdf.set_crs("EPSG:4326", allow_override=True)
 
         def _to_2d(geom):
             if geom is None or geom.is_empty:
@@ -951,6 +1403,9 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
                 if "datetime" in dt or "object" in dt:
                     gdf[col] = gdf[col].astype(str)
 
+        gdf_wgs84 = gdf.to_crs("EPSG:4326") if gdf.crs.to_epsg() != 4326 else gdf
+        gdf_3857 = gdf.to_crs("EPSG:3857") if gdf.crs.to_epsg() != 3857 else gdf
+
         # In standard MVT specifications (Mapbox/MapLibre), vector tiles are generated up to
         # zoom 14 (or 15). MapLibre GL natively overzooms vector tiles smoothly to zoom 24+
         # with zero distortion, avoiding exponential tile generation beyond zoom 14.
@@ -960,9 +1415,10 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
             min_zoom_val = 0
 
         pyogrio.write_dataframe(
-            gdf,
+            gdf_3857,
             out_dir,
             driver="MVT",
+            layer=layer_slug,
             MINZOOM=min_zoom_val,
             MAXZOOM=max_zoom_val,
             COMPRESS="YES",
@@ -975,13 +1431,12 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
                     tile_count += 1
 
         # Also write GeoJSON for this vector layer into sibling geojson directory
-        layer_slug = os.path.basename(os.path.normpath(out_dir))
         geojson_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(out_dir))), "geojson")
         os.makedirs(geojson_dir, exist_ok=True)
         geojson_path = os.path.join(geojson_dir, f"{layer_slug}.geojson")
         has_geojson = False
         try:
-            gdf.to_file(geojson_path, driver="GeoJSON")
+            gdf_wgs84.to_file(geojson_path, driver="GeoJSON")
             has_geojson = os.path.exists(geojson_path)
         except Exception:
             pass
@@ -989,13 +1444,253 @@ def generate_vector_tiles(src_path, out_dir, layer_name=None, min_zoom=0, max_zo
         return {
             "success": True,
             "layer_name": layer_name or layer_slug,
-            "feature_count": len(gdf),
+            "source_layer": layer_slug,
+            "source_crs": source_crs,
+            "feature_count": len(gdf_3857),
             "tile_count": tile_count,
             "geometry_type": geom_type,
             "geojson_file": geojson_path if has_geojson else "",
-            "min_zoom": int(min_zoom),
-            "max_zoom": int(max_zoom),
+            "min_zoom": min_zoom_val,
+            "max_zoom": max_zoom_val,
             "out_dir": out_dir,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _parse_hex_rgba(hex_color, opacity=1.0):
+    c = str(hex_color or "#3ecf8e").strip().lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    if len(c) != 6:
+        c = "3ecf8e"
+    try:
+        r = int(c[0:2], 16)
+        g = int(c[2:4], 16)
+        b = int(c[4:6], 16)
+    except Exception:
+        r, g, b = 62, 207, 142
+    a = max(0, min(255, int(round(float(opacity) * 255.0))))
+    return (r, g, b, a)
+
+
+def _lonlat_to_tile(lon, lat, z):
+    lat_c = max(-85.05112878, min(85.05112878, lat))
+    n = 2 ** z
+    x = int(math.floor((lon + 180.0) / 360.0 * n))
+    lat_rad = math.radians(lat_c)
+    y = int(math.floor((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n))
+    return max(0, min(n - 1, x)), max(0, min(n - 1, y))
+
+
+def _tile_bounds_3857(z, x, y):
+    ORIGIN_SHIFT = 20037508.342789244
+    n = 2 ** z
+    tile_span = (2.0 * ORIGIN_SHIFT) / n
+    minx = -ORIGIN_SHIFT + x * tile_span
+    maxx = minx + tile_span
+    maxy = ORIGIN_SHIFT - y * tile_span
+    miny = maxy - tile_span
+    return (minx, miny, maxx, maxy)
+
+
+def rasterize_vector_layer_to_tiles(
+    filepath,
+    out_root,
+    layer_name=None,
+    min_zoom=0,
+    max_zoom=12,
+    tile_format="png",
+    color_hex="#3ecf8e",
+    fill_opacity=0.35,
+    stroke_width=2.0,
+):
+    """Rasterizes polygon/line features of a vector layer into per-tile 256x256 PNG/JPG XYZ tiles
+    (extensionless {z}/{x}/{y} matching MapTiler Engine reference format) and exports point features
+    to a clean EPSG:4326 GeoJSON FeatureCollection."""
+    if not HAS_GEOPANDAS or not HAS_SHAPELY:
+        return {"success": False, "error": "geopandas and shapely are required"}
+    try:
+        from PIL import Image, ImageDraw
+        from shapely.strtree import STRtree
+    except Exception as e:
+        return {"success": False, "error": f"Pillow / STRtree unavailable: {e}"}
+
+    try:
+        read_kwargs = {}
+        if layer_name:
+            read_kwargs["layer"] = layer_name
+        gdf = gpd.read_file(filepath, **read_kwargs)
+        if gdf is None or len(gdf) == 0:
+            return {"success": True, "has_raster_tiles": False, "has_points": False, "tile_count": 0, "point_count": 0}
+
+        gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty].copy()
+        if len(gdf) == 0:
+            return {"success": True, "has_raster_tiles": False, "has_points": False, "tile_count": 0, "point_count": 0}
+
+        if gdf.crs is None:
+            gdf = gdf.set_crs("EPSG:4326")
+        gdf_wgs84 = gdf.to_crs("EPSG:4326")
+        gdf_3857 = gdf_wgs84.to_crs("EPSG:3857")
+
+        base_name = layer_name or os.path.splitext(os.path.basename(filepath))[0]
+        layer_slug = "".join(ch if (ch.isalnum() or ch in ("_", "-")) else "_" for ch in base_name.strip().lower()).strip("_") or "layer"
+
+        # Split into Points vs Polygons/Lines
+        point_mask = gdf_wgs84.geometry.geom_type.isin(["Point", "MultiPoint"])
+        gdf_points = gdf_wgs84[point_mask]
+        gdf_shapes_3857 = gdf_3857[~point_mask]
+        gdf_shapes_wgs84 = gdf_wgs84[~point_mask]
+
+        os.makedirs(out_root, exist_ok=True)
+        points_geojson_path = ""
+        point_count = 0
+
+        if len(gdf_points) > 0:
+            pts_dir = os.path.join(out_root, "points")
+            os.makedirs(pts_dir, exist_ok=True)
+            points_geojson_path = os.path.join(pts_dir, f"{layer_slug}.geojson")
+            features = []
+            for idx, row in gdf_points.iterrows():
+                geom = row.geometry
+                props = {}
+                for col in gdf_points.columns:
+                    if col == "geometry":
+                        continue
+                    props[str(col)] = json_safe_value(row[col])
+                fid = props.get("feature_id") or props.get("fid") or props.get("id") or f"{layer_slug}_{idx}"
+                props["feature_id"] = str(fid)
+                props["_source_layer"] = layer_slug
+                props["_layer_name"] = base_name
+                props["_color"] = color_hex
+                features.append({
+                    "type": "Feature",
+                    "id": str(fid),
+                    "geometry": mapping(geom),
+                    "properties": props,
+                })
+            fc = {
+                "type": "FeatureCollection",
+                "name": base_name,
+                "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+                "features": features,
+            }
+            with open(points_geojson_path, "w", encoding="utf-8") as f:
+                json.dump(fc, f, ensure_ascii=False, indent=2)
+            point_count = len(features)
+
+        tile_dir = ""
+        tile_count = 0
+        out_bounds = [float(v) for v in gdf_wgs84.total_bounds]
+        actual_min_z = max(0, int(min_zoom))
+        actual_max_z = max(actual_min_z, min(18, int(max_zoom)))
+
+        if len(gdf_shapes_3857) > 0:
+            out_bounds = [float(v) for v in gdf_shapes_wgs84.total_bounds]
+            w, s, e, n = out_bounds
+            # Guard against runaway tile counts on very wide extents
+            MAX_TILES = 600
+            while actual_max_z > actual_min_z:
+                est = 0
+                for z in range(actual_min_z, actual_max_z + 1):
+                    x0, y0 = _lonlat_to_tile(w, n, z)
+                    x1, y1 = _lonlat_to_tile(e, s, z)
+                    est += (abs(x1 - x0) + 1) * (abs(y1 - y0) + 1)
+                if est <= MAX_TILES:
+                    break
+                actual_max_z -= 1
+
+            tile_dir = os.path.join(out_root, "tiles", layer_slug)
+            os.makedirs(tile_dir, exist_ok=True)
+
+            geoms_3857 = list(gdf_shapes_3857.geometry.values)
+            tree = STRtree(geoms_3857)
+
+            fill_rgba = _parse_hex_rgba(color_hex, fill_opacity)
+            stroke_rgba = _parse_hex_rgba(color_hex, 0.95)
+            fmt_lower = "jpg" if str(tile_format).lower() in ("jpg", "jpeg") else "png"
+            SS = 2  # 2x supersampling for crisp anti-aliased strokes
+            SIZE = 256 * SS
+            sw = max(1, int(round(float(stroke_width) * SS)))
+
+            def to_px(x_val, y_val, minx, miny, span):
+                px = (x_val - minx) / span * SIZE
+                py = (1.0 - (y_val - miny) / span) * SIZE
+                return (px, py)
+
+            def draw_geom(draw_obj, g, minx, miny, span):
+                gtype = g.geom_type
+                if gtype == "Polygon":
+                    ext = [to_px(x, y, minx, miny, span) for x, y in g.exterior.coords]
+                    if len(ext) >= 3:
+                        draw_obj.polygon(ext, fill=fill_rgba, outline=stroke_rgba)
+                        draw_obj.line(ext, fill=stroke_rgba, width=sw)
+                    for interior in g.interiors:
+                        ring = [to_px(x, y, minx, miny, span) for x, y in interior.coords]
+                        if len(ring) >= 3:
+                            draw_obj.polygon(ring, fill=(0, 0, 0, 0), outline=stroke_rgba)
+                            draw_obj.line(ring, fill=stroke_rgba, width=sw)
+                elif gtype == "MultiPolygon":
+                    for poly in g.geoms:
+                        draw_geom(draw_obj, poly, minx, miny, span)
+                elif gtype == "LineString":
+                    pts = [to_px(x, y, minx, miny, span) for x, y in g.coords]
+                    if len(pts) >= 2:
+                        draw_obj.line(pts, fill=stroke_rgba, width=sw)
+                elif gtype == "MultiLineString":
+                    for ls in g.geoms:
+                        draw_geom(draw_obj, ls, minx, miny, span)
+                elif gtype == "GeometryCollection":
+                    for sub in g.geoms:
+                        draw_geom(draw_obj, sub, minx, miny, span)
+
+            for z in range(actual_min_z, actual_max_z + 1):
+                x0, y0 = _lonlat_to_tile(w, n, z)
+                x1, y1 = _lonlat_to_tile(e, s, z)
+                for tx in range(min(x0, x1), max(x0, x1) + 1):
+                    for ty in range(min(y0, y1), max(y0, y1) + 1):
+                        tminx, tminy, tmaxx, tmaxy = _tile_bounds_3857(z, tx, ty)
+                        tile_box = box(tminx, tminy, tmaxx, tmaxy)
+                        cand_idx = tree.query(tile_box, predicate="intersects")
+                        if len(cand_idx) == 0:
+                            continue
+
+                        img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(img, "RGBA")
+                        span = tmaxx - tminx
+                        for ci in cand_idx:
+                            draw_geom(draw, geoms_3857[int(ci)], tminx, tminy, span)
+
+                        out_img = img.resize((256, 256), Image.Resampling.LANCZOS)
+                        # Skip empty transparent tiles
+                        if out_img.getbbox() is None:
+                            continue
+
+                        z_x_dir = os.path.join(tile_dir, str(z), str(tx))
+                        os.makedirs(z_x_dir, exist_ok=True)
+                        tile_path = os.path.join(z_x_dir, str(ty))
+                        if fmt_lower == "jpg":
+                            bg = Image.new("RGB", (256, 256), (255, 255, 255))
+                            bg.paste(out_img, mask=out_img.split()[3])
+                            bg.save(tile_path, format="JPEG", quality=88)
+                        else:
+                            out_img.save(tile_path, format="PNG", optimize=True)
+                        tile_count += 1
+
+        return {
+            "success": True,
+            "layer_name": base_name,
+            "layer_slug": layer_slug,
+            "has_raster_tiles": tile_count > 0,
+            "raster_tile_dir": tile_dir if tile_count > 0 else "",
+            "tile_count": tile_count,
+            "min_zoom": actual_min_z,
+            "max_zoom": actual_max_z,
+            "bounds": out_bounds,
+            "format": tile_format,
+            "has_points": point_count > 0,
+            "point_count": point_count,
+            "points_geojson_path": points_geojson_path,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -1030,6 +1725,27 @@ def main():
         min_z = int(sys.argv[5]) if len(sys.argv) > 5 else 0
         max_z = int(sys.argv[6]) if len(sys.argv) > 6 else 16
         res = generate_vector_tiles(fp, out_dir, lname, min_z, max_z)
+        print(json.dumps(res))
+    elif cmd == "convert_gpkg_tiles":
+        fp = sys.argv[2]
+        vt_root = sys.argv[3]
+        raw_layers = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "" else ""
+        layer_list = [x.strip() for x in raw_layers.split(",") if x.strip()] if raw_layers else None
+        min_z = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+        max_z = int(sys.argv[6]) if len(sys.argv) > 6 else 14
+        res = convert_gpkg_to_vector_tiles(fp, vt_root, layer_list, min_z, max_z)
+        print(json.dumps(res))
+    elif cmd == "rasterize_vector_layers":
+        fp = sys.argv[2]
+        out_root = sys.argv[3]
+        lname = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "" else None
+        min_z = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+        max_z = int(sys.argv[6]) if len(sys.argv) > 6 else 12
+        fmt = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] != "" else "png"
+        color = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] != "" else "#3ecf8e"
+        fill_op = float(sys.argv[9]) if len(sys.argv) > 9 else 0.35
+        sw = float(sys.argv[10]) if len(sys.argv) > 10 else 2.0
+        res = rasterize_vector_layer_to_tiles(fp, out_root, lname, min_z, max_z, fmt, color, fill_op, sw)
         print(json.dumps(res))
     else:
         print(json.dumps({"success": False, "error": f"Unknown command: {cmd}"}))

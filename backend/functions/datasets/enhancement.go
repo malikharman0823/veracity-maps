@@ -365,10 +365,14 @@ func (h *Handler) ServeTile(w http.ResponseWriter, r *http.Request, datasetID, z
 		b, rErr := os.ReadFile(loosePath)
 		if rErr == nil && len(b) > 0 {
 			cType := "image/png"
-			if ext == ".jpg" || ext == ".jpeg" {
+			switch ext {
+			case ".jpg", ".jpeg":
 				cType = "image/jpeg"
-			} else if ext == ".pbf" || ext == ".mvt" {
+			case ".pbf", ".mvt":
 				cType = "application/vnd.mapbox-vector-tile"
+				if len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b {
+					w.Header().Set("Content-Encoding", "gzip")
+				}
 			}
 			w.Header().Set("Content-Type", cType)
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -413,4 +417,156 @@ func (h *Handler) ServeTile(w http.ResponseWriter, r *http.Request, datasetID, z
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(tileBytes)
+}
+
+func sanitizeTileSlug(raw string) string {
+	clean := filepath.Base(strings.TrimSpace(raw))
+	if clean == "" || clean == "." || clean == ".." || strings.Contains(clean, "/") || strings.Contains(clean, "\\") {
+		return ""
+	}
+	return clean
+}
+
+// ServeVectorTile serves a local XYZ MVT/PBF tile from <datasetDir>/vector_tiles/<layerSlug>/tiles/{z}/{x}/{y}.pbf
+// (or reopened Viewscape vector_tiles directory), setting Content-Encoding: gzip automatically when gzip-compressed.
+func (h *Handler) ServeVectorTile(w http.ResponseWriter, r *http.Request, datasetID, layerSlug, zStr, xStr, yRaw string) {
+	if r.Method != http.MethodGet {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is supported", nil, nil)
+		return
+	}
+
+	slug := sanitizeTileSlug(layerSlug)
+	if slug == "" {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_LAYER_SLUG", "Invalid vector tile layer slug", nil, nil)
+		return
+	}
+
+	yClean := yRaw
+	if dotIdx := strings.IndexByte(yClean, '.'); dotIdx >= 0 {
+		yClean = yClean[:dotIdx]
+	}
+	z, errZ := strconv.Atoi(zStr)
+	x, errX := strconv.Atoi(xStr)
+	y, errY := strconv.Atoi(yClean)
+	if errZ != nil || errX != nil || errY != nil || z < 0 || z > 25 || x < 0 || y < 0 {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_TILE_COORDS", "Invalid z/x/y tile coordinates", nil, nil)
+		return
+	}
+
+	dataset, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || dataset == nil {
+		var foundSess string
+		dataset, foundSess, err = h.datasetService.FindDataset(datasetID)
+		if err == nil && foundSess != "" {
+			sessionID = foundSess
+			w.Header().Set("X-Session-ID", foundSess)
+		}
+	}
+	if err != nil || dataset == nil {
+		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
+		return
+	}
+
+	datasetDir := h.datasetService.StorageManager().GetDatasetDir(sessionID, dataset.ID)
+	if !fileExists(datasetDir) && dataset.StoragePath != "" {
+		datasetDir = filepath.Dir(dataset.StoragePath)
+	}
+
+	candidates := []string{
+		filepath.Join(datasetDir, "vector_tiles", slug, "tiles", zStr, xStr, yClean+".pbf"),
+		filepath.Join(datasetDir, "vector_tiles", slug, "tiles", zStr, xStr, yClean+".mvt"),
+		filepath.Join(datasetDir, "vector_tiles", slug, zStr, xStr, yClean+".pbf"),
+		filepath.Join(datasetDir, "tiles_xyz", "vector", slug, "tiles", zStr, xStr, yClean+".pbf"),
+		filepath.Join(datasetDir, "tiles_xyz", "vector", slug, zStr, xStr, yClean+".pbf"),
+	}
+	if dataset.StoragePath != "" {
+		storageDir := filepath.Dir(dataset.StoragePath)
+		if storageDir != datasetDir {
+			candidates = append(candidates,
+				filepath.Join(storageDir, "vector_tiles", slug, "tiles", zStr, xStr, yClean+".pbf"),
+				filepath.Join(storageDir, "vector_tiles", slug, zStr, xStr, yClean+".pbf"),
+			)
+		}
+	}
+
+	var tilePath string
+	for _, cand := range candidates {
+		if fileExists(cand) {
+			tilePath = cand
+			break
+		}
+	}
+	if tilePath == "" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	b, rErr := os.ReadFile(tilePath)
+	if rErr != nil || len(b) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.mapbox-vector-tile")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b {
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(b)
+}
+
+// ServeVectorTileAsset serves metadata.json or style.json for a converted vector tile layer.
+func (h *Handler) ServeVectorTileAsset(w http.ResponseWriter, r *http.Request, datasetID, layerSlug, assetName string) {
+	if r.Method != http.MethodGet {
+		models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET method is supported", nil, nil)
+		return
+	}
+	slug := sanitizeTileSlug(layerSlug)
+	asset := sanitizeTileSlug(assetName)
+	if slug == "" || (asset != "metadata.json" && asset != "style.json") {
+		models.WriteError(w, http.StatusBadRequest, "INVALID_ASSET", "Only metadata.json or style.json is supported", nil, nil)
+		return
+	}
+
+	dataset, sessionID, err := h.resolveDatasetAndSession(r, w, datasetID)
+	if err != nil || dataset == nil {
+		var foundSess string
+		dataset, foundSess, err = h.datasetService.FindDataset(datasetID)
+		if err == nil && foundSess != "" {
+			sessionID = foundSess
+			w.Header().Set("X-Session-ID", foundSess)
+		}
+	}
+	if err != nil || dataset == nil {
+		models.WriteError(w, http.StatusNotFound, "DATASET_NOT_FOUND", "Dataset not found", nil, nil)
+		return
+	}
+
+	datasetDir := h.datasetService.StorageManager().GetDatasetDir(sessionID, dataset.ID)
+	if !fileExists(datasetDir) && dataset.StoragePath != "" {
+		datasetDir = filepath.Dir(dataset.StoragePath)
+	}
+	candidates := []string{
+		filepath.Join(datasetDir, "vector_tiles", slug, asset),
+		filepath.Join(datasetDir, "tiles_xyz", "vector", slug, asset),
+	}
+	if dataset.StoragePath != "" {
+		storageDir := filepath.Dir(dataset.StoragePath)
+		if storageDir != datasetDir {
+			candidates = append(candidates, filepath.Join(storageDir, "vector_tiles", slug, asset))
+		}
+	}
+	for _, cand := range candidates {
+		if fileExists(cand) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			http.ServeFile(w, r, cand)
+			return
+		}
+	}
+	models.WriteError(w, http.StatusNotFound, "ASSET_NOT_FOUND", "Vector tile asset not found", nil, nil)
 }

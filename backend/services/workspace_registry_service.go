@@ -351,6 +351,61 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 			existingByName[el.SourceLayerName] = el
 		}
 	}
+	// Automatically convert GeoPackage (and other vector container) layers to local XYZ MVT/PBF vector tiles,
+	// reusing any vector_tiles already generated at upload time. Run concurrently with feature extraction so
+	// large GeoPackages (25k+ features) never stall HTTP requests.
+	vectorTileResultsByLayer := make(map[string]gis.VectorTileLayerResult)
+	if ds.ExtractedMetadata != nil {
+		if existingVT, ok := ds.ExtractedMetadata["vector_tiles"].(map[string]interface{}); ok {
+			for _, rawItem := range existingVT {
+				if b, mErr := json.Marshal(rawItem); mErr == nil {
+					var lres gis.VectorTileLayerResult
+					if json.Unmarshal(b, &lres) == nil && lres.LayerSlug != "" && lres.TileCount > 0 {
+						vectorTileResultsByLayer[lres.LayerName] = lres
+						vectorTileResultsByLayer[lres.LayerSlug] = lres
+					}
+				}
+			}
+		}
+	}
+	extLower := strings.ToLower(filepath.Ext(ds.Filename))
+	var vtDoneCh chan *gis.ConvertVectorTilesResult
+	var vtRoot string
+	totalVecFeatures := 0
+	if ds.StoragePath != "" && (extLower == ".gpkg" || extLower == ".shp" || extLower == ".geojson" || extLower == ".kml" || extLower == ".gml" || extLower == ".fgb") {
+		var vecLayerNames []string
+		for _, info := range inspection.Layers {
+			if len(selectedSet) > 0 && !selectedSet[info.LayerName] {
+				continue
+			}
+			if !strings.EqualFold(info.GeometryType, "Raster") && !strings.EqualFold(info.GeometryType, "Table") {
+				totalVecFeatures += info.FeatureCount
+				if _, already := vectorTileResultsByLayer[info.LayerName]; !already {
+					vecLayerNames = append(vecLayerNames, info.LayerName)
+				}
+			}
+		}
+		if len(vecLayerNames) > 0 {
+			vtRoot = filepath.Join(filepath.Dir(ds.StoragePath), "vector_tiles")
+			vtDoneCh = make(chan *gis.ConvertVectorTilesResult, 1)
+			go func(srcPath, root string, names []string) {
+				vtRes, vtErr := gis.ConvertDatasetToVectorTiles(srcPath, root, names, 0, 14)
+				if vtErr == nil && vtRes != nil {
+					vtDoneCh <- vtRes
+				} else {
+					vtDoneCh <- nil
+				}
+			}(ds.StoragePath, vtRoot, vecLayerNames)
+			// For normal datasets (<= 5000 features), wait immediately so metadata is attached inline
+			if totalVecFeatures <= 5000 {
+				if vtRes := <-vtDoneCh; vtRes != nil {
+					applyConvertedVectorTilesToDataset(ds, vtRoot, vtRes, vectorTileResultsByLayer)
+				}
+				vtDoneCh = nil
+			}
+		}
+	}
+
 	nextOrder := len(existingLayers)
 	added := make([]*models.WorkspaceLayer, 0)
 
@@ -494,7 +549,54 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 			}
 		}
 
+		var vtMeta map[string]interface{}
+		if vtInfo, hasVT := vectorTileResultsByLayer[info.LayerName]; hasVT {
+			vtMeta = map[string]interface{}{
+				"type":              "vector",
+				"format":            "pbf",
+				"tile_scheme":       "xyz",
+				"layer_slug":        vtInfo.LayerSlug,
+				"layer_name":        vtInfo.LayerName,
+				"source_layer":      vtInfo.SourceLayer,
+				"dataset_id":        ds.ID,
+				"source_crs":        vtInfo.SourceCRS,
+				"tile_crs":          vtInfo.TileCRS,
+				"geometry_type":     vtInfo.GeometryType,
+				"geometry_types":    vtInfo.GeometryTypes,
+				"feature_count":     vtInfo.FeatureCount,
+				"tile_count":        vtInfo.TileCount,
+				"bounds":            vtInfo.Bounds,
+				"center":            vtInfo.Center,
+				"min_zoom":          vtInfo.MinZoom,
+				"max_zoom":          vtInfo.MaxZoom,
+				"fields":            vtInfo.Fields,
+				"layer_dir":         vtInfo.LayerDir,
+				"tiles_dir":         vtInfo.TilesDir,
+				"metadata_path":     vtInfo.MetadataPath,
+				"style_path":        vtInfo.StylePath,
+				"tile_url_template": fmt.Sprintf("/datasets/%s/vector-tiles/%s/{z}/{x}/{y}.pbf", ds.ID, vtInfo.LayerSlug),
+				"metadata_url":      fmt.Sprintf("/datasets/%s/vector-tiles/%s/metadata.json", ds.ID, vtInfo.LayerSlug),
+				"style_url":         fmt.Sprintf("/datasets/%s/vector-tiles/%s/style.json", ds.ID, vtInfo.LayerSlug),
+				"promote_id":        "feature_id",
+				"interactive":       true,
+			}
+			if len(vtInfo.Bounds) == 4 {
+				layerBounds = vtInfo.Bounds
+			}
+			if vtInfo.FeatureCount > 0 {
+				featureCount = vtInfo.FeatureCount
+			}
+		}
+
 		if s.gisService != nil && !isTable {
+			layerMeta := map[string]interface{}{
+				"source_dataset_id": ds.ID,
+				"source_layer_name": info.LayerName,
+				"source_crs":        firstNonEmptyStr(info.CRS, "EPSG:4326"),
+			}
+			if vtMeta != nil {
+				layerMeta["vector_tiles"] = vtMeta
+			}
 			createdLyr, cErr := s.gisService.CreateLayer(importCtx, userID, models.CreateLayerRequest{
 				MapID:        workspaceID,
 				DatasetID:    ds.ID,
@@ -503,6 +605,7 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 				GeometryType: info.GeometryType,
 				CRS:          firstNonEmptyStr(info.CRS, "EPSG:4326"),
 				Bounds:       layerBounds,
+				Metadata:     layerMeta,
 			})
 			if cErr != nil {
 				return nil, nil, cErr
@@ -576,6 +679,19 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 			}
 		}
 
+		renderingSrc := map[string]interface{}{
+			"type":              "vector",
+			"source_dataset_id": ds.ID,
+			"gis_layer_id":      gisLayerID,
+			"color":             color,
+		}
+		if vtMeta != nil {
+			renderingSrc["vector_tiles"] = vtMeta
+			renderingSrc["tile_url_template"] = vtMeta["tile_url_template"]
+			renderingSrc["source_layer"] = vtMeta["source_layer"]
+			renderingSrc["layer_slug"] = vtMeta["layer_slug"]
+		}
+
 		wl := &models.WorkspaceLayer{
 			ID:                 newRegistryID("wl"),
 			WorkspaceDatasetID: wsDS.ID,
@@ -589,16 +705,11 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 			FeatureCount:       featureCount,
 			Extent:             layerBounds,
 			Fields:             info.Fields,
-			RenderingSource: map[string]interface{}{
-				"type":              "vector",
-				"source_dataset_id": ds.ID,
-				"gis_layer_id":      gisLayerID,
-				"color":             color,
-			},
-			Visibility: true,
-			Opacity:    1.0,
-			LayerOrder: nextOrder,
-			Status:     "active",
+			RenderingSource:    renderingSrc,
+			Visibility:         true,
+			Opacity:            1.0,
+			LayerOrder:         nextOrder,
+			Status:             "active",
 		}
 		setWorkspaceLayerExtentPointers(wl, layerBounds)
 		if err := s.repo.CreateWorkspaceLayer(importCtx, wl); err != nil {
@@ -608,7 +719,103 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 		nextOrder++
 	}
 
+	// If large-dataset vector tile conversion ran concurrently, attach results if already ready (or finish in background)
+	if vtDoneCh != nil {
+		attachVT := func(vtRes *gis.ConvertVectorTilesResult) {
+			if vtRes == nil {
+				return
+			}
+			byName := make(map[string]gis.VectorTileLayerResult)
+			applyConvertedVectorTilesToDataset(ds, vtRoot, vtRes, byName)
+			for _, wl := range added {
+				if lres, ok := byName[wl.SourceLayerName]; ok {
+					vtMeta := buildVectorTileLayerMeta(ds.ID, lres)
+					if wl.RenderingSource == nil {
+						wl.RenderingSource = make(map[string]interface{})
+					}
+					wl.RenderingSource["vector_tiles"] = vtMeta
+					wl.RenderingSource["tile_url_template"] = vtMeta["tile_url_template"]
+					wl.RenderingSource["source_layer"] = vtMeta["source_layer"]
+					wl.RenderingSource["layer_slug"] = vtMeta["layer_slug"]
+					_ = s.repo.UpdateWorkspaceLayer(context.Background(), wl)
+					if wl.GISLayerID != "" && s.gisService != nil && s.gisService.GetGISRepo() != nil {
+						if gl, gErr := s.gisService.GetGISRepo().GetLayer(context.Background(), wl.GISLayerID); gErr == nil && gl != nil {
+							if gl.Metadata == nil {
+								gl.Metadata = make(map[string]interface{})
+							}
+							gl.Metadata["vector_tiles"] = vtMeta
+						}
+					}
+				}
+			}
+		}
+		select {
+		case vtRes := <-vtDoneCh:
+			attachVT(vtRes)
+		default:
+			go func() {
+				attachVT(<-vtDoneCh)
+			}()
+		}
+	}
+
 	return added, wsDS, nil
+}
+
+func buildVectorTileLayerMeta(datasetID string, lres gis.VectorTileLayerResult) map[string]interface{} {
+	return map[string]interface{}{
+		"type":              "vector",
+		"format":            "pbf",
+		"tile_scheme":       "xyz",
+		"layer_slug":        lres.LayerSlug,
+		"layer_name":        lres.LayerName,
+		"source_layer":      lres.SourceLayer,
+		"dataset_id":        datasetID,
+		"source_crs":        lres.SourceCRS,
+		"tile_crs":          lres.TileCRS,
+		"geometry_type":     lres.GeometryType,
+		"geometry_types":    lres.GeometryTypes,
+		"feature_count":     lres.FeatureCount,
+		"tile_count":        lres.TileCount,
+		"bounds":            lres.Bounds,
+		"center":            lres.Center,
+		"min_zoom":          lres.MinZoom,
+		"max_zoom":          lres.MaxZoom,
+		"fields":            lres.Fields,
+		"layer_dir":         lres.LayerDir,
+		"tiles_dir":         lres.TilesDir,
+		"metadata_path":     lres.MetadataPath,
+		"style_path":        lres.StylePath,
+		"tile_url_template": fmt.Sprintf("/datasets/%s/vector-tiles/%s/{z}/{x}/{y}.pbf", datasetID, lres.LayerSlug),
+		"metadata_url":      fmt.Sprintf("/datasets/%s/vector-tiles/%s/metadata.json", datasetID, lres.LayerSlug),
+		"style_url":         fmt.Sprintf("/datasets/%s/vector-tiles/%s/style.json", datasetID, lres.LayerSlug),
+		"promote_id":        "feature_id",
+		"interactive":       true,
+	}
+}
+
+func applyConvertedVectorTilesToDataset(ds *models.Dataset, vtRoot string, vtRes *gis.ConvertVectorTilesResult, byLayer map[string]gis.VectorTileLayerResult) {
+	if ds == nil || vtRes == nil {
+		return
+	}
+	if ds.ExtractedMetadata == nil {
+		ds.ExtractedMetadata = make(map[string]interface{})
+	}
+	vtMetaMap := make(map[string]interface{})
+	if existingVT, ok := ds.ExtractedMetadata["vector_tiles"].(map[string]interface{}); ok {
+		for k, v := range existingVT {
+			vtMetaMap[k] = v
+		}
+	}
+	for _, lres := range vtRes.Layers {
+		if byLayer != nil {
+			byLayer[lres.LayerName] = lres
+			byLayer[lres.LayerSlug] = lres
+		}
+		vtMetaMap[lres.LayerSlug] = buildVectorTileLayerMeta(ds.ID, lres)
+	}
+	ds.ExtractedMetadata["vector_tiles"] = vtMetaMap
+	ds.ExtractedMetadata["vector_tiles_root"] = vtRoot
 }
 
 func setWorkspaceLayerExtentPointers(wl *models.WorkspaceLayer, bounds []float64) {

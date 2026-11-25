@@ -25,6 +25,10 @@ func NewHandler(es *services.ExportService, repo *repository.SessionRepository) 
 	}
 }
 
+func (h *Handler) GetService() *services.ExportService {
+	return h.exportService
+}
+
 func exportContentType(filename string) string {
 	lower := strings.ToLower(filename)
 	switch {
@@ -85,6 +89,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 				TileSize:                req.Options.TileSize,
 				RasterFormat:            req.Options.RasterFormat,
 				ImageQuality:            req.Options.ImageQuality,
+				BaseLayerSources:        req.Options.BaseLayerSources,
 			}
 		} else if req.ZoomConfig != nil {
 			selOpts = services.DefaultSelectiveExportOptions()
@@ -96,6 +101,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request, datasetID strin
 		filePath, filename, err = h.exportService.GenerateSelectiveExport(sessionID, datasetID, services.SelectiveExportParams{
 			Format:      format,
 			ProjectName: req.ProjectName,
+			WorkspaceID: req.WorkspaceID,
 			BuildingIDs: req.BuildingIDs,
 			FloorIDs:    req.FloorIDs,
 			LayerIDs:    req.LayerIDs,

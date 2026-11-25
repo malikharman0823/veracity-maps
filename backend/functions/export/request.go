@@ -15,11 +15,13 @@ type ExportOptions struct {
 	TileSize               int                         `json:"tile_size,omitempty"`
 	RasterFormat           string                      `json:"raster_format,omitempty"`
 	ImageQuality           int                         `json:"image_quality,omitempty"`
+	BaseLayerSources       []map[string]interface{}    `json:"base_layer_sources,omitempty"`
 }
 
 type ExportRequest struct {
 	Format      string                      `json:"format"`
 	ProjectName string                      `json:"project_name,omitempty"`
+	WorkspaceID string                      `json:"workspace_id,omitempty"`
 	BuildingIDs []string                    `json:"building_ids,omitempty"`
 	FloorIDs    []string                    `json:"floor_ids,omitempty"`
 	LayerIDs    []string                    `json:"layer_ids,omitempty"`

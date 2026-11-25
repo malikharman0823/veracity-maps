@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react"
 import VectorEditingToolbar from "./VectorEditingToolbar"
 import DraggableFloatingBar from "./DraggableFloatingBar"
 import {
+  API_URL,
   getLayerFeatures,
   createLayerFeature,
   updateVectorFeature,
@@ -12,6 +13,26 @@ import {
   snapVectorGeometry,
   datasetSourceImageUrl,
 } from "../../api"
+
+function getVectorTileConfig(layer) {
+  const vt = layer?.metadata?.vector_tiles || layer?.rendering_source?.vector_tiles
+  if (!vt || !vt.tile_url_template) return null
+  const rawUrl = String(vt.tile_url_template)
+  const fullUrl = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+    ? rawUrl
+    : `${API_URL}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`
+  const bounds = Array.isArray(vt.bounds) && vt.bounds.length === 4 && vt.bounds.every((n) => Number.isFinite(Number(n)))
+    ? vt.bounds.map(Number)
+    : undefined
+  return {
+    tileUrl: fullUrl,
+    sourceLayer: vt.source_layer || vt.layer_slug || layer.layer_name,
+    minZoom: Number.isFinite(Number(vt.min_zoom)) ? Number(vt.min_zoom) : 0,
+    maxZoom: Number.isFinite(Number(vt.max_zoom)) ? Number(vt.max_zoom) : 14,
+    bounds,
+    promoteId: vt.promote_id || "feature_id",
+  }
+}
 import {
   isClosedGeometryType,
   minVerticesForType,
@@ -87,7 +108,7 @@ export default function MapLibreGISController({
     const bump = () => setStyleRevision((r) => r + 1)
     map.on("load", bump)
     map.on("style.load", bump)
-    if (map.isStyleLoaded()) {
+    if (map.style && map.isStyleLoaded()) {
       bump()
     }
     return () => {
@@ -96,13 +117,16 @@ export default function MapLibreGISController({
     }
   }, [map])
 
-  // Load features in parallel for all vector GIS layers so point layers appear immediately
+  // Load GeoJSON features ONLY for non-tiled editable vector layers;
+  // GeoPackage / MVT vector-tile layers stream directly via MapLibre type:"vector" sources without loading full datasets into memory.
   useEffect(() => {
     let active = true
     const loadAll = async () => {
-      const vectorLayers = gisLayers.filter((l) => l.layer_type === "vector" || !l.layer_type)
+      const geojsonVectorLayers = gisLayers.filter(
+        (l) => (l.layer_type === "vector" || !l.layer_type) && !getVectorTileConfig(l)
+      )
       const entries = await Promise.all(
-        vectorLayers.map(async (layer) => {
+        geojsonVectorLayers.map(async (layer) => {
           try {
             const fc = await getLayerFeatures(layer.layer_id)
             return [layer.layer_id, fc || { type: "FeatureCollection", features: [] }]
@@ -186,13 +210,35 @@ export default function MapLibreGISController({
       const circleId = `gis-circle-${layer.layer_id}`
       const labelId = `gis-label-${layer.layer_id}`
       const highlightId = `gis-sel-${layer.layer_id}`
+      const highlightCircleId = `gis-sel-circle-${layer.layer_id}`
+      const hoverLineId = `gis-hover-line-${layer.layer_id}`
+      const hoverCircleId = `gis-hover-circle-${layer.layer_id}`
 
-      const fc = featuresByLayer[layer.layer_id] || { type: "FeatureCollection", features: [] }
+      const vtCfg = getVectorTileConfig(layer)
+      const sourceLayerProp = vtCfg ? { "source-layer": vtCfg.sourceLayer } : {}
 
-      if (!map.getSource(srcId)) {
-        map.addSource(srcId, { type: "geojson", data: fc })
+      if (vtCfg) {
+        if (!map.getSource(srcId)) {
+          const vecSourceDef = {
+            type: "vector",
+            tiles: [vtCfg.tileUrl],
+            scheme: "xyz",
+            minzoom: vtCfg.minZoom,
+            maxzoom: vtCfg.maxZoom,
+            promoteId: vtCfg.promoteId,
+          }
+          if (vtCfg.bounds) {
+            vecSourceDef.bounds = vtCfg.bounds
+          }
+          map.addSource(srcId, vecSourceDef)
+        }
       } else {
-        map.getSource(srcId).setData(fc)
+        const fc = featuresByLayer[layer.layer_id] || { type: "FeatureCollection", features: [] }
+        if (!map.getSource(srcId)) {
+          map.addSource(srcId, { type: "geojson", data: fc })
+        } else if (map.getSource(srcId)?.setData) {
+          map.getSource(srcId).setData(fc)
+        }
       }
 
       const mlStyle = layer.style?.maplibre_style || {}
@@ -243,6 +289,7 @@ export default function MapLibreGISController({
           id: fillId,
           type: "fill",
           source: srcId,
+          ...sourceLayerProp,
           minzoom: minZ,
           maxzoom: maxZ,
           filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
@@ -260,6 +307,7 @@ export default function MapLibreGISController({
           id: lineId,
           type: "line",
           source: srcId,
+          ...sourceLayerProp,
           minzoom: minZ,
           maxzoom: maxZ,
           filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
@@ -277,6 +325,7 @@ export default function MapLibreGISController({
           id: circleId,
           type: "circle",
           source: srcId,
+          ...sourceLayerProp,
           minzoom: minZ,
           maxzoom: maxZ,
           filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
@@ -289,14 +338,16 @@ export default function MapLibreGISController({
         Object.entries(circlePaint).forEach(([k, v]) => map.setPaintProperty(circleId, k, v))
       }
 
-      // Highlight selected features layer
-      const selFilter = ["in", ["get", "feature_id"], ["literal", selectedFeatureIds.length > 0 ? selectedFeatureIds : ["__none__"]]]
+      // Highlight selected features layer (lines/polygons + points)
+      const selIds = selectedFeatureIds.length > 0 ? selectedFeatureIds.map(String) : ["__none__"]
+      const selFilter = ["any", ["in", ["to-string", ["get", "feature_id"]], ["literal", selIds]], ["in", ["to-string", ["get", "_source_feature_id"]], ["literal", selIds]]]
       if (!map.getLayer(highlightId)) {
         map.addLayer({
           id: highlightId,
           type: "line",
           source: srcId,
-          filter: selFilter,
+          ...sourceLayerProp,
+          filter: ["all", ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]], selFilter],
           layout: { visibility: vis },
           paint: {
             "line-color": "#facc15",
@@ -304,8 +355,68 @@ export default function MapLibreGISController({
           },
         })
       } else {
-        map.setFilter(highlightId, selFilter)
+        map.setFilter(highlightId, ["all", ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]], selFilter])
         map.setLayoutProperty(highlightId, "visibility", vis)
+      }
+
+      if (!map.getLayer(highlightCircleId)) {
+        map.addLayer({
+          id: highlightCircleId,
+          type: "circle",
+          source: srcId,
+          ...sourceLayerProp,
+          filter: ["all", ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]], selFilter],
+          layout: { visibility: vis },
+          paint: {
+            "circle-color": "#facc15",
+            "circle-radius": baseRadius + 3.5,
+            "circle-stroke-color": "#111827",
+            "circle-stroke-width": 2.5,
+            "circle-opacity": 0.95,
+          },
+        })
+      } else {
+        map.setFilter(highlightCircleId, ["all", ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]], selFilter])
+        map.setLayoutProperty(highlightCircleId, "visibility", vis)
+      }
+
+      // Hover highlight layers (initially filtered to __none__, updated dynamically on mousemove)
+      const noneFilter = ["==", ["to-string", ["get", "feature_id"]], "__none__"]
+      if (!map.getLayer(hoverLineId)) {
+        map.addLayer({
+          id: hoverLineId,
+          type: "line",
+          source: srcId,
+          ...sourceLayerProp,
+          filter: noneFilter,
+          layout: { visibility: vis },
+          paint: {
+            "line-color": "#38bdf8",
+            "line-width": 3.5,
+          },
+        })
+      } else {
+        map.setLayoutProperty(hoverLineId, "visibility", vis)
+      }
+
+      if (!map.getLayer(hoverCircleId)) {
+        map.addLayer({
+          id: hoverCircleId,
+          type: "circle",
+          source: srcId,
+          ...sourceLayerProp,
+          filter: noneFilter,
+          layout: { visibility: vis },
+          paint: {
+            "circle-color": circleColor,
+            "circle-radius": baseRadius + 3,
+            "circle-stroke-color": "#facc15",
+            "circle-stroke-width": 3,
+            "circle-opacity": 1,
+          },
+        })
+      } else {
+        map.setLayoutProperty(hoverCircleId, "visibility", vis)
       }
 
       // Data-driven label layer
@@ -327,6 +438,7 @@ export default function MapLibreGISController({
             id: labelId,
             type: "symbol",
             source: srcId,
+            ...sourceLayerProp,
             minzoom: minZ,
             maxzoom: maxZ,
             layout: labelLayout,
@@ -345,7 +457,7 @@ export default function MapLibreGISController({
     const activeIds = new Set(gisLayers.map((l) => String(l.layer_id)))
     const styleLayers = map.getStyle()?.layers || []
     styleLayers.forEach((sl) => {
-      const m = /^gis-(?:fill|line|circle|label|sel|raster-lyr)-(.+)$/.exec(sl.id)
+      const m = /^gis-(?:fill|line|circle|label|sel|sel-circle|hover-line|hover-circle|raster-lyr)-(.+)$/.exec(sl.id)
       if (m && !activeIds.has(m[1])) {
         try {
           if (map.getLayer(sl.id)) map.removeLayer(sl.id)
@@ -381,7 +493,12 @@ export default function MapLibreGISController({
       if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-label-${l.layer_id}`)
     })
     orderedLayers.forEach((l) => {
-      if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-sel-${l.layer_id}`)
+      if (!l.layer_type || l.layer_type === "vector") {
+        safeMoveToTop(`gis-hover-line-${l.layer_id}`)
+        safeMoveToTop(`gis-hover-circle-${l.layer_id}`)
+        safeMoveToTop(`gis-sel-${l.layer_id}`)
+        safeMoveToTop(`gis-sel-circle-${l.layer_id}`)
+      }
     })
     ;[DRAFT_FILL_LAYER, DRAFT_LINE_LAYER, DRAFT_MIDPOINT_LAYER, DRAFT_VERTEX_LAYER].forEach(safeMoveToTop)
   }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision])
@@ -866,11 +983,11 @@ export default function MapLibreGISController({
       const layer = activeLayerRef.current
       const tool = activeToolRef.current
 
-      // Identify Tool works across ALL visible vector layers regardless of activeLayer
-      if (tool === "identify") {
+      // Identify & Select across ALL visible vector layers (points prioritized over lines & polygons)
+      if (tool === "identify" || tool === "select") {
         const allLayers = gisLayersRef.current || []
         const visibleVectors = allLayers.filter(
-          (l) => l.layer_type === "vector" && l.is_visible !== false && l.visible !== false
+          (l) => (!l.layer_type || l.layer_type === "vector") && l.is_visible !== false && l.visible !== false
         )
         const queryLayers = [
           ...visibleVectors.map((l) => `gis-circle-${l.layer_id}`),
@@ -886,17 +1003,27 @@ export default function MapLibreGISController({
           const top = rendered[0]
           const rawLayerId = String(top.layer?.id || "").replace(/^gis-(?:fill|line|circle)-/, "")
           const matchedLayer = allLayers.find((l) => String(l.layer_id) === rawLayerId)
+          const origFid = String(top.properties?._source_feature_id || top.properties?.feature_id || top.id || "")
+          const sourceLayer = top.properties?._source_layer || top.sourceLayer || matchedLayer?.metadata?.vector_tiles?.source_layer || matchedLayer?.layer_name || ""
           setIdentifiedFeature({
             layerId: rawLayerId,
             layerName: matchedLayer?.layer_name || "Vector Layer",
-            crs: matchedLayer?.crs || "EPSG:4326",
-            featureId: top.properties?.feature_id || top.id || "",
+            sourceLayer,
+            crs: matchedLayer?.metadata?.vector_tiles?.source_crs || matchedLayer?.crs || "EPSG:4326",
+            featureId: origFid,
             geometryType: top.geometry?.type || matchedLayer?.geometry_type || "Feature",
             lngLat: [Number(event.lngLat.lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))],
             properties: top.properties || {},
           })
-          if (top.properties?.feature_id) {
-            onSelectFeatures?.([top.properties.feature_id])
+          if (origFid) {
+            const multi = tool === "select" && event.originalEvent?.shiftKey
+            if (multi) {
+              const cur = selectedIdsRef.current
+              const next = cur.includes(origFid) ? cur.filter((x) => x !== origFid) : [...cur, origFid]
+              onSelectFeatures?.(next)
+            } else {
+              onSelectFeatures?.([origFid])
+            }
           }
         } else {
           setIdentifiedFeature(null)
@@ -1225,25 +1352,45 @@ export default function MapLibreGISController({
       (gisLayers || []).map((l) => [l.layer_id, l.layer_name])
     )
 
-    const handleMouseMove = (e) => {
-      const polygonLayerIds = (gisLayers || [])
-        .filter((l) => l.layer_type === "vector" && l.is_visible !== false && l.visible !== false)
-        .map((l) => `gis-fill-${l.layer_id}`)
-        .filter((id) => Boolean(map.getLayer(id)))
+    const clearHoverHighlights = () => {
+      const noneFilter = ["==", ["to-string", ["get", "feature_id"]], "__none__"]
+      ;(gisLayers || []).forEach((l) => {
+        if (l.layer_type && l.layer_type !== "vector") return
+        const hc = `gis-hover-circle-${l.layer_id}`
+        const hl = `gis-hover-line-${l.layer_id}`
+        try {
+          if (map.getLayer(hc)) map.setFilter(hc, noneFilter)
+          if (map.getLayer(hl)) map.setFilter(hl, noneFilter)
+        } catch {}
+      })
+    }
 
-      if (polygonLayerIds.length === 0) {
+    const handleMouseMove = (e) => {
+      const visibleVectors = (gisLayers || []).filter(
+        (l) => (!l.layer_type || l.layer_type === "vector") && l.is_visible !== false && l.visible !== false
+      )
+      // Prioritize Point markers, then Lines, then Polygons
+      const queryLayerIds = [
+        ...visibleVectors.map((l) => `gis-circle-${l.layer_id}`),
+        ...visibleVectors.map((l) => `gis-line-${l.layer_id}`),
+        ...visibleVectors.map((l) => `gis-fill-${l.layer_id}`),
+      ].filter((id) => Boolean(map.getLayer(id)))
+
+      if (queryLayerIds.length === 0) {
+        clearHoverHighlights()
         setHoveredFeature((prev) => (prev ? null : prev))
         return
       }
 
       let hits = []
       try {
-        hits = map.queryRenderedFeatures(e.point, { layers: polygonLayerIds })
+        hits = map.queryRenderedFeatures(e.point, { layers: queryLayerIds })
       } catch {
         hits = []
       }
 
       if (!hits || hits.length === 0) {
+        clearHoverHighlights()
         setHoveredFeature((prev) => (prev ? null : prev))
         if (activeToolRef.current === "select") {
           map.getCanvas().style.cursor = ""
@@ -1252,21 +1399,45 @@ export default function MapLibreGISController({
       }
 
       const top = hits[0]
-      const rawLayerId = String(top.layer?.id || "").replace(/^gis-fill-/, "")
+      const rawLayerId = String(top.layer?.id || "").replace(/^gis-(?:fill|line|circle)-/, "")
       const props = top.properties || {}
-      if (activeToolRef.current === "select") {
+      const origFid = String(props._source_feature_id || props.feature_id || top.id || "")
+      const geomType = top.geometry?.type || "Feature"
+
+      clearHoverHighlights()
+      if (origFid) {
+        const matchFilter = [
+          "any",
+          ["==", ["to-string", ["get", "feature_id"]], origFid],
+          ["==", ["to-string", ["get", "_source_feature_id"]], origFid],
+        ]
+        try {
+          if (geomType === "Point" || geomType === "MultiPoint") {
+            const hc = `gis-hover-circle-${rawLayerId}`
+            if (map.getLayer(hc)) map.setFilter(hc, ["all", ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]], matchFilter])
+          } else {
+            const hl = `gis-hover-line-${rawLayerId}`
+            if (map.getLayer(hl)) map.setFilter(hl, ["all", ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]], matchFilter])
+          }
+        } catch {}
+      }
+
+      if (activeToolRef.current === "select" || activeToolRef.current === "identify") {
         map.getCanvas().style.cursor = "pointer"
       }
       setHoveredFeature({
         x: e.point.x,
         y: e.point.y,
-        layerName: layerNameById.get(rawLayerId) || "Polygon Layer",
-        geometryType: top.geometry?.type || "Polygon",
+        layerName: layerNameById.get(rawLayerId) || "Vector Layer",
+        sourceLayer: props._source_layer || top.sourceLayer || "",
+        featureId: origFid,
+        geometryType: geomType,
         properties: props,
       })
     }
 
     const handleMouseLeave = () => {
+      clearHoverHighlights()
       setHoveredFeature(null)
     }
 
@@ -1381,7 +1552,13 @@ export default function MapLibreGISController({
             </div>
             <div className="text-[10px] text-slate-400 font-mono">
               {identifiedFeature.geometryType} • {identifiedFeature.crs}
+              {identifiedFeature.featureId ? ` • ID: ${identifiedFeature.featureId}` : ""}
             </div>
+            {identifiedFeature.sourceLayer && (
+              <div className="text-[9.5px] text-slate-500 font-mono truncate">
+                source-layer: {identifiedFeature.sourceLayer}
+              </div>
+            )}
           </div>
           <button
             type="button"

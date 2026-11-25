@@ -48,6 +48,8 @@ func ValidateExport(filePath, format, datasetID string) (*ValidationResult, erro
 	}
 
 	switch normFormat {
+	case "viewscape_raster", "raster_layers", "viewscape_vector", "vector_layers", "viewscape_base", "base_layers", "viewscape_complete", "complete_viewscape", "viewscape":
+		return validateViewscapeExport(filePath, normFormat, datasetID)
 	case "custom_local_tiles", "custom-local-tiles", "local_tiles":
 		return validateCustomLocalTilesExport(filePath, datasetID)
 	case "mbtiles":
@@ -355,6 +357,93 @@ func validateCustomLocalTilesExport(filePath, datasetID string) (*ValidationResu
 		Format:   "custom_local_tiles",
 		FilePath: filePath,
 		Details:  fmt.Sprintf("Valid Custom Local Tiles package with %d entries", len(zr.File)),
+	}, nil
+}
+
+func validateViewscapeExport(filePath, format, datasetID string) (*ValidationResult, error) {
+	zr, err := zip.OpenReader(filePath)
+	if err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     format,
+			FilePath:   filePath,
+			FailedStep: "zip_open",
+			Reason:     fmt.Sprintf("Cannot open Viewscape archive: %v", err),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [%s] Failed at step 'zip_open': %w (dataset: %s)", format, err, datasetID)
+	}
+	defer zr.Close()
+
+	if len(zr.File) == 0 {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     format,
+			FilePath:   filePath,
+			FailedStep: "zip_empty",
+			Reason:     "Viewscape archive contains zero entries",
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [%s] Archive contains 0 entries (dataset: %s)", format, datasetID)
+	}
+
+	var manifestFile *zip.File
+	for _, f := range zr.File {
+		cleanSlash := filepath.ToSlash(f.Name)
+		if strings.HasPrefix(cleanSlash, "/") || strings.Contains(cleanSlash, "../") || strings.Contains(cleanSlash, `..\`) {
+			return &ValidationResult{
+				Valid:      false,
+				Format:     format,
+				FilePath:   filePath,
+				FailedStep: "zip_slip_check",
+				Reason:     fmt.Sprintf("Unsafe path traversal entry detected: '%s'", f.Name),
+				DatasetID:  datasetID,
+			}, fmt.Errorf("VALIDATION_FAILED: [%s] Path traversal in '%s'", format, f.Name)
+		}
+		if strings.EqualFold(cleanSlash, "Viewscape/manifest.json") || strings.EqualFold(cleanSlash, "manifest.json") {
+			manifestFile = f
+		}
+	}
+
+	if manifestFile == nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     format,
+			FilePath:   filePath,
+			FailedStep: "manifest_presence",
+			Reason:     "Viewscape archive lacks Viewscape/manifest.json",
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [%s] Missing Viewscape/manifest.json (dataset: %s)", format, datasetID)
+	}
+
+	rc, err := manifestFile.Open()
+	if err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     format,
+			FilePath:   filePath,
+			FailedStep: "manifest_read",
+			Reason:     err.Error(),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [%s] Could not read manifest.json: %w", format, err)
+	}
+	defer rc.Close()
+
+	var manDoc map[string]interface{}
+	if err := json.NewDecoder(rc).Decode(&manDoc); err != nil {
+		return &ValidationResult{
+			Valid:      false,
+			Format:     format,
+			FilePath:   filePath,
+			FailedStep: "manifest_json_parse",
+			Reason:     err.Error(),
+			DatasetID:  datasetID,
+		}, fmt.Errorf("VALIDATION_FAILED: [%s] Invalid JSON in Viewscape/manifest.json: %w", format, err)
+	}
+
+	return &ValidationResult{
+		Valid:    true,
+		Format:   format,
+		FilePath: filePath,
+		Details:  fmt.Sprintf("Valid Viewscape %s package with %d entries", format, len(zr.File)),
 	}, nil
 }
 

@@ -43,9 +43,10 @@ var (
 )
 
 type DatasetService struct {
-	cfg     *config.Config
-	repo    *repository.SessionRepository
-	storage *storage.StorageManager
+	cfg        *config.Config
+	repo       *repository.SessionRepository
+	storage    *storage.StorageManager
+	gisService *GISService
 }
 
 func NewDatasetService(cfg *config.Config, repo *repository.SessionRepository, sm *storage.StorageManager) *DatasetService {
@@ -54,6 +55,11 @@ func NewDatasetService(cfg *config.Config, repo *repository.SessionRepository, s
 		repo:    repo,
 		storage: sm,
 	}
+}
+
+// SetGISService connects GISService so reopening a Viewscape ZIP registers restored vector tile layers.
+func (s *DatasetService) SetGISService(gs *GISService) {
+	s.gisService = gs
 }
 
 func (s *DatasetService) HandleUpload(sessionID string, fileHeader *multipart.FileHeader) (*models.Dataset, error) {
@@ -163,12 +169,54 @@ func (s *DatasetService) handleVectorDataset(sessionID, datasetID, datasetDir, d
 	extractedMeta := map[string]interface{}{
 		"driver":        driver,
 		"format":        strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), "."),
+		"document_type": "vector",
 		"crs":           crs,
 		"geometry_type": geomType,
 		"feature_count": featureCount,
 		"bounds":        boundsMap,
 		"layers":        layers,
 	}
+
+	tileStatus := "not_started"
+	tilePath := ""
+	if strings.EqualFold(filepath.Ext(filename), ".gpkg") && featureCount <= 5000 {
+		vtRoot := filepath.Join(datasetDir, "vector_tiles")
+		if vtRes, vtErr := gis.ConvertDatasetToVectorTiles(destPath, vtRoot, nil, 0, 14); vtErr == nil && vtRes != nil && len(vtRes.Layers) > 0 {
+			vtMetaMap := make(map[string]interface{}, len(vtRes.Layers))
+			for _, lres := range vtRes.Layers {
+				vtMetaMap[lres.LayerSlug] = map[string]interface{}{
+					"layer_slug":        lres.LayerSlug,
+					"layer_name":        lres.LayerName,
+					"source_layer":      lres.SourceLayer,
+					"source_crs":        lres.SourceCRS,
+					"tile_crs":          lres.TileCRS,
+					"geometry_type":     lres.GeometryType,
+					"geometry_types":    lres.GeometryTypes,
+					"feature_count":     lres.FeatureCount,
+					"tile_count":        lres.TileCount,
+					"bounds":            lres.Bounds,
+					"center":            lres.Center,
+					"min_zoom":          lres.MinZoom,
+					"max_zoom":          lres.MaxZoom,
+					"fields":            lres.Fields,
+					"layer_dir":         lres.LayerDir,
+					"tiles_dir":         lres.TilesDir,
+					"metadata_path":     lres.MetadataPath,
+					"style_path":        lres.StylePath,
+					"tile_url_template": fmt.Sprintf("/datasets/%s/vector-tiles/%s/{z}/{x}/{y}.pbf", datasetID, lres.LayerSlug),
+					"metadata_url":      fmt.Sprintf("/datasets/%s/vector-tiles/%s/metadata.json", datasetID, lres.LayerSlug),
+					"style_url":         fmt.Sprintf("/datasets/%s/vector-tiles/%s/style.json", datasetID, lres.LayerSlug),
+					"promote_id":        "feature_id",
+					"interactive":       true,
+				}
+			}
+			extractedMeta["vector_tiles"] = vtMetaMap
+			extractedMeta["vector_tiles_root"] = vtRoot
+			tileStatus = "completed"
+			tilePath = vtRoot
+		}
+	}
+
 	now := time.Now()
 	dataset := &models.Dataset{
 		ID:                 datasetID,
@@ -179,8 +227,9 @@ func (s *DatasetService) handleVectorDataset(sessionID, datasetID, datasetDir, d
 		FileHash:           fileHash,
 		StoragePath:        destPath,
 		GeoreferencedPath:  destPath,
+		TilePath:           tilePath,
 		GeoreferenceStatus: "completed",
-		TileStatus:         "not_started",
+		TileStatus:         tileStatus,
 		ExtractedMetadata:  extractedMeta,
 		CreatedAt:          now,
 		UpdatedAt:          now,

@@ -22,6 +22,10 @@ backend/storage/organizations/
 backend/storage/uploads/
 backend/storage/processed/
 backend/storage/backups/
+backend/storage/composite_cache/
+backend/storage/published_maps.json
+backend/veracity-maps
+backend/veracity-maps.exe
 *.log
 
 # Environment & Local Configuration

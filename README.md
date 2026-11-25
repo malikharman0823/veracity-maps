@@ -1,251 +1,276 @@
 # Veracity Maps
 
-**Veracity Maps** is a high-performance, lightweight geospatial raster management and visual georeferencing web platform. Built with a pure-Go backend (`net/http`) and a responsive modern React / Vite / TailwindCSS / MapLibre GL frontend, it provides an end-to-end workflow for uploading unreferenced aerial and historical maps, interactively placing ground control points (GCPs), computing mathematical least-squares georeferencing transformations, placing geographic icon markers, managing multi-floor building plans, and importing multi-dataset ZIP archives.
+**Veracity Maps** is a full-fledged geospatial raster & vector management, visual georeferencing, and **Custom Web Tile** publishing application. Built with a single-binary Go backend (`net/http`), a React 19 / Vite / TailwindCSS / MapLibre GL frontend, and a Python GIS bridge (`rasterio`, `pyogrio`, `shapely`, `OpenCV`, `ezdxf`, `PyMuPDF`), it runs as a self-contained web application on Windows, macOS, and Linux — both locally and across a LAN for external clients such as **Viewscape**.
 
 ---
 
-## 1. System Architecture
+## Key Capabilities
 
-```mermaid
-graph TD
-    subgraph Browser ["Frontend (React 19 + Vite + MapLibre GL)"]
-        UI[User Interface & Canvas]
-        GCP[Visual Control Point Placer]
-        Viewer[MapLibre GL Map Viewport]
-        Icons[Icon Picker & Point Placement Modal]
-        Floors[Multi-Floor Elevator Switcher]
-        ZipReview[ZIP Import Review Modal]
-        Client[Axios Client (Session Scoped)]
-    end
-
-    subgraph Server ["Backend (Go 1.22+ Standard net/http)"]
-        Router[HTTP Router & Route Dispatcher]
-        Repo[(In-Memory Session Repository)]
-        Storage[(Per-Session Temporary Disk Storage)]
-        MSSQL[(MSSQL Users, Maps, Assets & Revisions)]
-        GIS[GIS Least-Squares Transform Engine]
-        Exporter[MTMAP & VRT Export Engine]
-        ZipInspector[Multi-Dataset Archive Inspector]
-    end
-
-    UI -->|Multipart Upload| Router
-    GCP -->|Coordinates & GCPs| Router
-    Icons -->|Custom Icon Points CRUD| Router
-    Floors -->|Building & Floor Plans| Router
-    ZipReview -->|Inspect & Selective Import| Router
-    Viewer -->|Raw Raster & Dynamic Icons| Router
-    Router --> Client
-    Router --> Repo
-    Router --> Storage
-    Router --> MSSQL
-    Router --> GIS
-    Router --> Exporter
-    Router --> ZipInspector
-```
-
-### Technology Stack
-- **Backend**: Go (`go1.22+`), standard library (`net/http`, `image`, `archive/zip`, `crypto/rand`, `math`), Python GIS bridge (`backend/.venv`) for GDAL, OpenCV image enhancement, Real-ESRGAN ONNX upscaling, PyMuPDF vector/raster extraction, ezdxf CAD parsing, and PaddleOCR label recognition.
-- **Frontend**: React 19, Vite 7, TailwindCSS 4, MapLibre GL JS 6, Lucide Icons.
-- **Persistence**: Temporary GIS processing uses the in-memory `SessionRepository` and isolated `temp/sessions/<session_id>/` workspaces. Authenticated users, maps, sharing grants, durable asset locations, and immutable map revisions are stored in MSSQL. Portable datasets export to genuine SQLite 3 MBTiles 1.3 databases.
-- **GIS Engine**: Pure-Go implementation of 2-point similarity and 3-to-10-point affine least-squares regression, native TIFF header decoder, world file parsing/generation (`.pgw`, `.jgw`, `.wld`, `.tfw`), GDAL VRT XML generation, GDAL Lanczos/Cubic raster overviews and MBTiles 1.3 generation, and universal OpenCV/PaddleOCR image pipelines.
+- **Full-Fledged Single-Server Application**: The compiled Go server serves the production React UI, REST API, local MapLibre GL assets, and live XYZ raster/vector/composite PNG tiles from a single port (`:8000`) with zero external CDN dependencies on LAN.
+- **Universal GIS Ingestion**: Upload rasters (`PNG`, `JPG`, `GeoTIFF`), vector datasets (`GeoPackage .gpkg`, `GeoJSON`, `Shapefile .zip`, `KML`), multi-page `PDF` floorplans, `CAD (.dxf)` drawings, `MBTiles`, and multi-dataset `.zip` archives.
+- **Interactive Georeferencing & Multi-Floor Management**: Place ground control points (GCPs) with 2-point similarity or 3–10-point affine least-squares transforms, manage multi-floor buildings, and place custom geographic icon markers.
+- **Dynamic Custom Web Tile Publishing (Viewscape Compatible)**:
+  - Publish any combination of rasters and vector layers (polygons, lines, and points) into live `256×256` composite PNG tiles (`z0–z18+`) via `GET /tiles/{map_id}/composite/{z}/{x}/{y}.png`.
+  - Automatically generates Viewscape-ready URLs using `{0}/{1}/{2}` placeholders and your machine's LAN IP:
+    ```text
+    http://<your-lan-ip>:8000/tiles/<map_id>/composite/{0}/{1}/{2}.png
+    ```
+  - Includes a built-in interactive Published Map Viewer at `http://<your-lan-ip>:8000/maps/<map_id>`.
+- **Default World Base Map**: Uses the default OpenStreetMap World base layer cleanly across workspaces and published maps.
 
 ---
 
-## 2. Core Features
+## 1. Prerequisites (For Any New Device)
 
-### Feature A — Universal Raster Enhancement, CAD/PDF & MBTiles System
-- **Universal Input Ingestion**: Supports PNG, JPG/JPEG, TIFF/GeoTIFF (`.tif`, `.tiff`), Vector and Scanned PDF, CAD drawings (`.dxf`, `.dwg`, `.svf`), standalone MBTiles databases (`.mbtiles`), and full project archives (`.zip`).
-- **OpenCV Image Processing**: Denoising, contrast adjustment, CLAHE adaptive histogram equalization, text edge sharpening, line preservation, blur detection, adaptive thresholding for scanned engineering drawings, and grayscale conversions.
-- **AI Upscaling**: Optional 2x / 4x super-resolution powered by Real-ESRGAN ONNX with source resolution auto-detection and an engineering-truthfulness guard that prevents hallucinated details.
-- **PDF & CAD Processing**:
-  - **Vector PDF (Path A)**: Extracts native vector paths, fonts, linework, and text annotations into GeoJSON layers.
-  - **Scanned PDF (Path B)**: High-resolution DPI rendering with OpenCV noise suppression and contrast enhancement.
-  - **CAD**: Multi-layer DXF entity extraction (lines, polylines, circles, arcs, text, blocks) preserving drawing units and scales.
-- **GDAL Optimization & MBTiles 1.3**: Automated power-of-two raster overviews, Lanczos/Cubic resampling, TMS/XYZ tile coordinate calculation, and genuine SQLite 3 MBTiles database packaging.
-- **PaddleOCR Text Overlay**: Automated character recognition and bounding-box vectorization for room numbers, dimensions, and labels, projected to geographic coordinates (EPSG:4326) with interactive verification, category tagging, and false-positive deletion.
-- **Reliable Project Reopening & Restoration**: Reopens standalone `.mbtiles` and `.zip` packages without duplicate layers, restores all multi-floor building relationships, control points, camera views, custom icon landmarks, vectors, and OCR text overlays. Rejects corrupt or deprecated loose-tile archives with clear explanations.
+Install the following tools before running the installer:
 
-### Feature B — Custom Geographic Icon Points
-- **Icon Asset Library**: Portable icon catalog located in `frontend/public/icons/` with a deterministic `manifest.json`.
-- **Supported Formats**: PNG, SVG, WebP, ICO, JPG with transparent backgrounds fully preserved.
-- **Interactive Icon Picker**: Search by name or category, category filtering chips, recent icons memory, and transparent background checkerboard preview.
-- **Point Placement Workflow**:
-  1. Select an icon from the picker.
-  2. Click **Place Point** to enter placement mode (crosshair map cursor).
-  3. Click any point on the map canvas to capture geographic coordinates.
-  4. Fill in point name, description, scope (`floor`, `building`, `dataset`), and floor level in the point details modal.
-  5. Save, move, or delete points with live updates.
-- **MapLibre GL Dynamic Rendering**: Uses MapLibre's `styleimagemissing` hook to lazily fetch and register icons on demand. Points render above raster overlays with smooth hover tooltips and label halos.
+| Tool | Minimum Version | Download |
+|---|---|---|
+| **Git** | 2.30+ | https://git-scm.com/downloads |
+| **Go** | 1.22+ | https://go.dev/dl/ |
+| **Node.js & npm** | Node 20+ LTS | https://nodejs.org/ |
+| **Python** | 3.10+ (with `venv` & `pip`) | https://www.python.org/downloads/ |
 
-### Feature B — Multiple Floor Plans per Building
-- **Building & Floor Models**: Buildings represent physical structures (`Building`) containing multiple ordered levels (`BuildingFloor`), each mapped to independent raster datasets.
-- **Independent Georeferencing**: Each floor maintains its own coordinate transformation, raster resolution, bounding box, and ground control points without interfering with other floors.
-- **Elevator Floor Switcher**: Floating interactive widget on the map allowing instant switching between levels (e.g. `B2`, `B1`, `G`, `Floor 1`, `Floor 2`).
-- **Point Scopes**:
-  - `floor`: Visible strictly on the designated floor level.
-  - `building`: Persists and displays across all floor levels of the building.
-  - `dataset`: Associated strictly with a specific raster dataset.
-
-### Feature C — Multi-Dataset ZIP Archive Import
-- **Staged Inspection Workflow**:
-  1. **Upload**: User uploads any `.zip` archive via the upload page or workspace dialog.
-  2. **Security & Validation**: Checks for ZIP-Slip path traversal (`..`), safe decompression limits, and uncompressed size ceilings.
-  3. **Inspection**: Automatically discovers all nested raster images (`.png`, `.jpg`, `.tif`, `.webp`, `.bmp`) and auto-associates matching sidecars (`.pgw`, `.jgw`, `.tfw`, `.wld`, `.prj`).
-  4. **Review Screen (`ZipImportReview`)**: Interactive table displaying discovered datasets, dimensions, georeferencing status, sidecars, and auto-suggested buildings and floors.
-### Feature D — Selective Multi-Layer Map Project Export (v1.1)
-- **Session-Truthful Dynamic Export**: The export dialog reads strictly from the active session manifest (`manifest.members`). Single-floor uploads render cleanly without phantom placeholder buildings or hardcoded `"Building A"` strings.
-- **Hierarchical Building & Floor Selection**: Users can selectively check/uncheck individual buildings, floors, or standalone raster layers with live selection counters and tri-state checkboxes.
-- **Configurable Package Options**: Users can independently toggle building configurations, shared control points, custom icons, layer styles, original rasters, and processed transparent images.
-- **Roundtrip Project Re-importing**: The resulting `.zip` archive adheres to the Veracity Maps project manifest schema and can be re-opened anytime to resume editing.
-- *Detailed release notes are available in [RELEASE_1.1.md](file:///c:/Users/harma/OneDrive/Desktop/veracity-maps/docs/RELEASE_1.1.md).*
+> **Note (Optional Database):** Microsoft SQL Server 2022 is optional for local/LAN usage (`APP_ENV=development` automatically uses local file-backed storage under `backend/storage/`). SQL Server is required only when running in `APP_ENV=production`.
 
 ---
 
-## 3. Importing the Icon Library (Windows)
+## 2. Quick Installation (Recommended)
 
-A deterministic PowerShell import script is provided to discover, validate, deduplicate (via SHA-256), categorize, and copy icon assets from any local Windows folder into the portable repository location:
+### Windows (PowerShell)
 
 ```powershell
-# Run with default local Windows icon directory:
-powershell -ExecutionPolicy Bypass -File scripts/import-icons.ps1
+# 1. Clone the repository
+git clone https://github.com/malikharman0823/veracity-maps.git
+cd veracity-maps
 
-# Or specify a custom source directory:
-powershell -ExecutionPolicy Bypass -File scripts/import-icons.ps1 -SourceDir "E:\Path\To\Icons"
+# 2. Run the one-command installer (sets up .env, Python .venv, builds React UI & Go binary)
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+
+# 3. Start the full application
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1
 ```
 
-The script:
-1. Validates that the source directory exists.
-2. Recursively traverses all subfolders to detect `.png`, `.svg`, `.webp`, `.ico`, and `.jpg` files.
-3. Automatically computes SHA-256 hashes to skip duplicate icons.
-4. Generates slugs, categorizes based on folder hierarchy, and extracts image dimensions.
-5. Emits a deterministic, UTF-8 (no-BOM) `frontend/public/icons/manifest.json`.
-6. Prints a summary report of imported, skipped, and duplicate assets.
+### macOS / Linux (Bash)
 
-### Feature E — PDF Multi-Page Inspection and Selective Import
-- **Lightweight Document Inspection**: On PDF upload, documents are parsed to extract page count, dimensions (points and pixels), rotation angles, and renderability.
-- **On-Demand Page Thumbnails**: Thumbnails are generated at 72 DPI and served via `GET /documents/{doc_id}/pdf-thumbnail/{page_num}` without allocating memory for full-resolution rendering prematurely.
-- **Import PDF Dialog**:
-  - Modal displaying filename, page count, and thumbnail grid.
-  - Interactive page checkboxes, Select All / Deselect All, and live selection counter.
-  - **Georeferencing Mode Selection**:
-    - **Option A: Georeference together (one-time)**: Pages inherit a shared building coordinate system and transformation. Aligning one floor aligns all associated floors simultaneously.
-    - **Option B: Georeference separately**: Each page maintains its own independent transformation and control points.
-- **Logical Raster Layers**: Each selected PDF page is converted to an independent high-resolution PNG raster layer and mapped to its respective floor level.
-- **Original Document Preservation**: The original PDF file is safely retained under `raw_docs/` in the session workspace and included once in selective ZIP project exports.
+```bash
+# 1. Clone the repository
+git clone https://github.com/malikharman0823/veracity-maps.git
+cd veracity-maps
 
-### Feature F — CAD Drawing (DXF) Import & Rasterization
-- **Format Verification**: Validates CAD file structure and extracts DXF version, drawing extents, units, and layer list.
-- **High-Fidelity Linework Conversion**: Renders 2D CAD linework into high-resolution transparent PNG rasters via `ezdxf` and `matplotlib`, preserving exact aspect ratio and drawing bounds.
-- **Seamless Workspace Integration**: Converted CAD layers plug directly into the visual georeferencing, opacity, and multi-floor switching workflows.
-- **Selective Project Export**: Preserves both the original source CAD file and the rendered raster within the exported project ZIP.
-- *Update 1.2 release notes are available in [`docs/RELEASE_1.2.md`](docs/RELEASE_1.2.md).*
+# 2. Run the one-command installer (sets up .env, Python .venv, builds React UI & Go binary)
+bash scripts/install.sh
+
+# 3. Start the full application
+bash scripts/start.sh
+```
+
+Once started, open the application in your browser:
+- **This device:** `http://localhost:8000`
+- **Other devices on the same Wi-Fi/LAN:** `http://<your-lan-ip>:8000` (printed automatically on startup)
 
 ---
 
-## 4. Session Storage & Lifecycle Architecture
+## 3. Manual Step-by-Step Installation
 
-Saved maps are not session records. A successful save promotes referenced dataset files to `storage/uploads/maps/<owner_id>/<map_id>/assets/<asset_id>/` and atomically commits the map, asset locations, and revision in MSSQL. Ending a GIS session or logging out does not delete these records. Editors append revisions to the same shared map; viewers and download-only recipients cannot save.
+If you prefer to run each step manually instead of using the installer script:
 
-- **Session Directories**:
-  ```text
-  backend/temp/sessions/<session_id>/
-  ├── raw_docs/
-  │   └── <doc_id>_floorplan.pdf
-  ├── pdf_thumbnails/
-  │   └── <doc_id>/
-  │       ├── page_1.png
-  │       └── page_2.png
-  ├── datasets/
-  │   └── <dataset_id>/
-  │       ├── source.png
-  │       ├── source.pgw
-  │       └── metadata.json
-  ├── buildings/
-  │   └── <building_id>/
-  │       └── floors.json
-  └── imports/
-      └── <import_id>/
-          └── archive.zip
-  ```
-- **Windows File Lock Recovery**: Windows holds mandatory file descriptor locks on active files. Directory removals use `storage.SafeRemoveAll`, which resets read-only attributes and executes exponential backoff retries.
-- **Session Cleanup**: A background worker runs every 10 minutes to prune idle sessions and wipe their disk storage cleanly.
+### Step 1 — Clone & Create Environment Files
+```powershell
+git clone https://github.com/malikharman0823/veracity-maps.git
+cd veracity-maps
+Copy-Item .env.example .env
+Copy-Item frontend\.env.example frontend\.env
+```
+*(On macOS/Linux use `cp .env.example .env && cp frontend/.env.example frontend/.env`.)*
+
+### Step 2 — Set Up the Python GIS Bridge
+**Windows:**
+```powershell
+python -m venv backend\.venv
+backend\.venv\Scripts\python.exe -m pip install --upgrade pip
+backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install --upgrade pip
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+### Step 3 — Build the Production Frontend UI
+**Windows:**
+```powershell
+cd frontend
+cmd.exe /c "npm.cmd install"
+$env:VITE_API_URL = "same-origin"
+cmd.exe /c "npm.cmd run build"
+Remove-Item Env:\VITE_API_URL
+cd ..
+```
+
+**macOS / Linux:**
+```bash
+cd frontend
+npm install
+VITE_API_URL=same-origin npm run build
+cd ..
+```
+
+### Step 4 — Compile & Run the Go Application
+**Windows:**
+```powershell
+cd backend
+go mod download
+go build -o veracity-maps.exe .
+.\veracity-maps.exe
+```
+
+**macOS / Linux:**
+```bash
+cd backend
+go mod download
+go build -o veracity-maps .
+./veracity-maps
+```
 
 ---
 
-## 5. Startup Instructions
+## 4. Configuration Guide
 
-### 1. Start the Go Backend
-From the workspace root:
-```powershell
-Set-Location backend
-go run main.go
+### Root Backend Configuration (`.env`)
+
+Edit `.env` in the repository root to customize server behavior:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8000` | HTTP port for the application, API, and tile server. |
+| `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` allows LAN devices & Viewscape to connect). |
+| `APP_ENV` | `development` | `development` allows local file-backed storage when MSSQL is offline; `production` requires a live MSSQL database. |
+| `APP_PUBLIC_URL` | `http://localhost:8000` | Base URL used in emails and share links. Set to `http://<your-lan-ip>:8000` or your domain for external access. |
+| `FRONTEND_DIST_DIR` | `../frontend/dist` | Optional custom path to the built React SPA directory. |
+| `SESSION_STORAGE_DIR` | `temp/sessions` | Ephemeral per-session working directory (relative to `backend/`). |
+| `UPLOAD_DIR` | `storage/uploads` | Uploaded dataset storage path. |
+| `PROCESSED_DIR` | `storage/processed` | Processed rasters and tile caches path. |
+| `MAX_UPLOAD_SIZE_BYTES` | `524288000` | Maximum upload size in bytes (default `500 MB`). |
+| `WORKSPACE_TTL` | `24h` | Idle timeout before temporary workspaces are cleaned up. |
+| `BASEMAP_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Default World base map tile template. |
+| `BASEMAP_ATTRIBUTION` | `© OpenStreetMap contributors` | Attribution shown for the default World base map. |
+
+#### Optional: Microsoft SQL Server (Production Persistence)
+By default in `APP_ENV=development`, if SQL Server is not running on port `1433`, Veracity Maps automatically uses local storage (`backend/storage/`). To enable durable MSSQL persistence:
+```env
+APP_ENV=production
+MSSQL_CONNECTION_STRING=sqlserver://<user>:<password>@<host>:1433?database=veracity_maps
 ```
-The backend initializes on `http://localhost:8000`. Startup diagnostics display available storage paths and GDAL CLI detection status.
-`MSSQL_CONNECTION_STRING` is required outside isolated tests. Startup fails closed when MSSQL is unavailable so a map save is never acknowledged only in process memory.
+*(See [DATABASE_SETUP.md](DATABASE_SETUP.md) for full SQL Server setup instructions.)*
 
-Legacy `saved_configs.json` files are migration input only. Preview eligible promotions first, then apply explicitly:
-
-```powershell
-Set-Location backend
-go run ./cmd/promote-session-configs -source .\temp\sessions
-go run ./cmd/promote-session-configs -source .\temp\sessions -apply
+#### Optional: Outbound Email (OTP Verification & Invitations)
+Configure any standard SMTP provider (Gmail App Password, Outlook, Brevo, SendGrid, or local Mailpit):
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-16-char-app-password
+SMTP_FROM_EMAIL=no-reply@veracitymaps.com
+SMTP_USE_TLS=false
 ```
 
-The command preserves source JSON, requires one unambiguous asset owner, and records idempotency in `Legacy_Config_Promotions`.
+### Frontend Configuration (`frontend/.env`)
 
-### 2. Start the React Frontend
-In a separate terminal from the workspace root:
-```powershell
-Set-Location frontend
-cmd.exe /c "npm.cmd run dev"
-```
-The development server starts on `http://localhost:5173`.
+| Variable | Production / Single-Server | Separate Vite Dev Mode |
+|---|---|---|
+| `VITE_API_URL` | `same-origin` | `http://localhost:8000` |
+| `VITE_BASEMAP_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` |
+| `VITE_BASEMAP_ATTRIBUTION` | `© OpenStreetMap contributors` | `© OpenStreetMap contributors` |
+
+### LAN & Firewall Configuration (For Viewscape & Other Devices)
+
+To let other devices on your network (or Viewscape) load Custom Web Tiles from `http://<your-lan-ip>:8000`:
+1. Ensure `HOST=0.0.0.0` in `.env` (this is the default).
+2. Allow inbound TCP traffic on port `8000` in your OS firewall:
+   - **Windows (Admin PowerShell):**
+     ```powershell
+     New-NetFirewallRule -DisplayName "Veracity Maps (TCP 8000)" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+     ```
+   - **Linux (UFW):**
+     ```bash
+     sudo ufw allow 8000/tcp
+     ```
+3. In the Veracity Maps workspace, click **Export → Generate Custom Web Tile URL** and paste the generated `http://<your-lan-ip>:8000/tiles/<map_id>/composite/{0}/{1}/{2}.png` URL directly into Viewscape's Custom Web Tile field.
 
 ---
 
-## 6. Running Tests & Automated Checks
+## 5. Development Mode (Hot Reload)
 
-To run the complete automated test suite (Go formatting, `go vet`, every Go package test, the full HTTP API matrix, frontend unit/API-contract tests, production build and bundle-budget verification, plus rendered desktop/mobile Chromium checks):
+If you are actively editing React components or Go code and want live reload:
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Dev
+```
+
+**macOS / Linux:**
+```bash
+bash scripts/start.sh --dev
+```
+
+This runs the Go backend on `http://localhost:8000` and the Vite dev server on `http://localhost:5173`. *(Ensure `VITE_API_URL=http://localhost:8000` in `frontend/.env` when using Vite dev mode.)*
+
+---
+
+## 6. Architecture Overview
+
+```text
+veracity-maps/
+├── backend/
+│   ├── main.go                 # Application entrypoint (HTTP server + SPA hosting)
+│   ├── api/                    # HTTP router, middleware, and embedded SPA file server
+│   ├── config/                 # Environment loader & validator
+│   ├── functions/              # Feature HTTP handlers (upload, datasets, georeference, publish, export, gis, auth)
+│   ├── services/               # Core business logic & composite tile rendering orchestration
+│   ├── gis/                    # Pure-Go GIS transforms, world files, vector tile utilities
+│   ├── scripts/                # Python GIS bridge (GeoPackage, raster, CAD, PDF, composite PNG renderer)
+│   ├── repository/             # In-memory / file-backed & MSSQL repositories
+│   ├── storage/                # Local runtime storage & tile cache (gitignored)
+│   └── requirements.txt        # Clean, portable Python GIS dependencies
+├── frontend/
+│   ├── src/                    # React 19 + MapLibre GL workspace, export modal & published viewer
+│   ├── public/icons/           # Portable icon library & manifest.json
+│   └── dist/                   # Production SPA bundle served directly by Go backend
+├── scripts/
+│   ├── install.ps1             # Windows one-command installer
+│   ├── install.sh              # macOS/Linux one-command installer
+│   ├── start.ps1               # Windows launcher (full app or -Dev)
+│   ├── start.sh                # macOS/Linux launcher (full app or --dev)
+│   └── import-icons.ps1        # Deterministic icon asset importer
+├── .env.example                # Root environment template
+└── test-all.ps1                # Full automated verification suite
+```
+
+---
+
+## 7. Running Tests & Verification
+
+Run the complete automated verification suite (Go formatting, `go vet`, Go unit/integration tests, frontend unit/API-contract tests, and production bundle check):
 
 ```powershell
-# From the workspace root:
+# Windows
 powershell -ExecutionPolicy Bypass -File test-all.ps1
 ```
 
-Or run individual targeted commands:
-- **Backend Unit & Integration Tests:**
-  ```powershell
-  Set-Location backend
-  go test -v -count=1 ./...
-  ```
-- **Frontend Unit & API Contract Tests:**
-  ```powershell
-  Set-Location frontend
-  cmd.exe /c "npm.cmd test"
-  ```
-- **Backend Static Analysis:**
-  ```powershell
-  Set-Location backend
-  gofmt -l .
-  go vet ./...
-  ```
-- **Frontend Production Build:**
-  ```powershell
-  Set-Location frontend
-  cmd.exe /c "npm.cmd run build"
-  cmd.exe /c "npm.cmd run test:bundle"
-  ```
-- **Rendered Browser Tests:**
-  ```powershell
-  Set-Location frontend
-  cmd.exe /c "npx.cmd playwright install chromium"
-  cmd.exe /c "npm.cmd run test:e2e"
-  ```
+Or run targeted checks:
 
----
+```powershell
+# Backend formatting, static analysis & tests
+cd backend
+gofmt -l .
+go vet ./...
+go test -v -count=1 ./tests/...
 
-## 7. Known Limitations & Notes
-
-1. **In-Memory Volatility**: Data is scoped to the temporary session. Ending a session or allowing it to expire deletes all temporary raster files and points.
-2. **GDAL Optional Dependency**: If `gdalinfo` or `gdalwarp` are absent from `PATH`, the application seamlessly falls back to pure-Go native raster inspection and affine matrix transformations.
-3. **Archive Memory Limits**: Archive file uploads are capped at 500 MB and 1000 files per archive to ensure safety and prevent resource exhaustion.
+# Frontend tests & production build
+cd ../frontend
+cmd.exe /c "npm.cmd test"
+cmd.exe /c "npm.cmd run build"
+```

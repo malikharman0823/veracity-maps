@@ -23,6 +23,7 @@ import (
 	procFn "github.com/malikharman0823/veracity-maps/functions/processing"
 	"github.com/malikharman0823/veracity-maps/functions/profile"
 	"github.com/malikharman0823/veracity-maps/functions/projects"
+	"github.com/malikharman0823/veracity-maps/functions/publish"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
 	"github.com/malikharman0823/veracity-maps/functions/workspaceregistry"
 	"github.com/malikharman0823/veracity-maps/gis"
@@ -148,6 +149,11 @@ func main() {
 	baseLayerHandler := baselayers.NewHandler(baseLayerService)
 	wsRegService := services.NewWorkspaceRegistryService(wsRegRepo, gisService, repo, mapRepo)
 	wsRegHandler := workspaceregistry.NewHandler(wsRegService)
+	exportService.SetGISService(gisService)
+	exportService.SetBaseLayerService(baseLayerService)
+	datasetService.SetGISService(gisService)
+	publishService := services.NewPublishService("storage", repo, sm, exportService, gisService, mapRepo)
+	publishHandler := publish.NewHandler(publishService, cfg.AppPublicURL)
 
 	router := api.NewRouter(
 		repo,
@@ -167,6 +173,7 @@ func main() {
 	router.SetProcessingHandler(procHandler)
 	router.SetBaseLayerHandler(baseLayerHandler)
 	router.SetWorkspaceRegistryHandler(wsRegHandler)
+	router.SetPublishHandler(publishHandler)
 
 	// Background session cleaner
 	go func() {
@@ -195,8 +202,14 @@ func main() {
 	}
 
 	gdal := gis.DetectGDAL()
+	distDir := api.ResolveFrontendDistDir()
 	log.Printf("==================================================")
-	log.Printf(" Veracity Maps Backend starting on http://localhost:%s", cfg.Port)
+	log.Printf(" Veracity Maps starting on http://localhost:%s", cfg.Port)
+	if distDir != "" {
+		log.Printf(" Frontend UI: Embedded SPA enabled (%s)", distDir)
+	} else {
+		log.Printf(" Frontend UI: API-only mode (run 'npm run build' in frontend/ to serve UI here)")
+	}
 	if gdal.Available {
 		log.Printf(" GDAL Status: Available (%s)", gdal.VersionMessage)
 	} else {
