@@ -107,15 +107,25 @@ export default function MapLibreGISController({
   // Re-sync GIS layers whenever MapLibre finishes initial load or switches base layer style
   useEffect(() => {
     if (!map) return
+    let styleSeen = false
     const bump = () => setStyleRevision((r) => r + 1)
+    const onStyleData = () => {
+      if (!styleSeen && map.style && map.getStyle()) {
+        styleSeen = true
+        bump()
+      }
+    }
     map.on("load", bump)
     map.on("style.load", bump)
-    if (map.style && map.isStyleLoaded()) {
+    map.on("styledata", onStyleData)
+    if (map.style && map.getStyle()) {
+      styleSeen = true
       bump()
     }
     return () => {
       map.off("load", bump)
       map.off("style.load", bump)
+      map.off("styledata", onStyleData)
     }
   }, [map])
 
@@ -148,8 +158,10 @@ export default function MapLibreGISController({
   }, [gisLayers, featuresRefreshKey])
 
   // Synchronize GIS layers, styles, visibility, opacity, zoom ranges, and selection highlight with MapLibre
+  // Note: Use map.getStyle() rather than map.isStyleLoaded(), because isStyleLoaded() returns false
+  // whenever any raster image or OSM tile is still downloading, which previously caused all vector layers to be skipped!
   useEffect(() => {
-    if (!map || !map.isStyleLoaded()) return
+    if (!map || !map.style || !map.getStyle()) return
 
     gisLayers.forEach((layer) => {
       // Handle Raster GIS Layers (sync existing WorkspaceMap raster layer or render standalone GIS raster)

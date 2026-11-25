@@ -896,11 +896,16 @@ export default function WorkspacePage() {
         return
       }
       const returnTo = mapId
-        ? `/maps/${mapId}/edit?datasetId=${encodeURIComponent(targetId)}`
-        : `/datasets/${encodeURIComponent(targetId)}/workspace`
-      navigate(`/datasets/${encodeURIComponent(targetId)}/georeference?returnTo=${encodeURIComponent(returnTo)}`)
+        ? `/maps/${encodeURIComponent(mapId)}/edit`
+        : mapspaceId
+          ? `/mapspaces/${encodeURIComponent(mapspaceId)}`
+          : id
+            ? `/datasets/${encodeURIComponent(id)}/workspace`
+            : `/datasets/${encodeURIComponent(targetId)}/workspace`
+      const wsQuery = gisMapId ? `&workspaceId=${encodeURIComponent(gisMapId)}` : ""
+      navigate(`/datasets/${encodeURIComponent(targetId)}/georeference?returnTo=${encodeURIComponent(returnTo)}${wsQuery}`)
     },
-    [workspace.manifest?.members, gisLayers, mapId, navigate, notifyGIS]
+    [workspace.manifest?.members, gisLayers, mapId, mapspaceId, id, gisMapId, navigate, notifyGIS]
   )
 
   const handleSelectTool = useCallback(
