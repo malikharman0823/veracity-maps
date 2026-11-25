@@ -667,6 +667,7 @@ func (s *PublishService) PublishMap(
 
 	now := time.Now().UTC()
 	layerOrder := normalizePublishedLayerOrder(req.LayerOrder)
+	resolvedStack := resolvePublishedLayerStack(req.LayerStack, publishedRasters, publishedVectors, layerOrder)
 
 	pm := &models.PublishedMap{
 		MapID:          mapID,
@@ -683,6 +684,7 @@ func (s *PublishService) PublishMap(
 		RasterLayers:   publishedRasters,
 		VectorLayers:   publishedVectors,
 		LayerOrder:     layerOrder,
+		LayerStack:     resolvedStack,
 		Bounds:         unionBounds,
 		Center:         center,
 		InitialZoom:    initZoom,
@@ -784,6 +786,77 @@ func normalizePublishedLayerOrder(order []string) []string {
 		}
 	}
 	return []string{"vector", "raster", "base"}
+}
+
+// resolvePublishedLayerStack maps the caller's top-to-bottom Photoshop-style layer_stack
+// onto the concrete published raster and vector layer_ids, appending any unmatched layers
+// in their default group order so nothing is ever lost.
+func resolvePublishedLayerStack(
+	requested []models.PublishedLayerStackItem,
+	rasters []models.PublishedRasterLayer,
+	vectors []models.PublishedVectorLayer,
+	fallbackOrder []string,
+) []models.PublishedLayerStackItem {
+	out := make([]models.PublishedLayerStackItem, 0, len(rasters)+len(vectors))
+	usedRaster := make(map[string]bool, len(rasters))
+	usedVector := make(map[string]bool, len(vectors))
+
+	for _, item := range requested {
+		kind := strings.ToLower(strings.TrimSpace(item.Kind))
+		id := strings.TrimSpace(item.ID)
+		name := strings.ToLower(strings.TrimSpace(item.Name))
+		if kind == "raster" {
+			for _, rl := range rasters {
+				if usedRaster[rl.LayerID] {
+					continue
+				}
+				if (id != "" && (rl.LayerID == id || rl.DatasetID == id)) ||
+					(name != "" && (strings.ToLower(rl.Name) == name || strings.ToLower(rl.LayerID) == name)) {
+					usedRaster[rl.LayerID] = true
+					out = append(out, models.PublishedLayerStackItem{Kind: "raster", ID: rl.LayerID, Name: rl.Name})
+					break
+				}
+			}
+		} else if kind == "vector" {
+			for _, vl := range vectors {
+				if usedVector[vl.LayerID] {
+					continue
+				}
+				if (id != "" && (vl.LayerID == id || vl.GISLayerID == id || vl.DatasetID == id)) ||
+					(name != "" && (strings.ToLower(vl.SourceLayer) == name || strings.ToLower(vl.Name) == name || strings.ToLower(vl.LayerID) == name)) {
+					usedVector[vl.LayerID] = true
+					out = append(out, models.PublishedLayerStackItem{Kind: "vector", ID: vl.LayerID, Name: vl.Name})
+					break
+				}
+			}
+		}
+	}
+
+	appendRemainingRasters := func() {
+		for _, rl := range rasters {
+			if !usedRaster[rl.LayerID] {
+				usedRaster[rl.LayerID] = true
+				out = append(out, models.PublishedLayerStackItem{Kind: "raster", ID: rl.LayerID, Name: rl.Name})
+			}
+		}
+	}
+	appendRemainingVectors := func() {
+		for _, vl := range vectors {
+			if !usedVector[vl.LayerID] {
+				usedVector[vl.LayerID] = true
+				out = append(out, models.PublishedLayerStackItem{Kind: "vector", ID: vl.LayerID, Name: vl.Name})
+			}
+		}
+	}
+
+	if len(fallbackOrder) > 0 && fallbackOrder[0] == "raster" {
+		appendRemainingRasters()
+		appendRemainingVectors()
+	} else {
+		appendRemainingVectors()
+		appendRemainingRasters()
+	}
+	return out
 }
 
 // BuildMapLibreStyle generates a MapLibre Style Spec v8 JSON document referencing the published
@@ -943,19 +1016,66 @@ func (s *PublishService) BuildMapLibreStyle(pm *models.PublishedMap, baseURL, to
 		})
 	}
 
-	// Append raster and vector layer groups bottom-to-top according to pm.LayerOrder
-	// (LayerOrder is top-to-bottom: ["raster","vector","base"] means raster renders ABOVE vector).
-	effectiveOrder := normalizePublishedLayerOrder(pm.LayerOrder)
-	if effectiveOrder[0] == "raster" {
-		layers = append(layers, fillLayers...)
-		layers = append(layers, lineLayers...)
-		layers = append(layers, circleLayers...)
-		layers = append(layers, rasterMapLayers...)
+	// Append raster and vector layers bottom-to-top.
+	// If pm.LayerStack is present, honor exact per-layer interleaved Photoshop order!
+	if len(pm.LayerStack) > 0 {
+		rasterByID := make(map[string]map[string]interface{}, len(rasterMapLayers))
+		for _, rl := range rasterMapLayers {
+			if id, _ := rl["id"].(string); id != "" {
+				rasterByID[strings.TrimPrefix(id, "pub-raster-lyr-")] = rl
+			}
+		}
+		fillByID := make(map[string]map[string]interface{}, len(fillLayers))
+		lineByID := make(map[string]map[string]interface{}, len(lineLayers))
+		circleByID := make(map[string]map[string]interface{}, len(circleLayers))
+		for _, fl := range fillLayers {
+			if id, _ := fl["id"].(string); id != "" {
+				fillByID[strings.TrimPrefix(id, "pub-vec-fill-")] = fl
+			}
+		}
+		for _, ll := range lineLayers {
+			if id, _ := ll["id"].(string); id != "" {
+				lineByID[strings.TrimPrefix(id, "pub-vec-line-")] = ll
+			}
+		}
+		for _, cl := range circleLayers {
+			if id, _ := cl["id"].(string); id != "" {
+				circleByID[strings.TrimPrefix(id, "pub-vec-circle-")] = cl
+			}
+		}
+		// Reverse LayerStack (top-to-bottom -> bottom-to-top for MapLibre)
+		for i := len(pm.LayerStack) - 1; i >= 0; i-- {
+			item := pm.LayerStack[i]
+			if item.Kind == "raster" {
+				if lyr, ok := rasterByID[item.ID]; ok {
+					layers = append(layers, lyr)
+				}
+			} else if item.Kind == "vector" {
+				if fl, ok := fillByID[item.ID]; ok {
+					layers = append(layers, fl)
+				}
+				if ll, ok := lineByID[item.ID]; ok {
+					layers = append(layers, ll)
+				}
+				if cl, ok := circleByID[item.ID]; ok {
+					layers = append(layers, cl)
+				}
+			}
+		}
 	} else {
-		layers = append(layers, rasterMapLayers...)
-		layers = append(layers, fillLayers...)
-		layers = append(layers, lineLayers...)
-		layers = append(layers, circleLayers...)
+		// Group-level fallback ordering
+		effectiveOrder := normalizePublishedLayerOrder(pm.LayerOrder)
+		if effectiveOrder[0] == "raster" {
+			layers = append(layers, fillLayers...)
+			layers = append(layers, lineLayers...)
+			layers = append(layers, circleLayers...)
+			layers = append(layers, rasterMapLayers...)
+		} else {
+			layers = append(layers, rasterMapLayers...)
+			layers = append(layers, fillLayers...)
+			layers = append(layers, lineLayers...)
+			layers = append(layers, circleLayers...)
+		}
 	}
 
 	return map[string]interface{}{
@@ -1391,6 +1511,7 @@ func (s *PublishService) resolveCompositeSpecPath(pm *models.PublishedMap) (stri
 		"map_id":        pm.MapID,
 		"bounds":        pm.Bounds,
 		"layer_order":   normalizePublishedLayerOrder(pm.LayerOrder),
+		"layer_stack":   pm.LayerStack,
 		"raster_layers": rasterSpecs,
 		"vector_layers": vectorSpecs,
 	}

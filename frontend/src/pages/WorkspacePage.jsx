@@ -186,11 +186,23 @@ export default function WorkspacePage() {
   const [controllerActions, setControllerActions] = useState({ canUndo: false, canRedo: false })
   const [statusLoadingLabel, setStatusLoadingLabel] = useState("")
   const [layerOrder, setLayerOrder] = useState(["vector", "raster", "base"])
+  const [layerStackKeys, setLayerStackKeys] = useState([])
 
   const handleToggleLayerOrder = useCallback(() => {
     setLayerOrder((prev) =>
       prev[0] === "raster" ? ["vector", "raster", "base"] : ["raster", "vector", "base"]
     )
+  }, [])
+
+  const handleReorderLayerStack = useCallback((nextKeys) => {
+    if (!Array.isArray(nextKeys)) return
+    setLayerStackKeys(nextKeys)
+    const first = nextKeys[0] || ""
+    if (first.startsWith("raster:")) {
+      setLayerOrder(["raster", "vector", "base"])
+    } else if (first.startsWith("vector:")) {
+      setLayerOrder(["vector", "raster", "base"])
+    }
   }, [])
 
   const notifyGIS = useCallback((msg) => {
@@ -1168,6 +1180,55 @@ export default function WorkspacePage() {
         }
       : null)
 
+  // Unified Photoshop-style top-to-bottom stack of all individual vector & raster layers
+  const unifiedLayerStack = useMemo(() => {
+    const membersList = effectiveManifest?.members || []
+    const byKey = new Map()
+    const memberIds = new Set()
+
+    ;[...gisLayers]
+      .filter((l) => l.layer_type === "vector" || !l.layer_type)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      .forEach((l) => {
+        const key = `vector:${l.layer_id}`
+        byKey.set(key, { key, kind: "vector", id: l.layer_id, name: l.layer_name || l.layer_id })
+      })
+
+    ;[...membersList]
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .forEach((m) => {
+        memberIds.add(m.dataset_id)
+        const key = `raster:${m.dataset_id}`
+        byKey.set(key, {
+          key,
+          kind: "raster",
+          id: m.dataset_id,
+          name: m.name || m.dataset?.filename || m.dataset_id,
+        })
+      })
+
+    ;[...gisLayers]
+      .filter((l) => l.layer_type === "raster" && (!l.dataset_id || !memberIds.has(l.dataset_id)))
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      .forEach((l) => {
+        const key = `raster:${l.layer_id}`
+        byKey.set(key, { key, kind: "raster", id: l.layer_id, name: l.layer_name || l.layer_id })
+      })
+
+    const out = []
+    const used = new Set()
+    layerStackKeys.forEach((k) => {
+      if (byKey.has(k) && !used.has(k)) {
+        out.push(byKey.get(k))
+        used.add(k)
+      }
+    })
+    byKey.forEach((val, k) => {
+      if (!used.has(k)) out.push(val)
+    })
+    return out
+  }, [effectiveManifest?.members, gisLayers, layerStackKeys])
+
   if (mapNotFound) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center p-6 text-center bg-neutral-50 dark:bg-[#171717]">
@@ -1452,8 +1513,8 @@ export default function WorkspacePage() {
                       activeGISLayer={activeGISLayer}
                       activeBaseLayer={activeBaseLayer}
                       mapViewPrefs={mapViewPrefs}
-                      layerOrder={layerOrder}
-                      onToggleLayerOrder={handleToggleLayerOrder}
+                      layerStack={unifiedLayerStack}
+                      onReorderLayerStack={handleReorderLayerStack}
                       onSelectGISLayer={setActiveGISLayer}
                       onLayerUpdatedImmediate={handleGISLayerImmediateUpdate}
                       onRefreshGISLayers={() => {
@@ -1548,6 +1609,7 @@ export default function WorkspacePage() {
                 onMapReady={setMapInstance}
                 hasGISLayers
                 layerOrder={layerOrder}
+                layerStack={unifiedLayerStack}
                 mapViews={mapViews}
                 mapViewPrefs={mapViewPrefs}
                 customBaseLayer={activeBaseLayer}
@@ -1571,6 +1633,7 @@ export default function WorkspacePage() {
                   map={mapInstance}
                   gisLayers={gisLayers}
                   layerOrder={layerOrder}
+                  layerStack={unifiedLayerStack}
                   activeLayer={activeGISLayer}
                   activeTool={measureMode ? "select" : activeVectorTool}
                   onSelectTool={handleSelectTool}
@@ -1916,6 +1979,7 @@ export default function WorkspacePage() {
         primaryDatasetId={resolvedExportDatasetId}
         workspaceId={gisMapId}
         layerOrder={layerOrder}
+        layerStack={unifiedLayerStack}
         onToggleLayerOrder={handleToggleLayerOrder}
         activeBaseLayer={activeBaseLayer}
         onExport={handlePerformExport}
@@ -1960,6 +2024,7 @@ export default function WorkspacePage() {
         onClose={() => setShareModalOpen(false)}
         map={currentMap}
         layerOrder={layerOrder}
+        layerStack={unifiedLayerStack}
       />
 
       <BaseLayerSelectionModal

@@ -337,6 +337,49 @@ func TestCombinedRasterAndVectorWebTilePublishing(t *testing.T) {
 	}
 
 	// =========================================================================
+	// 1c. Exact Per-Layer Photoshop Stack (layer_stack) Ordering
+	// =========================================================================
+	codeStack, stackData := doPublish(aliceToken, map[string]interface{}{
+		"workspace_id": rasterDs.ID,
+		"name":         "SF Exact Photoshop Stack",
+		"mode":         "combined",
+		"is_public":    true,
+		"min_zoom":     12,
+		"max_zoom":     13,
+		"layer_stack": []map[string]interface{}{
+			{"kind": "raster", "id": rasterDs.ID, "name": "campus_aerial.png"},
+			{"kind": "vector", "name": "hospitals"},
+		},
+	})
+	if codeStack != http.StatusCreated {
+		t.Fatalf("layer_stack publish failed (%d): %+v", codeStack, stackData)
+	}
+	stackMapID, _ := stackData["map_id"].(string)
+	recStackStyle := httptest.NewRecorder()
+	reqStackStyle := httptest.NewRequest(http.MethodGet, "/maps/"+stackMapID+"/style.json", nil)
+	handler.ServeHTTP(recStackStyle, reqStackStyle)
+	if recStackStyle.Code != http.StatusOK {
+		t.Fatalf("expected 200 for layer_stack style.json, got %d", recStackStyle.Code)
+	}
+	var stackStyleDoc map[string]interface{}
+	_ = json.Unmarshal(recStackStyle.Body.Bytes(), &stackStyleDoc)
+	stackLayers, _ := stackStyleDoc["layers"].([]interface{})
+	stackVecIdx, stackRasIdx := -1, -1
+	for i, rawL := range stackLayers {
+		lMap, _ := rawL.(map[string]interface{})
+		lid, _ := lMap["id"].(string)
+		if strings.HasPrefix(lid, "pub-vec-") {
+			stackVecIdx = i
+		}
+		if strings.HasPrefix(lid, "pub-raster-lyr-") {
+			stackRasIdx = i
+		}
+	}
+	if stackRasIdx == -1 || stackVecIdx == -1 || stackRasIdx <= stackVecIdx {
+		t.Fatalf("expected raster layer above vector layer in layer_stack style.json; stackRasIdx=%d, stackVecIdx=%d", stackRasIdx, stackVecIdx)
+	}
+
+	// =========================================================================
 	// 2. Independent Raster-Only Web Tile Publishing
 	// =========================================================================
 	codeR, rData := doPublish(aliceToken, map[string]interface{}{

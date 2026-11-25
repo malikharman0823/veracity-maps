@@ -47,6 +47,7 @@ export default function ShareMapModal({
   onClose,
   onShareUpdated,
   layerOrder = ["vector", "raster", "base"],
+  layerStack = [],
 }) {
   const [activeTab, setActiveTab] = useState("email") // "email" | "links" | "publish" | "members"
   const [shares, setShares] = useState([])
@@ -194,6 +195,9 @@ export default function ShareMapModal({
         mode,
         is_public: publishPublic,
         layer_order: layerOrder,
+        layer_stack: Array.isArray(layerStack)
+          ? layerStack.map(({ kind, id, name }) => ({ kind, id, name }))
+          : [],
       })
       const pubId = created?.map_id || created?.id
       const accessToken = !created?.is_public ? created?.access_token || "" : ""

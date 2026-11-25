@@ -311,6 +311,7 @@ export default function WorkspaceMap({
   onMapReady,
   hasGISLayers = false,
   layerOrder = ["vector", "raster", "base"],
+  layerStack = [],
   mapViews = DEFAULT_MAP_VIEWS,
   mapViewPrefs = null,
   customBaseLayer = null,
@@ -1362,7 +1363,33 @@ export default function WorkspaceMap({
       })
     }
 
-    if (rasterOnTop) {
+    if (Array.isArray(layerStack) && layerStack.length > 0) {
+      // Exact Photoshop per-layer z-order: iterate bottom-to-top (reverse of UI stack)
+      for (let i = layerStack.length - 1; i >= 0; i--) {
+        const item = layerStack[i]
+        if (!item?.id) continue
+        if (item.kind === "raster") {
+          const rIds = [resourceIds(item.id).rasterLayer, `gis-raster-lyr-${item.id}`]
+          rIds.forEach((lid) => {
+            if (map.getLayer(lid)) {
+              try { map.moveLayer(lid) } catch {}
+            }
+          })
+        } else if (item.kind === "vector") {
+          const vIds = [
+            `gis-fill-${item.id}`,
+            `gis-line-${item.id}`,
+            `gis-circle-${item.id}`,
+            `gis-label-${item.id}`,
+          ]
+          vIds.forEach((lid) => {
+            if (map.getLayer(lid)) {
+              try { map.moveLayer(lid) } catch {}
+            }
+          })
+        }
+      }
+    } else if (rasterOnTop) {
       positionVectors()
       positionRasters()
     } else {
@@ -1422,7 +1449,7 @@ export default function WorkspaceMap({
         }
       }
     }
-  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible, overlayDataByDataset, transformMember, layerOrder])
+  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible, overlayDataByDataset, transformMember, layerOrder, layerStack])
 
   // Pan to selected record
   useEffect(() => {

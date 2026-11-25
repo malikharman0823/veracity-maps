@@ -1,7 +1,5 @@
 import React, { useMemo, useState } from "react"
 import {
-  ChevronDown,
-  ChevronRight,
   Eye,
   EyeOff,
   GripVertical,
@@ -21,7 +19,11 @@ import {
   Check,
   X,
   FolderPlus,
-  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Lock,
+  MapPin,
+  Minus,
 } from "lucide-react"
 import {
   createMapLayer,
@@ -33,6 +35,41 @@ import {
   duplicateGISLayer,
 } from "../../api"
 
+// Color-coded layer-type visual badges (Photoshop-style layer tags)
+function getLayerTypeBadge(item) {
+  if (item.kind === "raster") {
+    return {
+      label: "RASTER",
+      accent: "#0ea5e9",
+      pillClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
+      Icon: ImageIcon,
+    }
+  }
+  const gt = String(item.geometryType || "").toLowerCase()
+  if (gt.includes("point")) {
+    return {
+      label: "POINT",
+      accent: "#f59e0b",
+      pillClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+      Icon: MapPin,
+    }
+  }
+  if (gt.includes("line")) {
+    return {
+      label: "LINE",
+      accent: "#8b5cf6",
+      pillClass: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
+      Icon: Minus,
+    }
+  }
+  return {
+    label: "POLYGON",
+    accent: "#3ecf8e",
+    pillClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+    Icon: Shapes,
+  }
+}
+
 export default function ThreeGroupLayersPanel({
   mapId,
   gisLayers = [],
@@ -40,8 +77,8 @@ export default function ThreeGroupLayersPanel({
   activeGISLayer,
   activeBaseLayer,
   mapViewPrefs = {},
-  layerOrder = ["vector", "raster", "base"],
-  onToggleLayerOrder,
+  layerStack = [],
+  onReorderLayerStack,
   onSelectGISLayer,
   onLayerUpdatedImmediate,
   onRefreshGISLayers,
@@ -61,19 +98,15 @@ export default function ThreeGroupLayersPanel({
   onCollapse,
   notify,
 }) {
-  const [expandedGroups, setExpandedGroups] = useState({
-    vector: true,
-    raster: true,
-    base: true,
-  })
   const [renamingId, setRenamingId] = useState(null)
   const [renameDraft, setRenameDraft] = useState("")
   const [opacityOpenId, setOpacityOpenId] = useState(null)
-  const [contextMenu, setContextMenu] = useState(null) // { kind: "vector"|"raster"|"base", item, x, y }
+  const [contextMenu, setContextMenu] = useState(null) // { kind: "vector"|"raster", item, x, y }
   const [creatingVector, setCreatingVector] = useState(false)
   const [newVectorName, setNewVectorName] = useState("")
   const [newVectorGeom, setNewVectorGeom] = useState("Polygon")
-  const [dragState, setDragState] = useState(null) // { group: "vector"|"raster", id }
+  const [dragKey, setDragKey] = useState(null)
+  const [dropOverKey, setDropOverKey] = useState(null)
 
   const vectorLayers = useMemo(
     () =>
@@ -83,7 +116,6 @@ export default function ThreeGroupLayersPanel({
     [gisLayers]
   )
 
-  // Combine workspace raster members and any standalone raster GIS layers without duplicating by dataset_id
   const rasterEntries = useMemo(() => {
     const sortedMembers = [...members].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     const memberIds = new Set(sortedMembers.map((m) => m.dataset_id))
@@ -117,34 +149,63 @@ export default function ThreeGroupLayersPanel({
     return list
   }, [members, gisLayers])
 
-  const allVectorsVisible = vectorLayers.length > 0 && vectorLayers.every((l) => l.is_visible !== false)
-  const allRastersVisible = rasterEntries.length > 0 && rasterEntries.every((r) => r.visible)
+  // Build unified flat Photoshop-style stack (top-to-bottom), ordered by layerStack
+  const unifiedItems = useMemo(() => {
+    const byKey = new Map()
+    vectorLayers.forEach((layer) => {
+      const key = `vector:${layer.layer_id}`
+      const swatchColor =
+        layer.style?.maplibre_style?.fill?.["fill-color"] ||
+        layer.style?.maplibre_style?.circle?.["circle-color"] ||
+        layer.style?.maplibre_style?.line?.["line-color"] ||
+        "#3ecf8e"
+      byKey.set(key, {
+        key,
+        kind: "vector",
+        id: layer.layer_id,
+        name: layer.layer_name,
+        visible: layer.is_visible !== false,
+        opacity: typeof layer.opacity === "number" ? layer.opacity : 1.0,
+        geometryType: layer.geometry_type || "Polygon",
+        featureCount: layer.feature_count ?? 0,
+        hasMVT: Boolean(layer.metadata?.vector_tiles || layer.rendering_source?.vector_tiles),
+        swatchColor,
+        layer,
+      })
+    })
+    rasterEntries.forEach((entry) => {
+      const key = `raster:${entry.id}`
+      byKey.set(key, {
+        key,
+        kind: "raster",
+        id: entry.id,
+        name: entry.name,
+        visible: entry.visible,
+        opacity: entry.opacity,
+        isGeoreferenced: entry.isGeoreferenced,
+        entry,
+      })
+    })
+
+    const ordered = []
+    const used = new Set()
+    if (Array.isArray(layerStack) && layerStack.length > 0) {
+      layerStack.forEach((s) => {
+        const k = s.key || `${s.kind}:${s.id}`
+        if (byKey.has(k) && !used.has(k)) {
+          ordered.push(byKey.get(k))
+          used.add(k)
+        }
+      })
+    }
+    byKey.forEach((val, k) => {
+      if (!used.has(k)) ordered.push(val)
+    })
+    return ordered
+  }, [vectorLayers, rasterEntries, layerStack])
+
   const baseVisible = mapViewPrefs?.base_layer_visible !== false
   const baseOpacity = typeof mapViewPrefs?.base_layer_opacity === "number" ? mapViewPrefs.base_layer_opacity : 1.0
-
-  const toggleGroupVisibility = async (group) => {
-    if (group === "vector") {
-      const targetVis = !allVectorsVisible
-      for (const l of vectorLayers) {
-        onLayerUpdatedImmediate?.(l.layer_id, { is_visible: targetVis })
-        updateGISLayerVisibility(l.layer_id, targetVis).catch(() => {})
-      }
-      setTimeout(() => onRefreshGISLayers?.(), 150)
-    } else if (group === "raster") {
-      const targetVis = !allRastersVisible
-      for (const r of rasterEntries) {
-        if (r.entryKind === "member") {
-          onUpdateMember?.(r.id, { visible: targetVis })
-        } else {
-          onLayerUpdatedImmediate?.(r.id, { is_visible: targetVis })
-          updateGISLayerVisibility(r.id, targetVis).catch(() => {})
-        }
-      }
-      setTimeout(() => onRefreshGISLayers?.(), 150)
-    } else if (group === "base") {
-      onChangeBasePrefs?.({ base_layer_visible: !baseVisible })
-    }
-  }
 
   const handleToggleVectorVis = async (layer, e) => {
     e?.stopPropagation()
@@ -163,7 +224,6 @@ export default function ThreeGroupLayersPanel({
     const next = !entry.visible
     if (entry.entryKind === "member") {
       onUpdateMember?.(entry.id, { visible: next })
-      // Also sync any matching GIS raster layer
       const matching = gisLayers.find((l) => l.layer_type === "raster" && l.dataset_id === entry.id)
       if (matching) {
         onLayerUpdatedImmediate?.(matching.layer_id, { is_visible: next })
@@ -260,41 +320,59 @@ export default function ThreeGroupLayersPanel({
     }
   }
 
-  // Strictly intra-group drag-and-drop reordering (Vector cannot move into Raster or Base!)
-  const handleDropWithinGroup = async (group, targetId) => {
-    if (!dragState || dragState.group !== group || dragState.id === targetId) {
-      setDragState(null)
+  // Commit unified Photoshop-style reorder and sync backend vector/member relative orders
+  const commitUnifiedReorder = async (nextKeys) => {
+    onReorderLayerStack?.(nextKeys)
+
+    // Sync relative GIS vector order to backend
+    const nextVectorIds = nextKeys
+      .filter((k) => k.startsWith("vector:"))
+      .map((k) => k.slice("vector:".length))
+    if (nextVectorIds.length > 1 && mapId) {
+      const rasterGisIds = gisLayers.filter((l) => l.layer_type === "raster").map((l) => l.layer_id)
+      const combined = [...nextVectorIds, ...rasterGisIds]
+      onLayerUpdatedImmediate?.(null, { reorderIds: combined })
+      reorderMapLayers(mapId, combined).catch(() => {})
+    }
+
+    // Sync relative workspace raster member order
+    const memberIdSet = new Set(rasterEntries.filter((r) => r.entryKind === "member").map((r) => r.id))
+    const nextMemberIds = nextKeys
+      .filter((k) => k.startsWith("raster:"))
+      .map((k) => k.slice("raster:".length))
+      .filter((id) => memberIdSet.has(id))
+    if (nextMemberIds.length > 1) {
+      onReorderMembers?.(nextMemberIds)
+    }
+  }
+
+  const handleDropOnItem = (targetKey) => {
+    setDropOverKey(null)
+    if (!dragKey || dragKey === targetKey) {
+      setDragKey(null)
       return
     }
-    if (group === "vector") {
-      const ids = vectorLayers.map((l) => l.layer_id)
-      const from = ids.indexOf(dragState.id)
-      const to = ids.indexOf(targetId)
-      if (from !== -1 && to !== -1) {
-        const next = [...ids]
-        const [moved] = next.splice(from, 1)
-        next.splice(to, 0, moved)
-        // Preserve raster GIS layers after vector order
-        const rasterIds = gisLayers.filter((l) => l.layer_type === "raster").map((l) => l.layer_id)
-        const combined = [...next, ...rasterIds]
-        onLayerUpdatedImmediate?.(null, { reorderIds: combined })
-        try {
-          await reorderMapLayers(mapId, combined)
-          onRefreshGISLayers?.()
-        } catch {}
-      }
-    } else if (group === "raster") {
-      const memberIds = rasterEntries.filter((r) => r.entryKind === "member").map((r) => r.id)
-      const from = memberIds.indexOf(dragState.id)
-      const to = memberIds.indexOf(targetId)
-      if (from !== -1 && to !== -1) {
-        const next = [...memberIds]
-        const [moved] = next.splice(from, 1)
-        next.splice(to, 0, moved)
-        onReorderMembers?.(next)
-      }
-    }
-    setDragState(null)
+    const keys = unifiedItems.map((it) => it.key)
+    const from = keys.indexOf(dragKey)
+    const to = keys.indexOf(targetKey)
+    setDragKey(null)
+    if (from === -1 || to === -1) return
+    const next = [...keys]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    commitUnifiedReorder(next)
+  }
+
+  const handleNudge = (key, delta, e) => {
+    e?.stopPropagation()
+    const keys = unifiedItems.map((it) => it.key)
+    const idx = keys.indexOf(key)
+    const targetIdx = idx + delta
+    if (idx === -1 || targetIdx < 0 || targetIdx >= keys.length) return
+    const next = [...keys]
+    const [moved] = next.splice(idx, 1)
+    next.splice(targetIdx, 0, moved)
+    commitUnifiedReorder(next)
   }
 
   const openCtx = (e, kind, item) => {
@@ -308,44 +386,6 @@ export default function ThreeGroupLayersPanel({
     })
   }
 
-  const GroupHeader = ({ id, title, icon: Icon, count, visible, onToggleVis, onAdd, extraAction }) => {
-    const open = expandedGroups[id]
-    return (
-      <div className="flex items-center gap-2 px-2.5 py-2 bg-neutral-100/90 dark:bg-[#242424] border-y border-neutral-200 dark:border-[#303030] text-[12px] font-semibold text-neutral-800 dark:text-neutral-100 select-none">
-        <button
-          type="button"
-          onClick={() => setExpandedGroups((p) => ({ ...p, [id]: !p[id] }))}
-          className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-          aria-label={`Toggle ${title} group`}
-        >
-          {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        </button>
-        <button
-          type="button"
-          onClick={onToggleVis}
-          className="text-neutral-500 hover:text-[#3ecf8e] cursor-pointer"
-          title={visible ? `Hide all ${title}` : `Show all ${title}`}
-        >
-          {visible ? <Eye className="size-3.5 text-[#3ecf8e]" /> : <EyeOff className="size-3.5 opacity-45" />}
-        </button>
-        <Icon className="size-3.5 text-[#24b47e] dark:text-[#3ecf8e] shrink-0" />
-        <span className="truncate flex-1">{title}</span>
-        <span className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-[#333333] text-[10px] font-mono text-neutral-600 dark:text-neutral-300">
-          {count}
-        </span>
-        {extraAction}
-        <button
-          type="button"
-          onClick={onAdd}
-          className="p-1 rounded hover:bg-[#3ecf8e]/20 text-[#24b47e] dark:text-[#3ecf8e] cursor-pointer"
-          title={`Add to ${title}`}
-        >
-          <Plus className="size-3.5" />
-        </button>
-      </div>
-    )
-  }
-
   return (
     <div
       className="flex flex-col h-full min-h-0 bg-white dark:bg-[#1e1e1e] text-neutral-800 dark:text-neutral-200 relative"
@@ -357,18 +397,7 @@ export default function ThreeGroupLayersPanel({
           Layers
         </span>
         <div className="flex items-center gap-1.5">
-          {onToggleLayerOrder && (
-            <button
-              type="button"
-              onClick={onToggleLayerOrder}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] border border-neutral-300 dark:border-[#3a3a3a] bg-white dark:bg-[#1e1e1e] hover:border-[#3ecf8e] text-[10px] font-semibold text-neutral-700 dark:text-neutral-200 cursor-pointer transition-colors"
-              title="Swap Vector and Raster stacking order (top group renders above bottom group)"
-            >
-              <ArrowUpDown className="size-3 text-[#3ecf8e]" />
-              <span>{layerOrder[0] === "raster" ? "Raster Top" : "Vector Top"}</span>
-            </button>
-          )}
-          <span className="text-[10px] font-mono text-neutral-400">
+          <span className="text-[10px] font-mono text-neutral-400" title="Vector / Raster / Base count">
             V:{vectorLayers.length} R:{rasterEntries.length} B:1
           </span>
           {onCollapse && (
@@ -384,419 +413,329 @@ export default function ThreeGroupLayersPanel({
         </div>
       </div>
 
-      {/* Adjustable Three-Group Stack: Vector <-> Raster (swappable) -> Base (Bottom) */}
-      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
-        {/* VECTOR LAYER GROUP */}
-        <div style={{ order: layerOrder[0] === "raster" ? 2 : 1 }}>
-        <GroupHeader
-          id="vector"
-          title="Vector Layer"
-          icon={Shapes}
-          count={vectorLayers.length}
-          visible={allVectorsVisible}
-          onToggleVis={() => toggleGroupVisibility("vector")}
-          onAdd={onOpenAddVector}
-          extraAction={
-            <button
-              type="button"
-              onClick={() => setCreatingVector((p) => !p)}
-              className="p-0.5 rounded hover:bg-neutral-200 dark:hover:bg-[#353535] text-neutral-500 dark:text-neutral-300 cursor-pointer"
-              title="Create New Empty Vector Layer"
-            >
-              <FolderPlus className="size-3" />
-            </button>
-          }
-        />
-        {expandedGroups.vector && (
-          <div className="p-1 space-y-0.5">
-            {creatingVector && (
-              <form
-                onSubmit={handleCreateVectorLayer}
-                className="p-1.5 rounded bg-neutral-50 dark:bg-[#171717] border border-[#3ecf8e]/40 space-y-1.5 mb-1"
+      {/* Quick Action Bar + Layer-Type Color Legend */}
+      <div className="px-2 py-1.5 border-b border-neutral-200 dark:border-[#2d2d2d] bg-neutral-50/80 dark:bg-[#212121] space-y-1.5 shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onOpenAddVector}
+            className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 rounded-[5px] border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-300 cursor-pointer transition-colors"
+            title="Upload Vector Dataset"
+          >
+            <Plus className="size-3" /> Vector
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAddRaster}
+            className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 rounded-[5px] border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-[10.5px] font-semibold text-sky-700 dark:text-sky-300 cursor-pointer transition-colors"
+            title="Upload Raster Image"
+          >
+            <Plus className="size-3" /> Raster
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreatingVector((p) => !p)}
+            className="p-1.5 rounded-[5px] border border-neutral-200 dark:border-[#343434] hover:bg-neutral-200 dark:hover:bg-[#323232] text-neutral-600 dark:text-neutral-300 cursor-pointer"
+            title="Create New Empty Vector Layer"
+          >
+            <FolderPlus className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Color legend */}
+        <div className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 px-0.5 select-none">
+          <span className="inline-flex items-center gap-1">
+            <span className="size-2 rounded-full bg-[#0ea5e9]" /> Raster
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="size-2 rounded-full bg-[#3ecf8e]" /> Poly
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="size-2 rounded-full bg-[#8b5cf6]" /> Line
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="size-2 rounded-full bg-[#f59e0b]" /> Point
+          </span>
+        </div>
+      </div>
+
+      {/* Unified Photoshop-Style Draggable Layer Stack (Top = Front, Bottom = Back) */}
+      <div className="flex-1 overflow-y-auto min-h-0 p-1.5 space-y-1">
+        {creatingVector && (
+          <form
+            onSubmit={handleCreateVectorLayer}
+            className="p-1.5 rounded bg-neutral-50 dark:bg-[#171717] border border-[#3ecf8e]/40 space-y-1.5 mb-1.5"
+          >
+            <input
+              type="text"
+              value={newVectorName}
+              onChange={(e) => setNewVectorName(e.target.value)}
+              placeholder="New vector layer name…"
+              className="w-full h-6 px-2 text-[11px] rounded bg-white dark:bg-[#222222] border border-neutral-300 dark:border-[#383838] outline-none focus:border-[#3ecf8e]"
+              autoFocus
+            />
+            <div className="flex items-center gap-1">
+              <select
+                value={newVectorGeom}
+                onChange={(e) => setNewVectorGeom(e.target.value)}
+                className="flex-1 h-6 px-1.5 text-[10.5px] rounded bg-white dark:bg-[#222222] border border-neutral-300 dark:border-[#383838]"
               >
-                <input
-                  type="text"
-                  value={newVectorName}
-                  onChange={(e) => setNewVectorName(e.target.value)}
-                  placeholder="New vector layer name…"
-                  className="w-full h-6 px-2 text-[11px] rounded bg-white dark:bg-[#222222] border border-neutral-300 dark:border-[#383838] outline-none focus:border-[#3ecf8e]"
-                  autoFocus
-                />
-                <div className="flex items-center gap-1">
-                  <select
-                    value={newVectorGeom}
-                    onChange={(e) => setNewVectorGeom(e.target.value)}
-                    className="flex-1 h-6 px-1.5 text-[10.5px] rounded bg-white dark:bg-[#222222] border border-neutral-300 dark:border-[#383838]"
-                  >
-                    <option value="Polygon">Polygon</option>
-                    <option value="LineString">LineString</option>
-                    <option value="Point">Point</option>
-                  </select>
-                  <button
-                    type="submit"
-                    className="h-6 px-2 rounded bg-[#3ecf8e] text-[#141414] text-[10.5px] font-bold cursor-pointer"
-                  >
-                    Create
-                  </button>
+                <option value="Polygon">Polygon</option>
+                <option value="LineString">LineString</option>
+                <option value="Point">Point</option>
+              </select>
+              <button
+                type="submit"
+                className="h-6 px-2 rounded bg-[#3ecf8e] text-[#141414] text-[10.5px] font-bold cursor-pointer"
+              >
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreatingVector(false)}
+                className="h-6 px-1.5 rounded text-[10.5px] text-neutral-500 hover:bg-neutral-200 dark:hover:bg-[#303030] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </form>
+        )}
+
+        {unifiedItems.length === 0 ? (
+          <div className="px-3 py-6 text-center text-[11px] text-neutral-400 space-y-1">
+            <div>No layers yet.</div>
+            <div className="text-[10px]">Add a Vector or Raster layer above, then drag any layer to adjust stacking order.</div>
+          </div>
+        ) : (
+          unifiedItems.map((item, idx) => {
+            const badge = getLayerTypeBadge(item)
+            const BadgeIcon = badge.Icon
+            const isVector = item.kind === "vector"
+            const isActive = isVector && activeGISLayer?.layer_id === item.id
+            const renameKey = isVector ? `v:${item.id}` : `r:${item.id}`
+            const isRenaming = renamingId === renameKey
+            const showOp = opacityOpenId === item.key
+            const isDropTarget = dropOverKey === item.key && dragKey && dragKey !== item.key
+
+            return (
+              <div
+                key={item.key}
+                draggable
+                onDragStart={() => setDragKey(item.key)}
+                onDragEnd={() => {
+                  setDragKey(null)
+                  setDropOverKey(null)
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  if (dragKey && dragKey !== item.key) setDropOverKey(item.key)
+                }}
+                onDragLeave={() => {
+                  if (dropOverKey === item.key) setDropOverKey(null)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  handleDropOnItem(item.key)
+                }}
+                onContextMenu={(e) => openCtx(e, item.kind, isVector ? item.layer : item.entry)}
+                style={{ borderLeftColor: badge.accent }}
+                className={`group rounded-[6px] border border-l-[3px] transition-all ${
+                  isDropTarget
+                    ? "border-t-2 border-t-[#3ecf8e] bg-[#3ecf8e]/10"
+                    : isActive
+                      ? "border-neutral-300 dark:border-[#3e3e3e] bg-neutral-100 dark:bg-[#2a2a2a]"
+                      : "border-neutral-200/80 dark:border-[#2c2c2c] bg-white dark:bg-[#1b1b1b] hover:bg-neutral-50 dark:hover:bg-[#242424]"
+                } ${dragKey === item.key ? "opacity-45" : ""}`}
+              >
+                <div
+                  onClick={() => {
+                    if (isVector) onSelectGISLayer?.(item.layer)
+                  }}
+                  className="flex items-center gap-1.5 px-1.5 py-1.5 text-[11px] cursor-pointer"
+                >
+                  <GripVertical
+                    className="size-3 text-neutral-400 cursor-grab shrink-0"
+                    title="Drag to reorder layer"
+                  />
+
+                  {/* Visibility eye */}
                   <button
                     type="button"
-                    onClick={() => setCreatingVector(false)}
-                    className="h-6 px-1.5 rounded text-[10.5px] text-neutral-500 hover:bg-neutral-200 dark:hover:bg-[#303030] cursor-pointer"
+                    onClick={(e) =>
+                      isVector ? handleToggleVectorVis(item.layer, e) : handleToggleRasterVis(item.entry, e)
+                    }
+                    className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer shrink-0"
+                    title={item.visible ? "Hide layer" : "Show layer"}
                   >
-                    ✕
+                    {item.visible ? (
+                      <Eye className="size-3.5" style={{ color: badge.accent }} />
+                    ) : (
+                      <EyeOff className="size-3.5 opacity-40" />
+                    )}
                   </button>
-                </div>
-              </form>
-            )}
 
-            {vectorLayers.length === 0 ? (
-              <div className="px-2 py-2 text-[10.5px] text-neutral-400 flex items-center justify-between">
-                <span>No vector layers</span>
-                <button
-                  type="button"
-                  onClick={onOpenAddVector}
-                  className="text-[#24b47e] dark:text-[#3ecf8e] hover:underline font-semibold cursor-pointer"
-                >
-                  + Add Vector
-                </button>
-              </div>
-            ) : (
-              vectorLayers.map((layer) => {
-                const isActive = activeGISLayer?.layer_id === layer.layer_id
-                const isRenaming = renamingId === `v:${layer.layer_id}`
-                const showOp = opacityOpenId === `v:${layer.layer_id}`
-                const color =
-                  layer.style?.maplibre_style?.fill?.["fill-color"] ||
-                  layer.style?.maplibre_style?.circle?.["circle-color"] ||
-                  layer.style?.maplibre_style?.line?.["line-color"] ||
-                  "#3ecf8e"
-                return (
-                  <div
-                    key={layer.layer_id}
-                    draggable
-                    onDragStart={() => setDragState({ group: "vector", id: layer.layer_id })}
-                    onDragOver={(e) => {
-                      if (dragState?.group === "vector") e.preventDefault()
-                    }}
-                    onDrop={() => handleDropWithinGroup("vector", layer.layer_id)}
-                    onContextMenu={(e) => openCtx(e, "vector", layer)}
-                    className={`rounded-[4px] border transition-colors ${
-                      isActive
-                        ? "border-[#3ecf8e] bg-[#3ecf8e]/10"
-                        : "border-transparent hover:bg-neutral-100 dark:hover:bg-[#2a2a2a]"
-                    }`}
+                  {/* Type icon / swatch */}
+                  <span
+                    className={`inline-flex items-center justify-center size-5 rounded-[4px] border shrink-0 ${badge.pillClass}`}
+                    title={badge.label}
                   >
-                    <div
-                      onClick={() => onSelectGISLayer?.(layer)}
-                      className="flex items-center gap-1 px-1.5 py-1 text-[11px] cursor-pointer"
-                    >
-                      <GripVertical className="size-3 text-neutral-400 cursor-grab shrink-0" />
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleVectorVis(layer, e)}
-                        className="text-neutral-500 hover:text-[#3ecf8e] cursor-pointer shrink-0"
-                        title={layer.is_visible !== false ? "Hide layer" : "Show layer"}
-                      >
-                        {layer.is_visible !== false ? (
-                          <Eye className="size-3.5 text-[#3ecf8e]" />
-                        ) : (
-                          <EyeOff className="size-3.5 opacity-45" />
-                        )}
-                      </button>
-                      <span
-                        className="size-2.5 rounded-[2px] border border-black/25 shrink-0"
-                        style={{ backgroundColor: color }}
-                        title={layer.geometry_type || "Vector"}
-                      />
+                    <BadgeIcon className="size-3" />
+                  </span>
 
-                      <div className="flex-1 min-w-0">
-                        {isRenaming ? (
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              value={renameDraft}
-                              onChange={(e) => setRenameDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitRename("vector", layer)
-                                if (e.key === "Escape") setRenamingId(null)
-                              }}
-                              className="w-full h-5 px-1 text-[11px] rounded bg-white dark:bg-[#161616] border border-[#3ecf8e] outline-none"
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() => commitRename("vector", layer)}
-                              className="text-[#3ecf8e] cursor-pointer"
-                            >
-                              <Check className="size-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="truncate font-medium text-neutral-800 dark:text-neutral-100">
-                            {layer.layer_name}
-                          </div>
-                        )}
-                      </div>
-
-                      {(layer.metadata?.vector_tiles || layer.rendering_source?.vector_tiles) && (
-                        <span
-                          className="px-1 py-0.2 rounded text-[8.5px] font-mono font-bold bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] shrink-0"
-                          title="Local XYZ MVT Vector Tiles"
+                  {/* Layer name */}
+                  <div className="flex-1 min-w-0">
+                    {isRenaming ? (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename(item.kind, isVector ? item.layer : item.entry)
+                            if (e.key === "Escape") setRenamingId(null)
+                          }}
+                          className="w-full h-5 px-1 text-[11px] rounded bg-white dark:bg-[#141414] border border-[#3ecf8e] outline-none"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => commitRename(item.kind, isVector ? item.layer : item.entry)}
+                          className="text-[#3ecf8e] cursor-pointer"
                         >
-                          MVT
+                          <Check className="size-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="truncate font-medium text-neutral-800 dark:text-neutral-100">
+                          {item.name}
                         </span>
-                      )}
-
-                      <span className="text-[9.5px] font-mono text-neutral-400 shrink-0">
-                        {layer.feature_count ?? 0}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 text-[9px] text-neutral-400">
+                      <span style={{ color: badge.accent }} className="font-bold">
+                        {badge.label}
                       </span>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setOpacityOpenId(showOp ? null : `v:${layer.layer_id}`)
-                        }}
-                        className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Opacity"
-                      >
-                        <SlidersHorizontal className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => openCtx(e, "vector", layer)}
-                        className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Layer actions"
-                      >
-                        <MoreHorizontal className="size-3.5" />
-                      </button>
-                    </div>
-
-                    {showOp && (
-                      <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
-                        <span>Opacity</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={Math.round((layer.opacity ?? 1) * 100)}
-                          onChange={(e) => handleVectorOpacity(layer, e.target.value)}
-                          className="flex-1 accent-[#3ecf8e] h-1"
-                        />
-                        <span className="font-mono w-7 text-right">
-                          {Math.round((layer.opacity ?? 1) * 100)}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
-        )}
-
-        </div>
-
-        {/* RASTER LAYER GROUP */}
-        <div style={{ order: layerOrder[0] === "raster" ? 1 : 2 }}>
-        <GroupHeader
-          id="raster"
-          title="Raster Layer"
-          icon={ImageIcon}
-          count={rasterEntries.length}
-          visible={allRastersVisible}
-          onToggleVis={() => toggleGroupVisibility("raster")}
-          onAdd={onOpenAddRaster}
-        />
-        {expandedGroups.raster && (
-          <div className="p-1 space-y-0.5">
-            {rasterEntries.length === 0 ? (
-              <div className="px-2 py-2 text-[10.5px] text-neutral-400 flex items-center justify-between">
-                <span>No raster layers</span>
-                <button
-                  type="button"
-                  onClick={onOpenAddRaster}
-                  className="text-sky-500 dark:text-sky-400 hover:underline font-semibold cursor-pointer"
-                >
-                  + Add Raster
-                </button>
-              </div>
-            ) : (
-              rasterEntries.map((entry) => {
-                const isRenaming = renamingId === `r:${entry.id}`
-                const showOp = opacityOpenId === `r:${entry.id}`
-                return (
-                  <div
-                    key={entry.id}
-                    draggable={entry.entryKind === "member"}
-                    onDragStart={() => setDragState({ group: "raster", id: entry.id })}
-                    onDragOver={(e) => {
-                      if (dragState?.group === "raster") e.preventDefault()
-                    }}
-                    onDrop={() => handleDropWithinGroup("raster", entry.id)}
-                    onContextMenu={(e) => openCtx(e, "raster", entry)}
-                    className="rounded-[4px] border border-transparent hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    <div className="flex items-center gap-1 px-1.5 py-1 text-[11px]">
-                      <GripVertical className="size-3 text-neutral-400 cursor-grab shrink-0" />
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleRasterVis(entry, e)}
-                        className="text-neutral-500 hover:text-[#3ecf8e] cursor-pointer shrink-0"
-                        title={entry.visible ? "Hide raster" : "Show raster"}
-                      >
-                        {entry.visible ? (
-                          <Eye className="size-3.5 text-sky-500" />
-                        ) : (
-                          <EyeOff className="size-3.5 opacity-45" />
-                        )}
-                      </button>
-                      <ImageIcon className="size-3 text-sky-500 shrink-0" />
-
-                      <div className="flex-1 min-w-0">
-                        {isRenaming ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={renameDraft}
-                              onChange={(e) => setRenameDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitRename("raster", entry)
-                                if (e.key === "Escape") setRenamingId(null)
-                              }}
-                              className="w-full h-5 px-1 text-[11px] rounded bg-white dark:bg-[#161616] border border-[#3ecf8e] outline-none"
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() => commitRename("raster", entry)}
-                              className="text-[#3ecf8e] cursor-pointer"
-                            >
-                              <Check className="size-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="truncate font-medium text-neutral-800 dark:text-neutral-100">
-                            {entry.name}
-                          </div>
-                        )}
-                      </div>
-
-                      {!entry.isGeoreferenced && (
-                        <span
-                          className="px-1 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 shrink-0"
-                          title="Not georeferenced yet"
-                        >
-                          Unref
-                        </span>
+                      {isVector ? (
+                        <span className="font-mono">{item.featureCount} feat</span>
+                      ) : (
+                        <span>{item.isGeoreferenced ? "Georef" : "Unplaced"}</span>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={() => setOpacityOpenId(showOp ? null : `r:${entry.id}`)}
-                        className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Raster Opacity"
-                      >
-                        <SlidersHorizontal className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => openCtx(e, "raster", entry)}
-                        className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Raster actions"
-                      >
-                        <MoreHorizontal className="size-3.5" />
-                      </button>
+                      {item.opacity < 0.99 && (
+                        <span className="font-mono">{Math.round(item.opacity * 100)}%</span>
+                      )}
                     </div>
-
-                    {showOp && (
-                      <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
-                        <span>Opacity</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={Math.round(entry.opacity * 100)}
-                          onChange={(e) => handleRasterOpacity(entry, e.target.value)}
-                          className="flex-1 accent-sky-500 h-1"
-                        />
-                        <span className="font-mono w-7 text-right">
-                          {Math.round(entry.opacity * 100)}%
-                        </span>
-                      </div>
-                    )}
                   </div>
-                )
-              })
-            )}
-          </div>
-        )}
 
-        </div>
-
-        {/* GROUP 3 — BASE LAYER (BOTTOM — PERMANENTLY ANCHORED) */}
-        <div style={{ order: 3 }}>
-        <GroupHeader
-          id="base"
-          title="Base Layer"
-          icon={Globe}
-          count={1}
-          visible={baseVisible}
-          onToggleVis={() => toggleGroupVisibility("base")}
-          onAdd={onOpenChangeBaseLayer}
-        />
-        {expandedGroups.base && (
-          <div className="p-1.5 space-y-1">
-            <div className="rounded-[4px] border border-neutral-200 dark:border-[#303030] bg-neutral-50 dark:bg-[#191919] px-2 py-1.5 text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onChangeBasePrefs?.({ base_layer_visible: !baseVisible })}
-                  className="text-neutral-500 hover:text-[#3ecf8e] cursor-pointer shrink-0"
-                  title={baseVisible ? "Hide base layer" : "Show base layer"}
-                >
-                  {baseVisible ? (
-                    <Eye className="size-3.5 text-amber-500" />
-                  ) : (
-                    <EyeOff className="size-3.5 opacity-45" />
-                  )}
-                </button>
-                <Compass className="size-3.5 text-amber-500 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold text-neutral-900 dark:text-white">
-                    {activeBaseLayer && !activeBaseLayer.is_default
-                      ? activeBaseLayer.name
-                      : "Default World Map"}
-                  </div>
-                  <div className="text-[9.5px] font-mono text-neutral-400">
-                    View: {mapViewPrefs?.view_type || "world"} • {activeBaseLayer?.crs || "EPSG:3857"}
+                  {/* Quick Up / Down nudge buttons */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={(e) => handleNudge(item.key, -1, e)}
+                      className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                      title="Move layer up (bring forward)"
+                    >
+                      <ArrowUp className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === unifiedItems.length - 1}
+                      onClick={(e) => handleNudge(item.key, 1, e)}
+                      className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                      title="Move layer down (send backward)"
+                    >
+                      <ArrowDown className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpacityOpenId(showOp ? null : item.key)
+                      }}
+                      className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
+                      title="Opacity"
+                    >
+                      <SlidersHorizontal className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => openCtx(e, item.kind, isVector ? item.layer : item.entry)}
+                      className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
+                      title="Layer actions"
+                    >
+                      <MoreHorizontal className="size-3.5" />
+                    </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={onOpenChangeBaseLayer}
-                  className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-[#2c2c2c] hover:bg-[#3ecf8e] hover:text-[#141414] text-[10px] font-semibold cursor-pointer shrink-0"
-                >
-                  Change
-                </button>
+
+                {showOp && (
+                  <div className="px-6 pb-2 flex items-center gap-2 text-[10px] text-neutral-500">
+                    <span>Opacity</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(item.opacity * 100)}
+                      onChange={(e) =>
+                        isVector
+                          ? handleVectorOpacity(item.layer, e.target.value)
+                          : handleRasterOpacity(item.entry, e.target.value)
+                      }
+                      className="flex-1 h-1"
+                      style={{ accentColor: badge.accent }}
+                    />
+                    <span className="font-mono w-7 text-right">{Math.round(item.opacity * 100)}%</span>
+                  </div>
+                )}
               </div>
-              <div className="mt-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
-                <span>Opacity</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(baseOpacity * 100)}
-                  onChange={(e) =>
-                    onChangeBasePrefs?.({ opacity: Math.max(0, Math.min(1, Number(e.target.value) / 100)) })
-                  }
-                  className="flex-1 accent-amber-500 h-1"
-                />
-                <span className="font-mono w-7 text-right">{Math.round(baseOpacity * 100)}%</span>
-              </div>
-            </div>
-          </div>
+            )
+          })
         )}
+      </div>
+
+      {/* Background Base Layer (Locked at bottom, like Photoshop Background) */}
+      <div className="p-1.5 border-t border-neutral-200 dark:border-[#303030] bg-neutral-50 dark:bg-[#191919] shrink-0">
+        <div
+          style={{ borderLeftColor: "#64748b" }}
+          className="rounded-[6px] border border-l-[3px] border-neutral-200 dark:border-[#303030] bg-white dark:bg-[#1e1e1e] px-2 py-1.5 text-[11px]"
+        >
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onChangeBasePrefs?.({ base_layer_visible: !baseVisible })}
+              className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer shrink-0"
+              title={baseVisible ? "Hide base layer" : "Show base layer"}
+            >
+              {baseVisible ? (
+                <Eye className="size-3.5 text-slate-500 dark:text-slate-300" />
+              ) : (
+                <EyeOff className="size-3.5 opacity-45" />
+              )}
+            </button>
+            <Globe className="size-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-semibold text-neutral-800 dark:text-neutral-100">
+                {activeBaseLayer?.name || "World Base Map (OSM)"}
+              </div>
+              <div className="text-[9px] font-bold uppercase text-slate-500">BASE • BACKGROUND</div>
+            </div>
+            <Lock className="size-3 text-neutral-400 shrink-0" title="Locked at bottom of stack" />
+          </div>
+          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
+            <span>Opacity</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(baseOpacity * 100)}
+              onChange={(e) =>
+                onChangeBasePrefs?.({ opacity: Math.max(0, Math.min(1, Number(e.target.value) / 100)) })
+              }
+              className="flex-1 accent-slate-500 h-1"
+            />
+            <span className="font-mono w-7 text-right">{Math.round(baseOpacity * 100)}%</span>
+          </div>
         </div>
       </div>
 

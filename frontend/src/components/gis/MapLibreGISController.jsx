@@ -55,6 +55,7 @@ export default function MapLibreGISController({
   map,
   gisLayers = [],
   layerOrder = ["vector", "raster", "base"],
+  layerStack = [],
   activeLayer,
   activeTool: externalTool,
   onSelectTool,
@@ -503,7 +504,22 @@ export default function MapLibreGISController({
       })
     }
 
-    if (rasterOnTop) {
+    if (Array.isArray(layerStack) && layerStack.length > 0) {
+      // Exact Photoshop per-layer z-order: iterate bottom-to-top (reverse of UI stack)
+      for (let i = layerStack.length - 1; i >= 0; i--) {
+        const item = layerStack[i]
+        if (!item?.id) continue
+        if (item.kind === "raster") {
+          safeMoveToTop(`workspace-${item.id}-raster-layer`)
+          safeMoveToTop(`gis-raster-lyr-${item.id}`)
+        } else if (item.kind === "vector") {
+          safeMoveToTop(`gis-fill-${item.id}`)
+          safeMoveToTop(`gis-line-${item.id}`)
+          safeMoveToTop(`gis-circle-${item.id}`)
+          safeMoveToTop(`gis-label-${item.id}`)
+        }
+      }
+    } else if (rasterOnTop) {
       moveAllVectorsToTop()
       moveAllRastersToTop()
     } else {
@@ -520,7 +536,7 @@ export default function MapLibreGISController({
       }
     })
     ;[DRAFT_FILL_LAYER, DRAFT_LINE_LAYER, DRAFT_MIDPOINT_LAYER, DRAFT_VERTEX_LAYER].forEach(safeMoveToTop)
-  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision, layerOrder])
+  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision, layerOrder, layerStack])
 
   // Helper to build GeoJSON FeatureCollection for draft/vertex overlay
   const buildDraftFeatureCollection = (coords, tool, geomType) => {
