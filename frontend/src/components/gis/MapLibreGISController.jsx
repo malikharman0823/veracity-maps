@@ -54,6 +54,7 @@ const DRAFT_VERTEX_LAYER = "gis-draft-edit-vertices"
 export default function MapLibreGISController({
   map,
   gisLayers = [],
+  layerOrder = ["vector", "raster", "base"],
   activeLayer,
   activeTool: externalTool,
   onSelectTool,
@@ -465,9 +466,9 @@ export default function MapLibreGISController({
       }
     })
 
-    // Enforce strict Viewscape layer rendering hierarchy:
-    //   Base Layer (bottom) -> Raster Layers (middle) -> Vector Layers (top: Polygons -> Lines -> Points -> Labels -> Highlights -> Draft)
+    // Enforce adjustable layer rendering hierarchy (Base bottom; Raster <-> Vector swappable; Editing highlights on top)
     const orderedLayers = [...gisLayers].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+    const rasterOnTop = Array.isArray(layerOrder) && layerOrder[0] === "raster"
     const safeMoveToTop = (lid) => {
       if (map.getLayer(lid)) {
         try {
@@ -475,23 +476,41 @@ export default function MapLibreGISController({
         } catch {}
       }
     }
-    orderedLayers.forEach((l) => {
-      if (l.layer_type === "raster") {
-        safeMoveToTop(`gis-raster-lyr-${l.layer_id}`)
-      }
-    })
-    orderedLayers.forEach((l) => {
-      if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-fill-${l.layer_id}`)
-    })
-    orderedLayers.forEach((l) => {
-      if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-line-${l.layer_id}`)
-    })
-    orderedLayers.forEach((l) => {
-      if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-circle-${l.layer_id}`)
-    })
-    orderedLayers.forEach((l) => {
-      if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-label-${l.layer_id}`)
-    })
+    const moveAllRastersToTop = () => {
+      ;(map.getStyle()?.layers || []).forEach((sl) => {
+        if (sl.id.startsWith("workspace-") && sl.id.endsWith("-raster-layer")) {
+          safeMoveToTop(sl.id)
+        }
+      })
+      orderedLayers.forEach((l) => {
+        if (l.layer_type === "raster") {
+          safeMoveToTop(`gis-raster-lyr-${l.layer_id}`)
+        }
+      })
+    }
+    const moveAllVectorsToTop = () => {
+      orderedLayers.forEach((l) => {
+        if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-fill-${l.layer_id}`)
+      })
+      orderedLayers.forEach((l) => {
+        if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-line-${l.layer_id}`)
+      })
+      orderedLayers.forEach((l) => {
+        if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-circle-${l.layer_id}`)
+      })
+      orderedLayers.forEach((l) => {
+        if (!l.layer_type || l.layer_type === "vector") safeMoveToTop(`gis-label-${l.layer_id}`)
+      })
+    }
+
+    if (rasterOnTop) {
+      moveAllVectorsToTop()
+      moveAllRastersToTop()
+    } else {
+      moveAllRastersToTop()
+      moveAllVectorsToTop()
+    }
+
     orderedLayers.forEach((l) => {
       if (!l.layer_type || l.layer_type === "vector") {
         safeMoveToTop(`gis-hover-line-${l.layer_id}`)
@@ -501,7 +520,7 @@ export default function MapLibreGISController({
       }
     })
     ;[DRAFT_FILL_LAYER, DRAFT_LINE_LAYER, DRAFT_MIDPOINT_LAYER, DRAFT_VERTEX_LAYER].forEach(safeMoveToTop)
-  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision])
+  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision, layerOrder])
 
   // Helper to build GeoJSON FeatureCollection for draft/vertex overlay
   const buildDraftFeatureCollection = (coords, tool, geomType) => {

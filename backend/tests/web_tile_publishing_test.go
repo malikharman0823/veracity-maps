@@ -296,6 +296,47 @@ func TestCombinedRasterAndVectorWebTilePublishing(t *testing.T) {
 	}
 
 	// =========================================================================
+	// 1b. Combined Publish with Raster Above Vector (layer_order: ["raster","vector","base"])
+	// =========================================================================
+	codeRasterTop, rtData := doPublish(aliceToken, map[string]interface{}{
+		"workspace_id": rasterDs.ID,
+		"name":         "SF Raster Above Vector",
+		"mode":         "combined",
+		"is_public":    true,
+		"min_zoom":     12,
+		"max_zoom":     13,
+		"layer_order":  []string{"raster", "vector", "base"},
+	})
+	if codeRasterTop != http.StatusCreated {
+		t.Fatalf("raster-on-top combined publish failed (%d): %+v", codeRasterTop, rtData)
+	}
+	rtMapID, _ := rtData["map_id"].(string)
+	recRTStyle := httptest.NewRecorder()
+	reqRTStyle := httptest.NewRequest(http.MethodGet, "/maps/"+rtMapID+"/style.json", nil)
+	handler.ServeHTTP(recRTStyle, reqRTStyle)
+	if recRTStyle.Code != http.StatusOK {
+		t.Fatalf("expected 200 for raster-on-top style.json, got %d", recRTStyle.Code)
+	}
+	var rtStyleDoc map[string]interface{}
+	_ = json.Unmarshal(recRTStyle.Body.Bytes(), &rtStyleDoc)
+	rtStyleLayers, _ := rtStyleDoc["layers"].([]interface{})
+	lastVecIdx := -1
+	firstRasIdx := -1
+	for i, rawL := range rtStyleLayers {
+		lMap, _ := rawL.(map[string]interface{})
+		lid, _ := lMap["id"].(string)
+		if strings.HasPrefix(lid, "pub-vec-") {
+			lastVecIdx = i
+		}
+		if strings.HasPrefix(lid, "pub-raster-lyr-") && firstRasIdx == -1 {
+			firstRasIdx = i
+		}
+	}
+	if firstRasIdx == -1 || lastVecIdx == -1 || firstRasIdx <= lastVecIdx {
+		t.Fatalf("expected raster layer after vector layers when layer_order=['raster','vector','base']; firstRasIdx=%d, lastVecIdx=%d", firstRasIdx, lastVecIdx)
+	}
+
+	// =========================================================================
 	// 2. Independent Raster-Only Web Tile Publishing
 	// =========================================================================
 	codeR, rData := doPublish(aliceToken, map[string]interface{}{

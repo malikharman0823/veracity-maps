@@ -18,6 +18,7 @@ import {
   X,
   AlertCircle,
   Loader2,
+  ArrowUpDown,
 } from "lucide-react"
 import { getPublishedMap } from "../api"
 
@@ -33,6 +34,7 @@ export default function PublishedMapViewerPage() {
   const [error, setError] = useState(null)
   const [mapError, setMapError] = useState(null)
   const [publishedMap, setPublishedMap] = useState(null)
+  const [rasterOnTop, setRasterOnTop] = useState(false)
   const [styleUrl, setStyleUrl] = useState("")
   const [apiOrigin, setApiOrigin] = useState("")
 
@@ -238,6 +240,40 @@ export default function PublishedMapViewerPage() {
   const allRastersVisible = rasterLayers.length > 0 && rasterLayers.every((r) => rasterVis[r.layer_id] !== false)
   const allVectorsVisible = vectorLayers.length > 0 && vectorLayers.every((v) => vectorVis[v.layer_id] !== false)
 
+  // Initialize rasterOnTop from published map's layer_order
+  useEffect(() => {
+    const order = publishedMap?.layer_order
+    if (Array.isArray(order) && order.length > 0) {
+      setRasterOnTop(String(order[0]).toLowerCase() === "raster")
+    }
+  }, [publishedMap?.map_id])
+
+  // Live MapLibre z-order sync when viewer toggles Raster <-> Vector stacking
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.style || !map.isStyleLoaded()) return
+    const moveSafe = (id) => {
+      if (map.getLayer(id)) {
+        try { map.moveLayer(id) } catch {}
+      }
+    }
+    const moveRasters = () => {
+      rasterLayers.forEach((rl) => moveSafe(`pub-raster-lyr-${rl.layer_id}`))
+    }
+    const moveVectors = () => {
+      vectorLayers.forEach((vl) => moveSafe(`pub-vec-fill-${vl.layer_id}`))
+      vectorLayers.forEach((vl) => moveSafe(`pub-vec-line-${vl.layer_id}`))
+      vectorLayers.forEach((vl) => moveSafe(`pub-vec-circle-${vl.layer_id}`))
+    }
+    if (rasterOnTop) {
+      moveVectors()
+      moveRasters()
+    } else {
+      moveRasters()
+      moveVectors()
+    }
+  }, [rasterOnTop, rasterLayers, vectorLayers])
+
   const toggleAllRasters = () => {
     const next = !allRastersVisible
     const m = {}
@@ -340,10 +376,24 @@ export default function PublishedMapViewerPage() {
         </div>
 
         {panelOpen && (
-          <div className="overflow-y-auto p-3 space-y-3 text-xs">
+          <div className="overflow-y-auto p-3 flex flex-col gap-3 text-xs">
+            {rasterLayers.length > 0 && vectorLayers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRasterOnTop((p) => !p)}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-[#2e2e36] bg-[#202229] hover:border-[#3ecf8e] text-[11px] text-slate-200 cursor-pointer transition-colors"
+                title="Swap Vector and Raster stacking order"
+              >
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <ArrowUpDown className="size-3.5 text-[#3ecf8e]" />
+                  <span>{rasterOnTop ? "Raster Above Vector" : "Vector Above Raster"}</span>
+                </span>
+                <span className="text-[10px] font-mono text-[#3ecf8e]">Swap</span>
+              </button>
+            )}
             {/* Vector Layers Group */}
             {vectorLayers.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5" style={{ order: rasterOnTop ? 2 : 1 }}>
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
@@ -409,7 +459,7 @@ export default function PublishedMapViewerPage() {
 
             {/* Raster Layers Group */}
             {rasterLayers.length > 0 && (
-              <div className="space-y-1.5 pt-2 border-t border-[#27272d]">
+              <div className="space-y-1.5 pt-2 border-t border-[#27272d]" style={{ order: rasterOnTop ? 1 : 2 }}>
                 <button
                   type="button"
                   onClick={toggleAllRasters}
@@ -455,7 +505,7 @@ export default function PublishedMapViewerPage() {
 
             {/* Custom Web Tile & MapLibre Style URLs Drawer */}
             {showUrls && (
-              <div className="pt-2 border-t border-[#27272d] space-y-2 text-[10.5px]">
+              <div className="pt-2 border-t border-[#27272d] space-y-2 text-[10.5px]" style={{ order: 3 }}>
                 <div className="font-bold uppercase tracking-wider text-slate-400">
                   Style &amp; Custom Web Tile URLs
                 </div>

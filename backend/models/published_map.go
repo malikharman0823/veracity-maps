@@ -110,4 +110,5 @@ type PublishMapRequest struct {
 	MaxZoom        *int      `json:"max_zoom,omitempty"`
 	InitialZoom    *int      `json:"initial_zoom,omitempty"`
 	Center         []float64 `json:"center,omitempty"`
+	LayerOrder     []string  `json:"layer_order,omitempty"` // e.g. ["vector","raster","base"] or ["raster","vector","base"]
 }

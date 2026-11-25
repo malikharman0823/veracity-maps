@@ -666,6 +666,8 @@ func (s *PublishService) PublishMap(
 	}
 
 	now := time.Now().UTC()
+	layerOrder := normalizePublishedLayerOrder(req.LayerOrder)
+
 	pm := &models.PublishedMap{
 		MapID:          mapID,
 		OwnerID:        ownerID,
@@ -680,7 +682,7 @@ func (s *PublishService) PublishMap(
 		VectorLayerIDs: vectorIDs,
 		RasterLayers:   publishedRasters,
 		VectorLayers:   publishedVectors,
-		LayerOrder:     []string{"vector", "raster", "base"},
+		LayerOrder:     layerOrder,
 		Bounds:         unionBounds,
 		Center:         center,
 		InitialZoom:    initZoom,
@@ -770,6 +772,20 @@ func (s *PublishService) RevokePublishedMap(mapID, ownerID string) error {
 	return nil
 }
 
+// normalizePublishedLayerOrder ensures a valid top-to-bottom group stacking order
+// ("vector" above "raster" by default, or "raster" above "vector" when requested).
+func normalizePublishedLayerOrder(order []string) []string {
+	for _, g := range order {
+		switch strings.ToLower(strings.TrimSpace(g)) {
+		case "raster":
+			return []string{"raster", "vector", "base"}
+		case "vector":
+			return []string{"vector", "raster", "base"}
+		}
+	}
+	return []string{"vector", "raster", "base"}
+}
+
 // BuildMapLibreStyle generates a MapLibre Style Spec v8 JSON document referencing the published
 // base, raster, and vector tile sources with preserved ordering, styles, and interaction metadata.
 func (s *PublishService) BuildMapLibreStyle(pm *models.PublishedMap, baseURL, tokenQuery string) map[string]interface{} {
@@ -798,11 +814,12 @@ func (s *PublishService) BuildMapLibreStyle(pm *models.PublishedMap, baseURL, to
 		},
 	}
 
-	// 1. Raster layers (middle, above base)
+	// 1. Build Raster layer definitions
 	sortedRasters := append([]models.PublishedRasterLayer(nil), pm.RasterLayers...)
 	sort.Slice(sortedRasters, func(i, j int) bool {
 		return sortedRasters[i].DisplayOrder < sortedRasters[j].DisplayOrder
 	})
+	rasterMapLayers := make([]map[string]interface{}, 0, len(sortedRasters))
 	for _, rl := range sortedRasters {
 		srcID := "pub-raster-" + rl.LayerID
 		tileURL := base + rl.TileURL + suffix
@@ -827,7 +844,7 @@ func (s *PublishService) BuildMapLibreStyle(pm *models.PublishedMap, baseURL, to
 		if op <= 0 {
 			op = 1.0
 		}
-		layers = append(layers, map[string]interface{}{
+		rasterMapLayers = append(rasterMapLayers, map[string]interface{}{
 			"id":     "pub-raster-lyr-" + rl.LayerID,
 			"type":   "raster",
 			"source": srcID,
@@ -926,9 +943,20 @@ func (s *PublishService) BuildMapLibreStyle(pm *models.PublishedMap, baseURL, to
 		})
 	}
 
-	layers = append(layers, fillLayers...)
-	layers = append(layers, lineLayers...)
-	layers = append(layers, circleLayers...)
+	// Append raster and vector layer groups bottom-to-top according to pm.LayerOrder
+	// (LayerOrder is top-to-bottom: ["raster","vector","base"] means raster renders ABOVE vector).
+	effectiveOrder := normalizePublishedLayerOrder(pm.LayerOrder)
+	if effectiveOrder[0] == "raster" {
+		layers = append(layers, fillLayers...)
+		layers = append(layers, lineLayers...)
+		layers = append(layers, circleLayers...)
+		layers = append(layers, rasterMapLayers...)
+	} else {
+		layers = append(layers, rasterMapLayers...)
+		layers = append(layers, fillLayers...)
+		layers = append(layers, lineLayers...)
+		layers = append(layers, circleLayers...)
+	}
 
 	return map[string]interface{}{
 		"version": 8,
@@ -1362,6 +1390,7 @@ func (s *PublishService) resolveCompositeSpecPath(pm *models.PublishedMap) (stri
 	specDoc := map[string]interface{}{
 		"map_id":        pm.MapID,
 		"bounds":        pm.Bounds,
+		"layer_order":   normalizePublishedLayerOrder(pm.LayerOrder),
 		"raster_layers": rasterSpecs,
 		"vector_layers": vectorSpecs,
 	}

@@ -310,6 +310,7 @@ export default function WorkspaceMap({
   overlayRefreshKey = 0,
   onMapReady,
   hasGISLayers = false,
+  layerOrder = ["vector", "raster", "base"],
   mapViews = DEFAULT_MAP_VIEWS,
   mapViewPrefs = null,
   customBaseLayer = null,
@@ -1316,36 +1317,58 @@ export default function WorkspaceMap({
 
     const inactiveMembers = sortedMembers.filter((m) => !activeFloorMembers.includes(m))
 
-    // 1. Position inactive raster layers first
-    inactiveMembers.forEach((member) => {
-      const rasterLayer = resourceIds(member.dataset_id).rasterLayer
-      if (map.getLayer(rasterLayer)) {
-        try {
-          map.moveLayer(rasterLayer)
-        } catch {}
-      }
-    })
+    const rasterOnTop = Array.isArray(layerOrder) && layerOrder[0] === "raster"
 
-    // 2. Position active floor raster layers on TOP of other rasters
-    activeFloorMembers.forEach((member) => {
-      const rasterLayer = resourceIds(member.dataset_id).rasterLayer
-      if (map.getLayer(rasterLayer)) {
-        try {
-          map.moveLayer(rasterLayer)
-        } catch {}
-      }
-    })
+    const positionRasters = () => {
+      // Position inactive raster layers first, then active floor rasters on top
+      inactiveMembers.forEach((member) => {
+        const rasterLayer = resourceIds(member.dataset_id).rasterLayer
+        if (map.getLayer(rasterLayer)) {
+          try { map.moveLayer(rasterLayer) } catch {}
+        }
+      })
+      activeFloorMembers.forEach((member) => {
+        const rasterLayer = resourceIds(member.dataset_id).rasterLayer
+        if (map.getLayer(rasterLayer)) {
+          try { map.moveLayer(rasterLayer) } catch {}
+        }
+      })
+      // Also move any standalone GIS raster layers alongside workspace rasters
+      ;(map.getStyle()?.layers || []).forEach((sl) => {
+        if (sl.id.startsWith("gis-raster-lyr-") && map.getLayer(sl.id)) {
+          try { map.moveLayer(sl.id) } catch {}
+        }
+      })
+    }
 
-    // 3. Position Vector Fill and Line layers above rasters
-    sortedMembers.forEach((member) => {
-      const ids = resourceIds(member.dataset_id)
-      if (map.getLayer(ids.vectorFill)) {
-        try { map.moveLayer(ids.vectorFill) } catch {}
-      }
-      if (map.getLayer(ids.vectorLine)) {
-        try { map.moveLayer(ids.vectorLine) } catch {}
-      }
-    })
+    const positionVectors = () => {
+      sortedMembers.forEach((member) => {
+        const ids = resourceIds(member.dataset_id)
+        if (map.getLayer(ids.vectorFill)) {
+          try { map.moveLayer(ids.vectorFill) } catch {}
+        }
+        if (map.getLayer(ids.vectorLine)) {
+          try { map.moveLayer(ids.vectorLine) } catch {}
+        }
+      })
+      // Preserve GIS vector layers in proper relative order with rasters
+      const styleLayersNow = map.getStyle()?.layers || []
+      ;["gis-fill-", "gis-line-", "gis-circle-", "gis-label-"].forEach((prefix) => {
+        styleLayersNow.forEach((sl) => {
+          if (sl.id.startsWith(prefix) && map.getLayer(sl.id)) {
+            try { map.moveLayer(sl.id) } catch {}
+          }
+        })
+      })
+    }
+
+    if (rasterOnTop) {
+      positionVectors()
+      positionRasters()
+    } else {
+      positionRasters()
+      positionVectors()
+    }
 
     // 4. Position OCR Annotation Labels above vectors
     sortedMembers.forEach((member) => {
@@ -1399,7 +1422,7 @@ export default function WorkspaceMap({
         }
       }
     }
-  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible, overlayDataByDataset, transformMember])
+  }, [ready, records, selectedRecordId, sortedMembers, currentFloorLevel, currentBuildingName, isIsolateActive, showAllFloorPoints, iconPointsVisible, overlayDataByDataset, transformMember, layerOrder])
 
   // Pan to selected record
   useEffect(() => {

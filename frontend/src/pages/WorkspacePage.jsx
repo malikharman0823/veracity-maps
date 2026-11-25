@@ -185,6 +185,13 @@ export default function WorkspacePage() {
   const [snapEnabled, setSnapEnabled] = useState(false)
   const [controllerActions, setControllerActions] = useState({ canUndo: false, canRedo: false })
   const [statusLoadingLabel, setStatusLoadingLabel] = useState("")
+  const [layerOrder, setLayerOrder] = useState(["vector", "raster", "base"])
+
+  const handleToggleLayerOrder = useCallback(() => {
+    setLayerOrder((prev) =>
+      prev[0] === "raster" ? ["vector", "raster", "base"] : ["raster", "vector", "base"]
+    )
+  }, [])
 
   const notifyGIS = useCallback((msg) => {
     if (!msg) return
@@ -1445,6 +1452,8 @@ export default function WorkspacePage() {
                       activeGISLayer={activeGISLayer}
                       activeBaseLayer={activeBaseLayer}
                       mapViewPrefs={mapViewPrefs}
+                      layerOrder={layerOrder}
+                      onToggleLayerOrder={handleToggleLayerOrder}
                       onSelectGISLayer={setActiveGISLayer}
                       onLayerUpdatedImmediate={handleGISLayerImmediateUpdate}
                       onRefreshGISLayers={() => {
@@ -1538,6 +1547,7 @@ export default function WorkspacePage() {
                 onToggleIsolateActiveFloor={setIsolateActiveFloor}
                 onMapReady={setMapInstance}
                 hasGISLayers
+                layerOrder={layerOrder}
                 mapViews={mapViews}
                 mapViewPrefs={mapViewPrefs}
                 customBaseLayer={activeBaseLayer}
@@ -1560,6 +1570,7 @@ export default function WorkspacePage() {
                 <MapLibreGISController
                   map={mapInstance}
                   gisLayers={gisLayers}
+                  layerOrder={layerOrder}
                   activeLayer={activeGISLayer}
                   activeTool={measureMode ? "select" : activeVectorTool}
                   onSelectTool={handleSelectTool}
@@ -1904,6 +1915,8 @@ export default function WorkspacePage() {
         gisLayers={gisLayers}
         primaryDatasetId={resolvedExportDatasetId}
         workspaceId={gisMapId}
+        layerOrder={layerOrder}
+        onToggleLayerOrder={handleToggleLayerOrder}
         activeBaseLayer={activeBaseLayer}
         onExport={handlePerformExport}
         exporting={exporting}
@@ -1942,7 +1955,12 @@ export default function WorkspacePage() {
         }}
       />
 
-      <ShareMapModal isOpen={shareModalOpen} onClose={() => setShareModalOpen(false)} map={currentMap} />
+      <ShareMapModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        map={currentMap}
+        layerOrder={layerOrder}
+      />
 
       <BaseLayerSelectionModal
         open={baseLayerModalOpen}

@@ -218,106 +218,119 @@ def render_composite_tile(spec_path: str, z: int, x: int, y: int, out_png_path: 
     tile_box_3857 = box(tminx - pad, tminy - pad, tmaxx + pad, tmaxy + pad)
 
     canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    layer_order = spec.get("layer_order") or ["vector", "raster", "base"]
+    raster_on_top = (
+        isinstance(layer_order, list)
+        and len(layer_order) > 0
+        and str(layer_order[0]).strip().lower() == "raster"
+    )
 
-    # 1. Composite Raster Layers underneath
-    for rl in spec.get("raster_layers", []):
-        if rl.get("visible") is False:
-            continue
-        composite_raster_layer(canvas, rl, z, x, y, tminx, tminy, tmaxx, tmaxy)
-
-    # 2. Draw Vector Layers (Polygons -> Lines -> Points on top)
-    draw = ImageDraw.Draw(canvas, "RGBA")
-
-    def to_px(px_x, px_y):
-        return (
-            (px_x - tminx) / span * SIZE,
-            (1.0 - (px_y - tminy) / span) * SIZE,
-        )
-
-    def draw_shape(g, fill_rgba, stroke_rgba, stroke_w):
-        gtype = g.geom_type
-        if gtype == "Polygon":
-            ext = [to_px(vx, vy) for vx, vy in g.exterior.coords]
-            if len(ext) >= 3:
-                draw.polygon(ext, fill=fill_rgba, outline=stroke_rgba)
-                draw.line(ext, fill=stroke_rgba, width=stroke_w)
-            for interior in g.interiors:
-                ring = [to_px(vx, vy) for vx, vy in interior.coords]
-                if len(ring) >= 3:
-                    draw.line(ring, fill=stroke_rgba, width=stroke_w)
-        elif gtype == "MultiPolygon":
-            for poly in g.geoms:
-                draw_shape(poly, fill_rgba, stroke_rgba, stroke_w)
-        elif gtype == "LineString":
-            pts = [to_px(vx, vy) for vx, vy in g.coords]
-            if len(pts) >= 2:
-                draw.line(pts, fill=stroke_rgba, width=stroke_w)
-        elif gtype == "MultiLineString":
-            for ls in g.geoms:
-                draw_shape(ls, fill_rgba, stroke_rgba, stroke_w)
-        elif gtype == "GeometryCollection":
-            for sub in g.geoms:
-                draw_shape(sub, fill_rgba, stroke_rgba, stroke_w)
-
-    # Collect points to draw on top of all polygons/lines
-    deferred_points = []
-    seen_sources = set()
-
-    for idx, vl in enumerate(spec.get("vector_layers", [])):
-        if vl.get("visible") is False:
-            continue
-        src_file = vl.get("source_file") or ""
-        src_layer = vl.get("source_layer") or ""
-        if not src_file or not os.path.isfile(src_file):
-            continue
-        dedup_key = (os.path.normcase(os.path.abspath(src_file)), src_layer.lower())
-        if dedup_key in seen_sources:
-            continue
-        seen_sources.add(dedup_key)
-
-        color_hex = vl.get("color") or PALETTE[idx % len(PALETTE)]
-        opacity = float(vl.get("opacity", 1.0) or 1.0)
-        fill_rgba = parse_hex_rgba(color_hex, 0.34 * opacity)
-        stroke_rgba = parse_hex_rgba(color_hex, 0.95 * opacity)
-        point_rgba = parse_hex_rgba(color_hex, 0.98 * opacity)
-        stroke_w = max(2, int(round(2.0 * SS)))
-
-        try:
-            read_kwargs = {}
-            if src_layer and src_file.lower().endswith(".gpkg"):
-                read_kwargs["layer"] = src_layer
-            gdf = gpd.read_file(src_file, **read_kwargs)
-            if gdf is None or len(gdf) == 0:
+    def draw_all_rasters():
+        for rl in spec.get("raster_layers", []):
+            if rl.get("visible") is False:
                 continue
-            gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]
-            if len(gdf) == 0:
-                continue
-            if gdf.crs is None:
-                gdf = gdf.set_crs("EPSG:4326")
-            gdf_3857 = gdf.to_crs("EPSG:3857")
-            # Spatial filter to tile bbox
-            hits = gdf_3857[gdf_3857.geometry.intersects(tile_box_3857)]
-            if len(hits) == 0:
-                continue
-            for geom in hits.geometry.values:
-                gt = geom.geom_type
-                if gt == "Point":
-                    deferred_points.append((geom.x, geom.y, point_rgba))
-                elif gt == "MultiPoint":
-                    for pt in geom.geoms:
-                        deferred_points.append((pt.x, pt.y, point_rgba))
-                else:
-                    draw_shape(geom, fill_rgba, stroke_rgba, stroke_w)
-        except Exception:
-            continue
+            composite_raster_layer(canvas, rl, z, x, y, tminx, tminy, tmaxx, tmaxy)
 
-    # Draw point markers on top with crisp white halo
-    pt_radius = (3.5 if z <= 6 else (5.0 if z <= 10 else 6.5)) * SS
-    halo_r = pt_radius + 1.8 * SS
-    for px_x, px_y, pt_rgba in deferred_points:
-        cx, cy = to_px(px_x, px_y)
-        draw.ellipse((cx - halo_r, cy - halo_r, cx + halo_r, cy + halo_r), fill=(255, 255, 255, 240))
-        draw.ellipse((cx - pt_radius, cy - pt_radius, cx + pt_radius, cy + pt_radius), fill=pt_rgba)
+    def draw_all_vectors():
+        draw = ImageDraw.Draw(canvas, "RGBA")
+
+        def to_px(px_x, px_y):
+            return (
+                (px_x - tminx) / span * SIZE,
+                (1.0 - (px_y - tminy) / span) * SIZE,
+            )
+
+        def draw_shape(g, fill_rgba, stroke_rgba, stroke_w):
+            gtype = g.geom_type
+            if gtype == "Polygon":
+                ext = [to_px(vx, vy) for vx, vy in g.exterior.coords]
+                if len(ext) >= 3:
+                    draw.polygon(ext, fill=fill_rgba, outline=stroke_rgba)
+                    draw.line(ext, fill=stroke_rgba, width=stroke_w)
+                for interior in g.interiors:
+                    ring = [to_px(vx, vy) for vx, vy in interior.coords]
+                    if len(ring) >= 3:
+                        draw.line(ring, fill=stroke_rgba, width=stroke_w)
+            elif gtype == "MultiPolygon":
+                for poly in g.geoms:
+                    draw_shape(poly, fill_rgba, stroke_rgba, stroke_w)
+            elif gtype == "LineString":
+                pts = [to_px(vx, vy) for vx, vy in g.coords]
+                if len(pts) >= 2:
+                    draw.line(pts, fill=stroke_rgba, width=stroke_w)
+            elif gtype == "MultiLineString":
+                for ls in g.geoms:
+                    draw_shape(ls, fill_rgba, stroke_rgba, stroke_w)
+            elif gtype == "GeometryCollection":
+                for sub in g.geoms:
+                    draw_shape(sub, fill_rgba, stroke_rgba, stroke_w)
+
+        # Collect points to draw on top of all polygons/lines
+        deferred_points = []
+        seen_sources = set()
+
+        for idx, vl in enumerate(spec.get("vector_layers", [])):
+            if vl.get("visible") is False:
+                continue
+            src_file = vl.get("source_file") or ""
+            src_layer = vl.get("source_layer") or ""
+            if not src_file or not os.path.isfile(src_file):
+                continue
+            dedup_key = (os.path.normcase(os.path.abspath(src_file)), src_layer.lower())
+            if dedup_key in seen_sources:
+                continue
+            seen_sources.add(dedup_key)
+
+            color_hex = vl.get("color") or PALETTE[idx % len(PALETTE)]
+            opacity = float(vl.get("opacity", 1.0) or 1.0)
+            fill_rgba = parse_hex_rgba(color_hex, 0.34 * opacity)
+            stroke_rgba = parse_hex_rgba(color_hex, 0.95 * opacity)
+            point_rgba = parse_hex_rgba(color_hex, 0.98 * opacity)
+            stroke_w = max(2, int(round(2.0 * SS)))
+
+            try:
+                read_kwargs = {}
+                if src_layer and src_file.lower().endswith(".gpkg"):
+                    read_kwargs["layer"] = src_layer
+                gdf = gpd.read_file(src_file, **read_kwargs)
+                if gdf is None or len(gdf) == 0:
+                    continue
+                gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]
+                if len(gdf) == 0:
+                    continue
+                if gdf.crs is None:
+                    gdf = gdf.set_crs("EPSG:4326")
+                gdf_3857 = gdf.to_crs("EPSG:3857")
+                # Spatial filter to tile bbox
+                hits = gdf_3857[gdf_3857.geometry.intersects(tile_box_3857)]
+                if len(hits) == 0:
+                    continue
+                for geom in hits.geometry.values:
+                    gt = geom.geom_type
+                    if gt == "Point":
+                        deferred_points.append((geom.x, geom.y, point_rgba))
+                    elif gt == "MultiPoint":
+                        for pt in geom.geoms:
+                            deferred_points.append((pt.x, pt.y, point_rgba))
+                    else:
+                        draw_shape(geom, fill_rgba, stroke_rgba, stroke_w)
+            except Exception:
+                continue
+
+        # Draw point markers on top with crisp white halo
+        pt_radius = (3.5 if z <= 6 else (5.0 if z <= 10 else 6.5)) * SS
+        halo_r = pt_radius + 1.8 * SS
+        for px_x, px_y, pt_rgba in deferred_points:
+            cx, cy = to_px(px_x, px_y)
+            draw.ellipse((cx - halo_r, cy - halo_r, cx + halo_r, cy + halo_r), fill=(255, 255, 255, 240))
+            draw.ellipse((cx - pt_radius, cy - pt_radius, cx + pt_radius, cy + pt_radius), fill=pt_rgba)
+
+    if raster_on_top:
+        draw_all_vectors()
+        draw_all_rasters()
+    else:
+        draw_all_rasters()
+        draw_all_vectors()
 
     out_img = canvas.resize((256, 256), Image.Resampling.LANCZOS)
     os.makedirs(os.path.dirname(os.path.abspath(out_png_path)), exist_ok=True)

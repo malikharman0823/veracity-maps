@@ -41,7 +41,13 @@ function toAbsoluteBackendUrl(pathOrUrl, baseOrigin = API_URL, token = "") {
   return url
 }
 
-export default function ShareMapModal({ map, isOpen, onClose, onShareUpdated }) {
+export default function ShareMapModal({
+  map,
+  isOpen,
+  onClose,
+  onShareUpdated,
+  layerOrder = ["vector", "raster", "base"],
+}) {
   const [activeTab, setActiveTab] = useState("email") // "email" | "links" | "publish" | "members"
   const [shares, setShares] = useState([])
   const [invitations, setInvitations] = useState([])
@@ -187,6 +193,7 @@ export default function ShareMapModal({ map, isOpen, onClose, onShareUpdated }) 
         name: map?.name || "Published Map",
         mode,
         is_public: publishPublic,
+        layer_order: layerOrder,
       })
       const pubId = created?.map_id || created?.id
       const accessToken = !created?.is_public ? created?.access_token || "" : ""

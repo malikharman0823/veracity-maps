@@ -21,6 +21,7 @@ import {
   Check,
   X,
   FolderPlus,
+  ArrowUpDown,
 } from "lucide-react"
 import {
   createMapLayer,
@@ -39,6 +40,8 @@ export default function ThreeGroupLayersPanel({
   activeGISLayer,
   activeBaseLayer,
   mapViewPrefs = {},
+  layerOrder = ["vector", "raster", "base"],
+  onToggleLayerOrder,
   onSelectGISLayer,
   onLayerUpdatedImmediate,
   onRefreshGISLayers,
@@ -354,6 +357,17 @@ export default function ThreeGroupLayersPanel({
           Layers
         </span>
         <div className="flex items-center gap-1.5">
+          {onToggleLayerOrder && (
+            <button
+              type="button"
+              onClick={onToggleLayerOrder}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] border border-neutral-300 dark:border-[#3a3a3a] bg-white dark:bg-[#1e1e1e] hover:border-[#3ecf8e] text-[10px] font-semibold text-neutral-700 dark:text-neutral-200 cursor-pointer transition-colors"
+              title="Swap Vector and Raster stacking order (top group renders above bottom group)"
+            >
+              <ArrowUpDown className="size-3 text-[#3ecf8e]" />
+              <span>{layerOrder[0] === "raster" ? "Raster Top" : "Vector Top"}</span>
+            </button>
+          )}
           <span className="text-[10px] font-mono text-neutral-400">
             V:{vectorLayers.length} R:{rasterEntries.length} B:1
           </span>
@@ -370,9 +384,10 @@ export default function ThreeGroupLayersPanel({
         </div>
       </div>
 
-      {/* Permanent Three-Group Stack: 1. Vector (Top) -> 2. Raster (Middle) -> 3. Base (Bottom) */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {/* GROUP 1 — VECTOR LAYER (TOP) */}
+      {/* Adjustable Three-Group Stack: Vector <-> Raster (swappable) -> Base (Bottom) */}
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+        {/* VECTOR LAYER GROUP */}
+        <div style={{ order: layerOrder[0] === "raster" ? 2 : 1 }}>
         <GroupHeader
           id="vector"
           title="Vector Layer"
@@ -580,7 +595,10 @@ export default function ThreeGroupLayersPanel({
           </div>
         )}
 
-        {/* GROUP 2 — RASTER LAYER (MIDDLE) */}
+        </div>
+
+        {/* RASTER LAYER GROUP */}
+        <div style={{ order: layerOrder[0] === "raster" ? 1 : 2 }}>
         <GroupHeader
           id="raster"
           title="Raster Layer"
@@ -714,7 +732,10 @@ export default function ThreeGroupLayersPanel({
           </div>
         )}
 
+        </div>
+
         {/* GROUP 3 — BASE LAYER (BOTTOM — PERMANENTLY ANCHORED) */}
+        <div style={{ order: 3 }}>
         <GroupHeader
           id="base"
           title="Base Layer"
@@ -776,6 +797,7 @@ export default function ThreeGroupLayersPanel({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Layer Context Menu */}
