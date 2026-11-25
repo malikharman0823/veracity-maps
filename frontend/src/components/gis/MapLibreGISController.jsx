@@ -512,6 +512,15 @@ export default function MapLibreGISController({
         if (item.kind === "raster") {
           safeMoveToTop(`workspace-${item.id}-raster-layer`)
           safeMoveToTop(`gis-raster-lyr-${item.id}`)
+          const matchingGisRaster = orderedLayers.find(
+            (l) => l.layer_type === "raster" && (l.layer_id === item.id || l.dataset_id === item.id)
+          )
+          if (matchingGisRaster?.dataset_id) {
+            safeMoveToTop(`workspace-${matchingGisRaster.dataset_id}-raster-layer`)
+          }
+          if (matchingGisRaster?.layer_id) {
+            safeMoveToTop(`gis-raster-lyr-${matchingGisRaster.layer_id}`)
+          }
         } else if (item.kind === "vector") {
           safeMoveToTop(`gis-fill-${item.id}`)
           safeMoveToTop(`gis-line-${item.id}`)
