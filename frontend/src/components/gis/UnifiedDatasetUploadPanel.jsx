@@ -87,6 +87,8 @@ export default function UnifiedDatasetUploadPanel({
   initialFocusSection = null, // "raster" | "vector" | null
   primaryActionLabel = "Open Workspace",
   showBackButton = true,
+  autoAddToWorkspace = true,
+  resolveProjectId = null,
   onBack,
   onComplete,
 }) {
@@ -94,6 +96,45 @@ export default function UnifiedDatasetUploadPanel({
   const [queue, setQueue] = useState([])
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef(null)
+  const resolvedProjectIdRef = useRef(workspaceId || "")
+
+  const ensureProjectId = async (fallbackName = "") => {
+    if (workspaceId && workspaceId !== "default") return workspaceId
+    if (resolvedProjectIdRef.current && resolvedProjectIdRef.current !== "default") {
+      return resolvedProjectIdRef.current
+    }
+    if (typeof resolveProjectId === "function") {
+      const pid = await resolveProjectId(fallbackName)
+      if (pid) {
+        resolvedProjectIdRef.current = pid
+        return pid
+      }
+    }
+    return workspaceId || "default"
+  }
+
+  const buildCompletionPayload = (layers, targetProjectId) => {
+    const addedVectorLayers = layers.filter((l) => l.layer_type === "vector")
+    const addedRasterLayers = layers.filter(
+      (l) => l.layer_type === "raster" || l.layer_type === "image_overlay"
+    )
+    const rasterItems = addedRasterLayers.map((l) => ({
+      datasetId: l.session_dataset_id || l.dataset_id,
+      filename: l.name,
+      width: l.width || 0,
+      height: l.height || 0,
+      crs: l.crs || "",
+      isGeoreferenced: !l.requires_georeferencing,
+      layerType: l.layer_type,
+    }))
+    return {
+      projectId: targetProjectId,
+      addedVectorLayers,
+      addedRasterLayers,
+      addedLayers: layers,
+      rasterItems,
+    }
+  }
 
   const updateItem = (localId, patch) => {
     setQueue((prev) => prev.map((it) => (it.localId === localId ? { ...it, ...patch } : it)))
@@ -107,13 +148,14 @@ export default function UnifiedDatasetUploadPanel({
         status: "failed",
         error: `Unsupported file extension "${ext || "none"}" for ${item.category} import.`,
       })
-      return
+      return { layers: [], needsSelection: false }
     }
 
     updateItem(item.localId, { status: "inspecting", error: "" })
     try {
+      const targetProjectId = await ensureProjectId(item.file.name.replace(/\.[^/.]+$/, ""))
       const uploaded = await uploadUnifiedFile(item.file, {
-        projectId: workspaceId || "default",
+        projectId: targetProjectId,
         importCategory: item.category,
       })
       const insp = uploaded?.inspection || {}
@@ -125,7 +167,9 @@ export default function UnifiedDatasetUploadPanel({
         insp.detected_format === "pdf" ? subLayers.map((l) => l.page_number) : []
       )
 
-      updateItem(item.localId, {
+      const updatedItem = {
+        ...item,
+        projectId: targetProjectId,
         status: "uploaded",
         uploadId: uploaded.id,
         uploadRecord: uploaded,
@@ -133,16 +177,30 @@ export default function UnifiedDatasetUploadPanel({
         selectedLayers,
         selectedPages,
         error: "",
-      })
+      }
+      updateItem(item.localId, updatedItem)
+
+      // Only pause for user selection when a GeoPackage has >1 layer or a PDF has >1 page.
+      // All single-layer files (PNG, JPG, GeoJSON, DXF, 1-page PDF, 1-layer GPKG) import automatically!
+      const needsSelection =
+        (insp.detected_format === "gpkg" && subLayers.length > 1) ||
+        (insp.detected_format === "pdf" && subLayers.length > 1)
+
+      if (!needsSelection) {
+        const layers = await handleConfirmImport(updatedItem, targetProjectId)
+        return { layers, needsSelection: false, projectId: targetProjectId }
+      }
+      return { layers: [], needsSelection: true, projectId: targetProjectId }
     } catch (err) {
       updateItem(item.localId, {
         status: "failed",
         error: errorText(err, `Validation failed for "${item.file.name}".`),
       })
+      return { layers: [], needsSelection: false }
     }
   }
 
-  const enqueueFiles = (fileList) => {
+  const enqueueFiles = async (fileList) => {
     const files = Array.from(fileList || [])
     if (files.length === 0) return
     const newItems = files.map((file) => ({
@@ -163,18 +221,25 @@ export default function UnifiedDatasetUploadPanel({
       error: "",
     }))
     setQueue((prev) => [...newItems, ...prev])
+
     // Process each file independently so one invalid file never blocks or corrupts others.
-    newItems.forEach((item) => {
-      processUpload(item)
-    })
+    const results = await Promise.all(newItems.map((item) => processUpload(item)))
+    const allAutoLayers = results.flatMap((r) => r?.layers || [])
+    const anyNeedsSelection = results.some((r) => r?.needsSelection)
+    const targetProjectId = results.find((r) => r?.projectId)?.projectId || workspaceId || resolvedProjectIdRef.current
+
+    if (autoAddToWorkspace && !anyNeedsSelection && allAutoLayers.length > 0) {
+      onComplete?.(buildCompletionPayload(allAutoLayers, targetProjectId))
+    }
   }
 
-  const handleConfirmImport = async (item) => {
-    if (!item.uploadId) return
+  const handleConfirmImport = async (item, overrideProjectId = "") => {
+    if (!item.uploadId) return []
     updateItem(item.localId, { status: "processing", error: "" })
     try {
+      const targetProjectId = overrideProjectId || item.projectId || (await ensureProjectId(item.name))
       const payload = {
-        project_id: workspaceId || "default",
+        project_id: targetProjectId,
         import_category: item.category,
         idempotency_key: `${item.uploadId}_${item.category}`,
         sync: true,

@@ -76,20 +76,33 @@ export default function HomePage() {
     }
   }
 
-  const handleUploadComplete = async () => {
-    // Open the most recent project or create a fresh workspace automatically
+  const resolveOrCreateProjectId = async (suggestedName = "") => {
     if (myMaps.length > 0 && myMaps[0]?.id) {
-      navigate(`/maps/${encodeURIComponent(myMaps[0].id)}/edit`)
-      return
+      return myMaps[0].id
     }
     try {
-      const res = await createMap(`Workspace ${new Date().toLocaleDateString()}`, "")
+      const clean = String(suggestedName || "").trim() || `Workspace ${new Date().toLocaleDateString()}`
+      const res = await createMap(clean, "")
       const created = res?.map || res
       if (created?.id) {
-        navigate(`/maps/${encodeURIComponent(created.id)}/edit`)
-        return
+        setMyMaps((prev) => [created, ...prev])
+        return created.id
       }
     } catch {}
+    return "default"
+  }
+
+  const handleUploadComplete = async (result) => {
+    const targetId = result?.projectId || (myMaps.length > 0 ? myMaps[0]?.id : "")
+    if (targetId && targetId !== "default") {
+      navigate(`/maps/${encodeURIComponent(targetId)}/edit`)
+      return
+    }
+    const createdId = await resolveOrCreateProjectId()
+    if (createdId && createdId !== "default") {
+      navigate(`/maps/${encodeURIComponent(createdId)}/edit`)
+      return
+    }
     navigate("/projects")
   }
 
@@ -135,10 +148,12 @@ export default function HomePage() {
         {/* Unified Dataset Upload Panel */}
         <section className="rounded-lg border border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#1b1b1b] p-5">
           <UnifiedDatasetUploadPanel
-            workspaceId={myMaps[0]?.id || "default"}
+            workspaceId={myMaps[0]?.id || ""}
             workspaceName={myMaps[0]?.name || "Private Workspace"}
             primaryActionLabel="Open Workspace"
             showBackButton={false}
+            autoAddToWorkspace
+            resolveProjectId={resolveOrCreateProjectId}
             onComplete={handleUploadComplete}
           />
         </section>
