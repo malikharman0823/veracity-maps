@@ -2191,6 +2191,69 @@ export async function exportCustomLocalTilesZip(payload) {
   }
 }
 
+// -------------------------------------------------------------
+// Unified User-Isolated Upload, Atomic Import & Job API
+// -------------------------------------------------------------
+
+export async function uploadUnifiedFile(file, { projectId = "", importCategory = "raster" } = {}) {
+  const form = new FormData()
+  form.append("file", file)
+  if (projectId) form.append("project_id", projectId)
+  if (importCategory) form.append("import_category", importCategory)
+  const response = await client.post("/api/uploads", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 300_000,
+  })
+  return response.data.data
+}
+
+export async function listUnifiedUploads() {
+  const response = await client.get("/api/uploads")
+  return response.data.data
+}
+
+export async function getUnifiedUpload(uploadId) {
+  const response = await client.get(`/api/uploads/${encodeURIComponent(uploadId)}`)
+  return response.data.data
+}
+
+export async function startUnifiedImport(uploadId, payload = {}) {
+  const response = await client.post(
+    `/api/imports/${encodeURIComponent(uploadId)}`,
+    payload,
+    { timeout: 300_000 }
+  )
+  return response.data.data
+}
+
+export async function getUnifiedJob(jobId) {
+  const response = await client.get(`/api/jobs/${encodeURIComponent(jobId)}`)
+  return response.data.data
+}
+
+export async function cancelUnifiedJob(jobId) {
+  const response = await client.post(`/api/jobs/${encodeURIComponent(jobId)}/cancel`)
+  return response.data.data
+}
+
+export async function listUnifiedDatasets(projectId = "") {
+  const response = await client.get("/api/unified-datasets", {
+    params: projectId ? { project_id: projectId } : undefined,
+  })
+  return response.data.data
+}
+
+export async function getUnifiedDataset(datasetId) {
+  const response = await client.get(`/api/unified-datasets/${encodeURIComponent(datasetId)}`)
+  return response.data.data
+}
+
+export async function deleteUnifiedDataset(datasetId) {
+  const response = await client.delete(`/api/unified-datasets/${encodeURIComponent(datasetId)}`)
+  return response.data.data
+}
+
+
 
 
 

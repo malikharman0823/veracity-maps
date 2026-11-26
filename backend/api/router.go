@@ -18,30 +18,34 @@ import (
 	"github.com/malikharman0823/veracity-maps/functions/projects"
 	"github.com/malikharman0823/veracity-maps/functions/publish"
 	"github.com/malikharman0823/veracity-maps/functions/upload"
+	"github.com/malikharman0823/veracity-maps/functions/uploads"
 	"github.com/malikharman0823/veracity-maps/functions/workspaceregistry"
+	gislib "github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
 	"github.com/malikharman0823/veracity-maps/services"
+	"github.com/malikharman0823/veracity-maps/storage"
 )
 
 type Router struct {
-	repo       *repository.SessionRepository
-	authRepo   repository.AuthRepo
-	projRepo   *repository.ProjectRepository
-	middleware *Middleware
-	uploadH    *upload.Handler
-	datasetsH  *datasets.Handler
-	georefH    *georeference.Handler
-	exportH    *export.Handler
-	authH      *auth.Handler
-	projectsH  *projects.Handler
-	profileH   *profile.Handler
-	mapsH      *maps.Handler
-	gisH       *gis.Handler
-	procH      *processing.Handler
-	baseLayerH *baselayers.Handler
-	wsRegH     *workspaceregistry.Handler
-	publishH   *publish.Handler
+	repo            *repository.SessionRepository
+	authRepo        repository.AuthRepo
+	projRepo        *repository.ProjectRepository
+	middleware      *Middleware
+	uploadH         *upload.Handler
+	unifiedUploadsH *uploads.Handler
+	datasetsH       *datasets.Handler
+	georefH         *georeference.Handler
+	exportH         *export.Handler
+	authH           *auth.Handler
+	projectsH       *projects.Handler
+	profileH        *profile.Handler
+	mapsH           *maps.Handler
+	gisH            *gis.Handler
+	procH           *processing.Handler
+	baseLayerH      *baselayers.Handler
+	wsRegH          *workspaceregistry.Handler
+	publishH        *publish.Handler
 }
 
 func (rt *Router) SetPublishHandler(ph *publish.Handler) {
@@ -115,6 +119,10 @@ func (rt *Router) SetProcessingHandler(ph *processing.Handler) {
 	rt.procH = ph
 }
 
+func (rt *Router) SetUnifiedUploadsHandler(uh *uploads.Handler) {
+	rt.unifiedUploadsH = uh
+}
+
 func NewRouter(
 	repo *repository.SessionRepository,
 	authRepo repository.AuthRepo,
@@ -132,21 +140,24 @@ func NewRouter(
 	defaultProcService := services.NewProcessingService(repository.NewMemoryProcessingRepository(), defaultGISService, nil, repo, "")
 	defaultBaseLayerService := services.NewBaseLayerService(repository.NewMemoryBaseLayerRepository(), repo, nil, nil)
 	defaultWSRegService := services.NewWorkspaceRegistryService(repository.NewMemoryWorkspaceRegistryRepository(), defaultGISService, repo, nil)
+	defaultPrivateStorage, _ := storage.NewPrivateStorage("", 0)
+	defaultUnifiedImportSvc := services.NewUnifiedImportService(defaultPrivateStorage, repo, gislib.DefaultUploadLimits())
 	router := &Router{
-		repo:       repo,
-		authRepo:   authRepo,
-		projRepo:   projRepo,
-		middleware: mw,
-		uploadH:    uh,
-		datasetsH:  dh,
-		georefH:    gh,
-		exportH:    eh,
-		authH:      ah,
-		projectsH:  ph,
-		gisH:       gis.NewHandler(defaultGISService),
-		procH:      processing.NewHandler(defaultProcService),
-		baseLayerH: baselayers.NewHandler(defaultBaseLayerService),
-		wsRegH:     workspaceregistry.NewHandler(defaultWSRegService),
+		repo:            repo,
+		authRepo:        authRepo,
+		projRepo:        projRepo,
+		middleware:      mw,
+		uploadH:         uh,
+		unifiedUploadsH: uploads.NewHandler(defaultUnifiedImportSvc),
+		datasetsH:       dh,
+		georefH:         gh,
+		exportH:         eh,
+		authH:           ah,
+		projectsH:       ph,
+		gisH:            gis.NewHandler(defaultGISService),
+		procH:           processing.NewHandler(defaultProcService),
+		baseLayerH:      baselayers.NewHandler(defaultBaseLayerService),
+		wsRegH:          workspaceregistry.NewHandler(defaultWSRegService),
 	}
 	if len(profileHandlers) > 0 {
 		router.profileH = profileHandlers[0]
@@ -252,6 +263,68 @@ func (rt *Router) route(w http.ResponseWriter, r *http.Request) {
 		}
 		rt.authH.Me(w, r, user)
 		return
+	}
+
+	// 1a-unified-uploads. Unified User-Isolated Upload, Atomic Import, Job & Dataset API
+	if rt.unifiedUploadsH != nil {
+		if path == "/api/uploads" {
+			user := GetUser(r)
+			if r.Method == http.MethodPost {
+				rt.unifiedUploadsH.PostUpload(w, r, user)
+				return
+			}
+			if r.Method == http.MethodGet {
+				rt.unifiedUploadsH.ListUploads(w, r, user)
+				return
+			}
+			models.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Use GET or POST for /api/uploads", nil, nil)
+			return
+		}
+		if strings.HasPrefix(path, "/api/uploads/") {
+			uploadID := strings.TrimPrefix(path, "/api/uploads/")
+			if uploadID != "" && !strings.Contains(uploadID, "/") && r.Method == http.MethodGet {
+				rt.unifiedUploadsH.GetUpload(w, r, GetUser(r), uploadID)
+				return
+			}
+		}
+		if strings.HasPrefix(path, "/api/imports/") {
+			uploadID := strings.TrimPrefix(path, "/api/imports/")
+			if uploadID != "" && !strings.Contains(uploadID, "/") && r.Method == http.MethodPost {
+				rt.unifiedUploadsH.StartImport(w, r, GetUser(r), uploadID)
+				return
+			}
+		}
+		if strings.HasPrefix(path, "/api/jobs/") {
+			rest := strings.TrimPrefix(path, "/api/jobs/")
+			if strings.HasSuffix(rest, "/cancel") && r.Method == http.MethodPost {
+				jobID := strings.TrimSuffix(rest, "/cancel")
+				if jobID != "" && !strings.Contains(jobID, "/") {
+					rt.unifiedUploadsH.CancelJob(w, r, GetUser(r), jobID)
+					return
+				}
+			}
+			if rest != "" && !strings.Contains(rest, "/") && r.Method == http.MethodGet {
+				rt.unifiedUploadsH.GetJob(w, r, GetUser(r), rest)
+				return
+			}
+		}
+		if path == "/api/unified-datasets" && r.Method == http.MethodGet {
+			rt.unifiedUploadsH.ListDatasets(w, r, GetUser(r))
+			return
+		}
+		if strings.HasPrefix(path, "/api/unified-datasets/") {
+			dsID := strings.TrimPrefix(path, "/api/unified-datasets/")
+			if dsID != "" && !strings.Contains(dsID, "/") {
+				if r.Method == http.MethodGet {
+					rt.unifiedUploadsH.GetDataset(w, r, GetUser(r), dsID)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					rt.unifiedUploadsH.DeleteDataset(w, r, GetUser(r), dsID)
+					return
+				}
+			}
+		}
 	}
 
 	// 1a-share. Public Share Link Endpoint (/api/share/:token)

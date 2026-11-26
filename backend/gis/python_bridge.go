@@ -81,10 +81,27 @@ func ResolveScriptPath(scriptName string) string {
 // RunPythonJSON executes a Python script in backend/scripts with separate stdout/stderr
 // streams so native C-library notices (GDAL/PROJ/ONNX) on stderr never corrupt JSON output.
 func RunPythonJSON(timeout time.Duration, scriptName string, args []string, out interface{}) error {
+	return RunPythonJSONWithContext(context.Background(), timeout, scriptName, args, out)
+}
+
+// RunPythonScriptJSONWithContext runs a Python script honoring caller cancellation and timeout, returning a JSON map.
+func RunPythonScriptJSONWithContext(parentCtx context.Context, scriptName string, args []string, timeout time.Duration) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	if err := RunPythonJSONWithContext(parentCtx, timeout, scriptName, args, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RunPythonJSONWithContext executes a Python script honoring both parentCtx cancellation and timeout.
+func RunPythonJSONWithContext(parentCtx context.Context, timeout time.Duration, scriptName string, args []string, out interface{}) error {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
 	pyExe := ResolvePythonInterpreter()
