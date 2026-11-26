@@ -74,7 +74,7 @@ export default function ProjectsPage() {
     if (!newName.trim() || creating) return
     setCreating(true)
     try {
-      const res = await createMap({ name: newName.trim() })
+      const res = await createMap(newName.trim(), "")
       const created = res?.map || res
       setNewName("")
       setShowCreate(false)
@@ -91,7 +91,7 @@ export default function ProjectsPage() {
     e.preventDefault()
     if (!renamingMap || !renameDraft.trim()) return
     try {
-      await updateMap(renamingMap.id, { name: renameDraft.trim() })
+      await updateMap(renamingMap.id, renameDraft.trim(), renamingMap.description || "")
       setRenamingMap(null)
       await fetchAll()
     } catch {

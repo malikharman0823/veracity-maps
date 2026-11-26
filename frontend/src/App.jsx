@@ -66,7 +66,7 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 >
-                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/dashboard" element={<Navigate to="/upload" replace />} />
                   <Route path="/projects" element={<ProjectsPage />} />
                   <Route path="/shared" element={<Navigate to="/projects" replace />} />
                   <Route path="/settings" element={<SettingsPage />} />

@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import {
-  LayoutDashboard,
+  Upload,
   FolderKanban,
   Settings,
   Compass,
@@ -84,7 +84,7 @@ export default function Sidebar() {
     }`
 
   const navItems = [
-    { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, badge: null },
+    { label: "Upload Dataset", to: "/upload", icon: Upload, badge: null },
     { label: "My Projects", to: "/projects", icon: FolderKanban, badge: counts.projects > 0 ? String(counts.projects) : null },
     { label: "Settings", to: "/settings", icon: Settings, badge: null },
   ]
@@ -93,7 +93,7 @@ export default function Sidebar() {
     <ShadcnSidebar className="border-r border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#171717] text-neutral-800 dark:text-neutral-100">
       {/* Brand Header */}
       <SidebarHeader className="h-14 border-b border-neutral-200 dark:border-[#2a2a2a] px-4 flex flex-row items-center justify-between">
-        <Link to="/dashboard" onClick={handleNavClick} className="flex items-center gap-2.5">
+        <Link to="/upload" onClick={handleNavClick} className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-[6px] bg-[#3ecf8e]/15 border border-[#3ecf8e]/30 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center">
             <Compass className="size-4" />
           </div>
