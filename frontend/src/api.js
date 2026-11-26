@@ -1302,8 +1302,12 @@ export async function listMaps() {
   return response.data.data
 }
 
-export async function createMap(name, description = "") {
-  const response = await client.post("/api/maps", { name, description })
+export async function createMap(nameOrPayload, description = "") {
+  const payload =
+    nameOrPayload && typeof nameOrPayload === "object"
+      ? { name: String(nameOrPayload.name || "").trim(), description: String(nameOrPayload.description || "") }
+      : { name: String(nameOrPayload || "").trim(), description: String(description || "") }
+  const response = await client.post("/api/maps", payload)
   return response.data.data
 }
 
@@ -1312,8 +1316,12 @@ export async function getMap(mapId) {
   return response.data.data
 }
 
-export async function updateMap(mapId, name, description = "") {
-  const response = await client.put(`/api/maps/${encodeURIComponent(mapId)}`, { name, description })
+export async function updateMap(mapId, nameOrPayload, description = "") {
+  const payload =
+    nameOrPayload && typeof nameOrPayload === "object"
+      ? { name: String(nameOrPayload.name || "").trim(), description: String(nameOrPayload.description || "") }
+      : { name: String(nameOrPayload || "").trim(), description: String(description || "") }
+  const response = await client.put(`/api/maps/${encodeURIComponent(mapId)}`, payload)
   return response.data.data
 }
 
