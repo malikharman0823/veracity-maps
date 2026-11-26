@@ -2,29 +2,23 @@
 -- Migration 020: Unified Uploads, Atomic Imports & Workspace Layers + RLS
 -- Target: Microsoft SQL Server 2022
 --
--- Reuses existing dbo.Datasets and dbo.processing_jobs while adding clean,
--- user-isolated dbo.Uploads and dbo.Unified_Layers tables protected by the
--- existing security.UserIsolationPolicy (SESSION_CONTEXT(N'user_id')).
+-- Reuses existing dbo.Uploads (002_user_owned_persistence.sql, owner column user_id),
+-- dbo.Datasets, and dbo.processing_jobs, adds unified upload metadata columns and
+-- dbo.Unified_Layers, and binds both to security.UserIsolationPolicy.
 -- ============================================================================
 
-IF OBJECT_ID('dbo.Uploads', 'U') IS NULL
+IF OBJECT_ID('dbo.Uploads', 'U') IS NOT NULL
 BEGIN
-    CREATE TABLE dbo.Uploads (
-        id               NVARCHAR(64)  NOT NULL PRIMARY KEY,
-        owner_id         NVARCHAR(64)  NOT NULL,
-        project_id       NVARCHAR(64)  NULL,
-        original_name    NVARCHAR(512) NOT NULL,
-        storage_key      NVARCHAR(1024) NOT NULL,
-        detected_format  NVARCHAR(32)  NOT NULL,
-        import_category  NVARCHAR(32)  NOT NULL,
-        file_size        BIGINT        NOT NULL,
-        mime_type        NVARCHAR(128) NOT NULL,
-        upload_status    NVARCHAR(32)  NOT NULL DEFAULT 'uploaded',
-        inspection_json  NVARCHAR(MAX) NULL,
-        created_at       DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
-    );
-    CREATE INDEX IX_Uploads_Owner ON dbo.Uploads(owner_id, created_at DESC);
-    CREATE INDEX IX_Uploads_Project ON dbo.Uploads(owner_id, project_id);
+    IF COL_LENGTH('dbo.Uploads', 'detected_format') IS NULL
+        ALTER TABLE dbo.Uploads ADD detected_format NVARCHAR(32) NULL;
+    IF COL_LENGTH('dbo.Uploads', 'import_category') IS NULL
+        ALTER TABLE dbo.Uploads ADD import_category NVARCHAR(32) NULL;
+    IF COL_LENGTH('dbo.Uploads', 'mime_type') IS NULL
+        ALTER TABLE dbo.Uploads ADD mime_type NVARCHAR(128) NULL;
+    IF COL_LENGTH('dbo.Uploads', 'upload_status') IS NULL
+        ALTER TABLE dbo.Uploads ADD upload_status NVARCHAR(32) NOT NULL CONSTRAINT DF_Uploads_Status DEFAULT 'uploaded';
+    IF COL_LENGTH('dbo.Uploads', 'inspection_json') IS NULL
+        ALTER TABLE dbo.Uploads ADD inspection_json NVARCHAR(MAX) NULL;
 END;
 GO
 
@@ -53,21 +47,22 @@ BEGIN
 END;
 GO
 
--- Extend security.UserIsolationPolicy with FILTER + BLOCK predicates for dbo.Uploads & dbo.Unified_Layers
+-- Extend security.UserIsolationPolicy with FILTER + BLOCK predicates for dbo.Uploads(user_id) & dbo.Unified_Layers(owner_id)
 IF EXISTS (SELECT 1 FROM sys.security_policies WHERE name = 'UserIsolationPolicy' AND schema_id = SCHEMA_ID('security'))
 BEGIN
-    IF NOT EXISTS (
+    IF OBJECT_ID('dbo.Uploads', 'U') IS NOT NULL
+       AND NOT EXISTS (
         SELECT 1 FROM sys.security_predicates sp
         JOIN sys.security_policies pol ON sp.object_id = pol.object_id
         WHERE pol.name = 'UserIsolationPolicy' AND sp.target_object_id = OBJECT_ID('dbo.Uploads')
     )
     BEGIN
         ALTER SECURITY POLICY security.UserIsolationPolicy
-            ADD FILTER PREDICATE security.fn_user_access(owner_id) ON dbo.Uploads,
-            ADD BLOCK PREDICATE  security.fn_user_access(owner_id) ON dbo.Uploads AFTER INSERT,
-            ADD BLOCK PREDICATE  security.fn_user_access(owner_id) ON dbo.Uploads BEFORE UPDATE,
-            ADD BLOCK PREDICATE  security.fn_user_access(owner_id) ON dbo.Uploads AFTER UPDATE,
-            ADD BLOCK PREDICATE  security.fn_user_access(owner_id) ON dbo.Uploads BEFORE DELETE;
+            ADD FILTER PREDICATE security.fn_user_access(user_id) ON dbo.Uploads,
+            ADD BLOCK PREDICATE  security.fn_user_access(user_id) ON dbo.Uploads AFTER INSERT,
+            ADD BLOCK PREDICATE  security.fn_user_access(user_id) ON dbo.Uploads BEFORE UPDATE,
+            ADD BLOCK PREDICATE  security.fn_user_access(user_id) ON dbo.Uploads AFTER UPDATE,
+            ADD BLOCK PREDICATE  security.fn_user_access(user_id) ON dbo.Uploads BEFORE DELETE;
     END;
 
     IF NOT EXISTS (

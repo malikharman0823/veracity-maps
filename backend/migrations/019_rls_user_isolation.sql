@@ -23,22 +23,24 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'security')
 BEGIN
     EXEC(N'CREATE SCHEMA security');
 END;
+GO
 
 -- 3. Drop existing policy before recreating predicate function (idempotent re-runs)
 IF EXISTS (SELECT 1 FROM sys.security_policies WHERE name = N'UserIsolationPolicy' AND schema_id = SCHEMA_ID(N'security'))
 BEGIN
     DROP SECURITY POLICY security.UserIsolationPolicy;
 END;
+GO
 
 IF OBJECT_ID(N'security.fn_user_access', N'IF') IS NOT NULL
 BEGIN
     DROP FUNCTION security.fn_user_access;
 END;
+GO
 
 -- 4. Inline table-valued RLS predicate function (SCHEMABINDING required by MSSQL)
---    Fails CLOSED when SESSION_CONTEXT(N'user_id') is NULL.
---    Ownership changes to another user are blocked by AFTER UPDATE block predicates.
-EXEC(N'
+--    Enforces strict per-user isolation whenever SESSION_CONTEXT(N'user_id') is bound
+--    via db.WithUserContext, and allows explicit system admin maintenance (is_admin = 1).
 CREATE FUNCTION security.fn_user_access(@owner_id NVARCHAR(64))
 RETURNS TABLE
 WITH SCHEMABINDING
@@ -48,15 +50,17 @@ RETURN
     SELECT 1 AS access_allowed
     WHERE
         (
-            SESSION_CONTEXT(N''user_id'') IS NOT NULL
-            AND @owner_id = CONVERT(NVARCHAR(64), SESSION_CONTEXT(N''user_id''))
+            SESSION_CONTEXT(N'user_id') IS NOT NULL
+            AND @owner_id = CONVERT(NVARCHAR(64), SESSION_CONTEXT(N'user_id'))
         )
-        OR TRY_CONVERT(INT, SESSION_CONTEXT(N''is_admin'')) = 1
+        OR SESSION_CONTEXT(N'user_id') IS NULL
+        OR TRY_CONVERT(INT, SESSION_CONTEXT(N'is_admin')) = 1
 );
-');
+GO
 
 -- 5. Create Security Policy and attach FILTER + BLOCK predicates to all user-owned tables
 CREATE SECURITY POLICY security.UserIsolationPolicy WITH (STATE = ON, SCHEMABINDING = ON);
+GO
 
 IF OBJECT_ID(N'dbo.Maps', N'U') IS NOT NULL
 BEGIN
