@@ -4,7 +4,6 @@ import {
   ChevronDown,
   Save,
   FolderOpen,
-  Share2,
   Plus,
   Compass,
   Edit3,
@@ -44,7 +43,6 @@ export default function WorkspaceToolbar({
   bottomTab = null, // null | "properties" | "attributes" | "processing"
   onSave,
   onOpenReopen,
-  onOpenShare,
   onAddData,
   onGeoreference,
   onSelectTool,
@@ -124,19 +122,6 @@ export default function WorkspaceToolbar({
                 <FolderOpen className="size-3.5 text-neutral-400" />
                 <span>Reopen Package (.zip)</span>
               </button>
-              {onOpenShare && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenMenu(null)
-                    onOpenShare?.()
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
-                >
-                  <Share2 className="size-3.5 text-neutral-400" />
-                  <span>Share Project</span>
-                </button>
-              )}
               <div className="my-1 border-t border-neutral-200 dark:border-[#2e2e2e]" />
               <Link
                 to="/projects"

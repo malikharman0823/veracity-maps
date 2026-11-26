@@ -41,7 +41,6 @@ import ExportProjectModal from "../components/ExportProjectModal"
 import EnhancementModal from "../components/EnhancementModal"
 import AnnotationReviewPanel from "../components/AnnotationReviewPanel"
 import ReopenProjectModal from "../components/ReopenProjectModal"
-import ShareMapModal from "../components/ShareMapModal"
 import AttributeTablePanel from "../components/gis/AttributeTablePanel"
 import CRSManagerModal from "../components/gis/CRSManagerModal"
 import DatasetBrowserModal from "../components/gis/DatasetBrowserModal"
@@ -1773,13 +1772,6 @@ export default function WorkspacePage() {
           setReopenModalOpen(false)
           if (restored?.id) navigate(`/datasets/${restored.id}/workspace`)
         }}
-      />
-
-      <ShareMapModal
-        isOpen={shareModalOpen}
-        onClose={() => setShareModalOpen(false)}
-        map={currentMap}
-        layerOrder={layerOrder}
       />
 
       <BaseLayerSelectionModal

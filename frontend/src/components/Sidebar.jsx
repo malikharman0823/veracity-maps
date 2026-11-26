@@ -15,7 +15,6 @@ import {
 import {
   LayoutDashboard,
   FolderKanban,
-  Users,
   Settings,
   Compass,
   LogOut,
@@ -86,8 +85,7 @@ export default function Sidebar() {
 
   const navItems = [
     { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, badge: null },
-    { label: "Projects", to: "/projects", icon: FolderKanban, badge: counts.projects > 0 ? String(counts.projects) : null },
-    { label: "Shared Projects", to: "/shared", icon: Users, badge: counts.shared > 0 ? String(counts.shared) : null },
+    { label: "My Projects", to: "/projects", icon: FolderKanban, badge: counts.projects > 0 ? String(counts.projects) : null },
     { label: "Settings", to: "/settings", icon: Settings, badge: null },
   ]
 

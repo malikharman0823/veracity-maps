@@ -67,8 +67,8 @@ export default function App() {
                   }
                 >
                   <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/projects" element={<ProjectsPage mode="projects" />} />
-                  <Route path="/shared" element={<ProjectsPage mode="shared" />} />
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route path="/shared" element={<Navigate to="/projects" replace />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/" element={<HomePage />} />

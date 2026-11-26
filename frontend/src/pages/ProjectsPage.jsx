@@ -5,16 +5,13 @@ import {
   Search,
   MoreHorizontal,
   Edit2,
-  Share2,
   Trash2,
   FolderOpen,
-  Users,
   ArrowUpDown,
   Loader2,
   X,
 } from "lucide-react"
 import TopHeader from "../components/TopHeader"
-import ShareMapModal from "../components/ShareMapModal"
 import { listMaps, createMap, updateMap, deleteMap } from "../api"
 
 function formatDate(val) {
@@ -24,12 +21,10 @@ function formatDate(val) {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
 }
 
-export default function ProjectsPage({ mode = "projects" }) {
-  const isSharedView = mode === "shared"
+export default function ProjectsPage() {
   const navigate = useNavigate()
 
   const [myMaps, setMyMaps] = useState([])
-  const [sharedMaps, setSharedMaps] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
@@ -42,7 +37,6 @@ export default function ProjectsPage({ mode = "projects" }) {
 
   const [renamingMap, setRenamingMap] = useState(null)
   const [renameDraft, setRenameDraft] = useState("")
-  const [sharingMap, setSharingMap] = useState(null)
 
   const fetchAll = async () => {
     setLoading(true)
@@ -50,12 +44,12 @@ export default function ProjectsPage({ mode = "projects" }) {
     try {
       const data = await listMaps()
       const my = data?.my_maps || []
-      const shared = data?.shared_with_me || []
       setMyMaps(my)
-      setSharedMaps(shared)
-      window.dispatchEvent(new CustomEvent("veracity:maps-updated", { detail: { myMaps: my, sharedWithMe: shared } }))
+      window.dispatchEvent(
+        new CustomEvent("veracity:maps-updated", { detail: { myMaps: my, sharedWithMe: [] } })
+      )
     } catch {
-      setError("Unable to load projects.")
+      setError("Unable to load your projects.")
     } finally {
       setLoading(false)
     }
@@ -66,15 +60,14 @@ export default function ProjectsPage({ mode = "projects" }) {
   }, [])
 
   const items = useMemo(() => {
-    const base = isSharedView ? sharedMaps : myMaps
     const q = search.trim().toLowerCase()
-    const filtered = q ? base.filter((m) => (m.name || "").toLowerCase().includes(q)) : [...base]
+    const filtered = q ? myMaps.filter((m) => (m.name || "").toLowerCase().includes(q)) : [...myMaps]
     filtered.sort((a, b) => {
       if (sortBy === "name") return (a.name || "").localeCompare(b.name || "")
       return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0)
     })
     return filtered
-  }, [isSharedView, myMaps, sharedMaps, search, sortBy])
+  }, [myMaps, search, sortBy])
 
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -123,24 +116,21 @@ export default function ProjectsPage({ mode = "projects" }) {
       onClick={() => menuOpenId && setMenuOpenId(null)}
     >
       <TopHeader
-        title={isSharedView ? "Shared Projects" : "Projects"}
-        breadcrumbs={[{ label: isSharedView ? "Shared Projects" : "Projects" }]}
+        title="My Projects"
+        breadcrumbs={[{ label: "My Projects" }]}
         actions={
-          !isSharedView ? (
-            <button
-              type="button"
-              onClick={() => setShowCreate(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#34b77c] text-[#141414] text-xs font-semibold cursor-pointer transition-colors"
-            >
-              <Plus className="size-3.5" />
-              <span>Create Project</span>
-            </button>
-          ) : null
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#34b77c] text-[#141414] text-xs font-semibold cursor-pointer transition-colors"
+          >
+            <Plus className="size-3.5" />
+            <span>Create Project</span>
+          </button>
         }
       />
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 md:px-6 py-6 space-y-4">
-        {/* Search & Sort Bar */}
+      <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
           <div className="relative flex-1">
             <Search className="size-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -148,7 +138,7 @@ export default function ProjectsPage({ mode = "projects" }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={isSharedView ? "Search shared projects…" : "Search projects…"}
+              placeholder="Search your projects…"
               className="w-full h-9 pl-8 pr-3 rounded-[6px] border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#1b1b1b] text-xs outline-none focus:border-[#3ecf8e]"
             />
           </div>
@@ -171,19 +161,15 @@ export default function ProjectsPage({ mode = "projects" }) {
         {loading ? (
           <div className="py-16 flex items-center justify-center gap-2 text-xs text-neutral-500">
             <Loader2 className="size-4 animate-spin text-[#3ecf8e]" />
-            <span>Loading projects…</span>
+            <span>Loading your projects…</span>
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-lg border border-dashed border-neutral-300 dark:border-[#303030] bg-white dark:bg-[#1b1b1b] p-12 text-center space-y-2">
-            {isSharedView ? (
-              <Users className="size-7 text-neutral-400 mx-auto" />
-            ) : (
-              <FolderOpen className="size-7 text-neutral-400 mx-auto" />
-            )}
+            <FolderOpen className="size-7 text-neutral-400 mx-auto" />
             <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-              {search ? "No matching projects" : isSharedView ? "No shared projects yet" : "No projects yet"}
+              {search ? "No matching projects" : "No projects yet"}
             </div>
-            {!isSharedView && !search && (
+            {!search && (
               <button
                 type="button"
                 onClick={() => setShowCreate(true)}
@@ -205,67 +191,49 @@ export default function ProjectsPage({ mode = "projects" }) {
                   <div className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
                     {m.name}
                   </div>
-                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 flex items-center gap-2 mt-0.5">
-                    <span>Updated {formatDate(m.updated_at || m.created_at)}</span>
-                    {isSharedView && m.permission && (
-                      <span className="px-1.5 py-0.2 rounded bg-neutral-100 dark:bg-[#2a2a2a] uppercase text-[10px] font-medium">
-                        {m.permission}
-                      </span>
-                    )}
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Updated {formatDate(m.updated_at || m.created_at)}
                   </div>
                 </div>
 
-                {!isSharedView && (
-                  <div className="relative" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => setMenuOpenId(menuOpenId === m.id ? null : m.id)}
-                      className="p-1.5 rounded-[6px] hover:bg-neutral-200 dark:hover:bg-[#303030] text-neutral-500 cursor-pointer"
-                      aria-label="Project options"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </button>
-                    {menuOpenId === m.id && (
-                      <div className="absolute right-0 mt-1 w-36 rounded-[6px] border border-neutral-200 dark:border-[#343434] bg-white dark:bg-[#222222] shadow-xl py-1 z-30 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpenId(null)
-                            setRenamingMap(m)
-                            setRenameDraft(m.name || "")
-                          }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2d2d2d] flex items-center gap-2 cursor-pointer"
-                        >
-                          <Edit2 className="size-3.5 text-neutral-400" /> Rename
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpenId(null)
-                            setSharingMap(m)
-                          }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2d2d2d] flex items-center gap-2 cursor-pointer"
-                        >
-                          <Share2 className="size-3.5 text-neutral-400" /> Share
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(m)}
-                          className="w-full px-3 py-1.5 text-left text-red-500 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer"
-                        >
-                          <Trash2 className="size-3.5" /> Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpenId(menuOpenId === m.id ? null : m.id)}
+                    className="p-1.5 rounded-[6px] hover:bg-neutral-200 dark:hover:bg-[#303030] text-neutral-500 cursor-pointer"
+                    aria-label="Project options"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                  {menuOpenId === m.id && (
+                    <div className="absolute right-0 mt-1 w-36 rounded-[6px] border border-neutral-200 dark:border-[#343434] bg-white dark:bg-[#222222] shadow-xl py-1 z-30 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpenId(null)
+                          setRenamingMap(m)
+                          setRenameDraft(m.name || "")
+                        }}
+                        className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2d2d2d] flex items-center gap-2 cursor-pointer"
+                      >
+                        <Edit2 className="size-3.5 text-neutral-400" /> Rename
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m)}
+                        className="w-full px-3 py-1.5 text-left text-red-500 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Trash2 className="size-3.5" /> Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </main>
 
-      {/* Create Project Dialog */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <form
@@ -274,7 +242,11 @@ export default function ProjectsPage({ mode = "projects" }) {
           >
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Create Project</h2>
-              <button type="button" onClick={() => setShowCreate(false)} className="text-neutral-400 hover:text-white cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
                 <X className="size-4" />
               </button>
             </div>
@@ -306,7 +278,6 @@ export default function ProjectsPage({ mode = "projects" }) {
         </div>
       )}
 
-      {/* Rename Project Dialog */}
       {renamingMap && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <form
@@ -340,8 +311,6 @@ export default function ProjectsPage({ mode = "projects" }) {
           </form>
         </div>
       )}
-
-      <ShareMapModal isOpen={Boolean(sharingMap)} onClose={() => setSharingMap(null)} map={sharingMap} />
     </div>
   )
 }
