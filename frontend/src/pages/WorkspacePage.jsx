@@ -49,6 +49,7 @@ import MapLibreGISController from "../components/gis/MapLibreGISController"
 import BaseLayerSelectionModal from "../components/baselayers/BaseLayerSelectionModal"
 import WorkspaceMenuBar from "../components/workspace/WorkspaceMenuBar"
 import WorkspaceToolbar from "../components/workspace/WorkspaceToolbar"
+import StyleEditorPanel from "../components/gis/StyleEditorPanel"
 import ThreeGroupLayersPanel from "../components/workspace/ThreeGroupLayersPanel"
 import WorkspaceStatusBar from "../components/workspace/WorkspaceStatusBar"
 import MapMeasurementOverlay from "../components/workspace/MapMeasurementOverlay"
@@ -186,6 +187,8 @@ export default function WorkspacePage() {
   const [controllerActions, setControllerActions] = useState({ canUndo: false, canRedo: false })
   const [statusLoadingLabel, setStatusLoadingLabel] = useState("")
   const [layerOrder, setLayerOrder] = useState(["vector", "raster", "base"])
+  const [bottomTab, setBottomTab] = useState(null) // null (closed by default) | "properties" | "attributes" | "processing"
+  const [layersOpen, setLayersOpen] = useState(true)
 
   const handleToggleLayerOrder = useCallback(() => {
     setLayerOrder((prev) =>
@@ -1227,146 +1230,35 @@ export default function WorkspacePage() {
 
   return (
     <div className="qgis-workspace-root h-screen w-full flex flex-col overflow-hidden bg-neutral-200 dark:bg-[#141414] text-neutral-900 dark:text-neutral-100">
-      {/* 1. Desktop GIS Title Strip & Top Menu Bar */}
-      <WorkspaceMenuBar
-        workspaceName={workspaceDisplayName}
-        revisionNumber={currentMap?.revision_count || currentMap?.revision_number}
-        lockHeld={lockHeld}
-        isLockedByOther={isLockedByOther}
-        lockHolderName={lockHolderName}
-        saveState={workspace.saveState}
-        onRetrySave={workspace.retrySave}
-        user={user}
-        layout={layout}
-        canUndo={controllerActions.canUndo}
-        canRedo={controllerActions.canRedo}
-        hasSelection={selectedFeatureIds.length > 0}
-        hasActiveLayer={Boolean(activeGISLayer)}
-        snapEnabled={snapEnabled}
-        mapViewPrefs={mapViewPrefs}
-        shortcuts={effectiveShortcuts}
-        onSave={openSaveConfigDialog}
-        onSaveAs={openSaveConfigDialog}
-        onOpenProperties={() => setGuideModalOpen(true)}
-        onExport={openExportModal}
-        onReopen={() => {
-          if (confirmDiscard()) setReopenModalOpen(true)
-        }}
-        onShare={currentMap?.id ? () => setShareModalOpen(true) : null}
-        onCloseWorkspace={() => {
-          if (confirmDiscard()) navigate("/dashboard")
-        }}
-        onUndo={() => controllerActions.undo?.()}
-        onRedo={() => controllerActions.redo?.()}
-        onSelectTool={handleSelectTool}
-        onToggleSnap={() => setSnapEnabled((p) => !p)}
-        onDeleteSelected={() => controllerActions.deleteSelected?.()}
-        onZoomIn={() => mapInstance?.zoomIn({ duration: 250 })}
-        onZoomOut={() => mapInstance?.zoomOut({ duration: 250 })}
-        onZoomFullExtent={handleZoomFullExtent}
-        onZoomToActiveLayer={() => handleZoomToLayer(activeGISLayer)}
-        onTogglePanel={handleTogglePanel}
-        onResetLayout={handleResetLayout}
-        onAddVector={() => openUnifiedAddModal("vector")}
-        onAddRaster={() => openUnifiedAddModal("raster")}
-        onChangeBaseLayer={() => {
-          setBaseLayerModalMode("select")
-          setBaseLayerModalOpen(true)
-        }}
-        onOpenLayerProperties={() => {
-          const target = activeGISLayer || gisLayers[0]
-          if (target) {
-            setStyleEditorLayer(target)
-            setRightDockTab("symbology")
-            updateLayout((p) => ({ ...p, rightOpen: true }))
-          }
-        }}
-        onOpenAttributeTable={() => {
-          const target = activeGISLayer || gisLayers[0]
-          if (target) setAttributeTableLayer(target)
-        }}
-        onRemoveActiveLayer={async () => {
-          if (!activeGISLayer) return
-          if (!window.confirm(`Remove layer "${activeGISLayer.layer_name}" from workspace?`)) return
-          try {
-            await deleteGISLayer(activeGISLayer.layer_id)
-            notifyGIS(`Removed "${activeGISLayer.layer_name}"`)
-            refreshGISLayers()
-            setRecordsRefreshKey((k) => k + 1)
-          } catch {
-            notifyGIS("Unable to remove layer")
-          }
-        }}
-        onRunAlgorithm={handleRunMenuAlgorithm}
-        onOpenProcessingToolbox={() => {
-          setRightDockTab("toolbox")
-          updateLayout((p) => ({ ...p, rightOpen: true }))
-        }}
-        onSearchProcessing={() => {
-          setRightDockTab("toolbox")
-          updateLayout((p) => ({ ...p, rightOpen: true }))
-          setFocusSearchTick((t) => t + 1)
-        }}
-        onOpenProcessingHistory={() => {
-          setRightDockTab("history")
-          updateLayout((p) => ({ ...p, rightOpen: true }))
-        }}
-        onChangeMapViewPrefs={handleChangeMapViewPrefs}
-        onOpenCRS={() => setCrsModalOpen(true)}
-        onOpenShortcuts={() => setShortcutsModalOpen(true)}
-        onOpenGuide={() => setGuideModalOpen(true)}
-      />
-
-      {/* 2. Compact Desktop GIS Icon Toolbars */}
+      {/* 1. Unified Minimal Workspace Top Toolbar */}
       <WorkspaceToolbar
-        shortcuts={effectiveShortcuts}
+        projectName={workspaceDisplayName}
+        saving={savingConfig || workspace.saveState === "saving"}
         activeTool={activeVectorTool}
         measureMode={measureMode}
-        snapEnabled={snapEnabled}
         canUndo={controllerActions.canUndo}
         canRedo={controllerActions.canRedo}
-        hasSelection={selectedFeatureIds.length > 0}
-        hasActiveLayer={Boolean(activeGISLayer)}
-        hasGeoreferenceableRaster={hasGeorefRaster}
-        isLockedByOther={isLockedByOther}
-        layout={layout}
-        mapViews={mapViews}
-        mapViewPrefs={mapViewPrefs}
-        activeBaseLayer={activeBaseLayer}
+        layersOpen={layersOpen}
+        bottomTab={bottomTab}
         onSave={openSaveConfigDialog}
-        onAddDataset={() => openUnifiedAddModal(null)}
-        onExport={openExportModal}
-        onSelectTool={handleSelectTool}
-        onZoomIn={() => mapInstance?.zoomIn({ duration: 250 })}
-        onZoomOut={() => mapInstance?.zoomOut({ duration: 250 })}
-        onZoomFullExtent={handleZoomFullExtent}
-        onZoomToActiveLayer={() => handleZoomToLayer(activeGISLayer)}
-        onAddBookmark={handleAddBookmark}
-        onToggleRecords={() => handleTogglePanel("records")}
-        onOpenAttributeTable={() => {
-          const target = activeGISLayer || gisLayers[0]
-          if (target) setAttributeTableLayer((p) => (p ? null : target))
+        onOpenReopen={() => {
+          if (confirmDiscard()) setReopenModalOpen(true)
         }}
-        onToggleSnap={() => setSnapEnabled((p) => !p)}
+        onOpenShare={currentMap?.id ? () => setShareModalOpen(true) : null}
+        onAddData={() => openUnifiedAddModal(null)}
+        onGeoreference={() => handleGeoreferenceTarget(null)}
+        onSelectTool={handleSelectTool}
         onUndo={() => controllerActions.undo?.()}
         onRedo={() => controllerActions.redo?.()}
-        onDeleteSelected={() => controllerActions.deleteSelected?.()}
         onToggleMeasure={(mode) => setMeasureMode((prev) => (prev === mode ? null : mode))}
-        onGeoreferenceActive={() => handleGeoreferenceTarget(null)}
-        onSelectMapView={handleSelectMapView}
-        onOpenBaseLayerModal={() => {
-          setBaseLayerModalMode("select")
-          setBaseLayerModalOpen(true)
-        }}
-        onOpenCRSModal={() => setCrsModalOpen(true)}
-        onToggleLeftDock={() => handleTogglePanel("left")}
-        onToggleRightDock={() => handleTogglePanel("right")}
-        onOpenShortcuts={() => setShortcutsModalOpen(true)}
+        onOpenExport={openExportModal}
+        onToggleLayers={() => setLayersOpen((p) => !p)}
+        onOpenBottomTab={setBottomTab}
       />
 
       {/* Error & Toast Notifications */}
       {workspaceToast && (
-        <div className="fixed top-20 right-4 z-[1000] flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-[11px] font-semibold shadow-xl border border-neutral-700 dark:border-neutral-200">
+        <div className="fixed top-16 right-4 z-[1000] flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-[11px] font-semibold shadow-xl border border-neutral-700 dark:border-neutral-200">
           <Check className="size-3.5 text-[#3ecf8e]" />
           <span>{workspaceToast}</span>
         </div>
@@ -1382,77 +1274,20 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* 3. Main Three-Column Dockable Body + Bottom Dockable Records Panel */}
+      {/* 2. Map-First Workspace Body: Left Layers | Central Map Canvas | Contextual Bottom Panel */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Upper Workspace Area: Left Dock | Central Viewscape | Right Dock */}
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* LEFT DOCK: Browser (Top) + Splitter + Three-Group Layers (Bottom) */}
-          {showLeftDock && (
-            <>
-              <aside
-                ref={leftDockRef}
-                aria-label="Left GIS Dock (Browser and Layers)"
-                style={{ width: layout.leftWidth }}
-                className="shrink-0 flex flex-col min-h-0 border-r border-neutral-300 dark:border-[#323232] bg-white dark:bg-[#1e1e1e] overflow-hidden"
-              >
-                {layout.browserOpen && (
-                  <div
-                    style={{
-                      height: layout.layersOpen ? `${Math.round(layout.browserSplitRatio * 100)}%` : "100%",
-                    }}
-                    className="min-h-0 overflow-hidden flex flex-col"
-                  >
-                    <Suspense
-                      fallback={
-                        <div className="p-3 text-[11px] text-neutral-400 flex items-center gap-1.5">
-                          <Loader2 className="size-3 animate-spin" /> Loading Browser…
-                        </div>
-                      }
-                    >
-                      <WorkspaceBrowserPanel
-                        workspaceId={gisMapId}
-                        userId={user?.id}
-                        customBaseLayers={customBaseLayers}
-                        mapViews={mapViews}
-                        bookmarks={bookmarks}
-                        onAddBookmark={handleAddBookmark}
-                        onSelectBookmark={handleSelectBookmark}
-                        onDeleteBookmark={handleDeleteBookmark}
-                        onSelectMapView={handleSelectMapView}
-                        onSelectCustomBaseLayer={handleSelectCustomBaseLayer}
-                        onOpenSavedMap={(m) => {
-                          if (m?.id && confirmDiscard()) navigate(`/maps/${m.id}/edit`)
-                        }}
-                        onLayersAdded={(addedLayers) => {
-                          refreshGISLayers()
-                          setGisFeaturesRefreshKey((k) => k + 1)
-                          setRecordsRefreshKey((k) => k + 1)
-                          const b = addedLayers?.find((l) => Array.isArray(l.bounds) && l.bounds.length === 4)?.bounds
-                          if (b) setTimeout(() => fitMapBounds(b), 250)
-                        }}
-                        onOpenUpload={() => openUnifiedAddModal(null)}
-                        onCollapse={() => handleTogglePanel("browser")}
-                        notify={notifyGIS}
-                      />
-                    </Suspense>
-                  </div>
-                )}
-
-                {layout.browserOpen && layout.layersOpen && (
-                  <div
-                    role="separator"
-                    aria-orientation="horizontal"
-                    aria-label="Resize Browser and Layers split"
-                    onMouseDown={(e) => startDrag("left-split", e)}
-                    className="h-1.5 shrink-0 cursor-row-resize bg-neutral-200 dark:bg-[#2c2c2c] hover:bg-[#3ecf8e]/60 transition-colors"
-                  />
-                )}
-
-                {layout.layersOpen && (
-                  <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                    <ThreeGroupLayersPanel
-                      mapId={gisMapId}
-                      gisLayers={gisLayers}
+          {/* LEFT LAYER PANEL (Collapsible, Unified) */}
+          {layersOpen && (
+            <aside
+              ref={leftDockRef}
+              aria-label="Workspace Layers Panel"
+              className="w-72 shrink-0 flex flex-col min-h-0 border-r border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#1b1b1b] overflow-hidden"
+            >
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <ThreeGroupLayersPanel
+                  mapId={gisMapId}
+                  gisLayers={gisLayers}
                       members={effectiveManifest.members}
                       activeGISLayer={activeGISLayer}
                       activeBaseLayer={activeBaseLayer}
@@ -1472,8 +1307,7 @@ export default function WorkspacePage() {
                       onOpenStyleEditor={(lyr) => {
                         setActiveGISLayer(lyr)
                         setStyleEditorLayer(lyr)
-                        setRightDockTab("symbology")
-                        updateLayout((p) => ({ ...p, rightOpen: true }))
+                        setBottomTab("properties")
                       }}
                       onZoomToLayer={handleZoomToLayer}
                       onUpdateMember={(dsId, patch) => workspace.updateMember(dsId, patch).catch(() => undefined)}
@@ -1494,22 +1328,11 @@ export default function WorkspacePage() {
                         setBaseLayerModalOpen(true)
                       }}
                       onChangeBasePrefs={handleChangeMapViewPrefs}
-                      onCollapse={() => handleTogglePanel("layers")}
+                      onCollapse={() => setLayersOpen(false)}
                       notify={notifyGIS}
                     />
-                  </div>
-                )}
-              </aside>
-
-              {/* Left Dock Resize Handle */}
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize left dock"
-                onMouseDown={(e) => startDrag("left", e)}
-                className="w-1 shrink-0 cursor-col-resize bg-neutral-300/60 dark:bg-[#2a2a2a] hover:bg-[#3ecf8e] transition-colors"
-              />
-            </>
+              </div>
+            </aside>
           )}
 
           {/* CENTRAL VIEWSCAPE — MapLibre GL JS stays permanently mounted! */}
@@ -1620,98 +1443,70 @@ export default function WorkspacePage() {
               )}
             </ErrorBoundary>
           </main>
-
-          {/* RIGHT DOCK: Collapsible Processing Toolbox (+ History + Layer Style) */}
-          {layout.rightOpen && (
-            <>
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize Processing Toolbox"
-                onMouseDown={(e) => startDrag("right", e)}
-                className="w-1 shrink-0 cursor-col-resize bg-neutral-300/60 dark:bg-[#2a2a2a] hover:bg-[#3ecf8e] transition-colors"
-              />
-              <aside
-                aria-label="Processing Toolbox Dock"
-                style={{ width: layout.rightWidth }}
-                className="shrink-0 flex flex-col min-h-0 border-l border-neutral-300 dark:border-[#323232] bg-white dark:bg-[#1e1e1e] overflow-hidden"
-              >
-                <Suspense
-                  fallback={
-                    <div className="p-3 text-[11px] text-neutral-400 flex items-center gap-1.5">
-                      <Loader2 className="size-3 animate-spin" /> Loading Processing Toolbox…
-                    </div>
-                  }
-                >
-                  <DockedProcessingToolbox
-                    mapId={gisMapId}
-                    layers={gisLayers}
-                    datasets={effectiveManifest.members || []}
-                    activeLayer={activeGISLayer}
-                    activeDockTab={rightDockTab}
-                    onChangeDockTab={setRightDockTab}
-                    requestedAlgorithmId={requestedAlgId}
-                    requestedAlgorithmTick={requestedAlgTick}
-                    focusSearchTick={focusSearchTick}
-                    styleEditorLayer={styleEditorLayer}
-                    onStyleSaved={() => {
-                      setGisFeaturesRefreshKey((k) => k + 1)
-                      refreshGISLayers()
-                    }}
-                    onJobCompleted={() => {
-                      setGisFeaturesRefreshKey((k) => k + 1)
-                      setRecordsRefreshKey((k) => k + 1)
-                      refreshGISLayers()
-                      workspace.refreshManifest().catch(() => undefined)
-                    }}
-                    onOpenAttributeTable={(lyr) => {
-                      setActiveGISLayer(lyr)
-                      setAttributeTableLayer(lyr)
-                    }}
-                    onCollapse={() => handleTogglePanel("right")}
-                    notify={notifyGIS}
-                  />
-                </Suspense>
-              </aside>
-            </>
-          )}
         </div>
 
-        {/* BOTTOM DOCKABLE PANEL: Workspace Records (F6 / View menu) */}
-        {layout.recordsOpen && (
-          <>
-            <div
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize Workspace Records panel"
-              onMouseDown={(e) => startDrag("records", e)}
-              className="h-1.5 shrink-0 cursor-row-resize bg-neutral-300/70 dark:bg-[#2c2c2c] hover:bg-[#3ecf8e] transition-colors"
-            />
-            <section
-              aria-label="Dockable Workspace Records Panel"
-              style={{ height: layout.recordsHeight }}
-              className="shrink-0 flex flex-col min-h-0 border-t border-neutral-300 dark:border-[#343434] bg-white dark:bg-[#181a1f] overflow-hidden"
-            >
-              <div className="h-6 px-2.5 bg-neutral-100 dark:bg-[#232323] border-b border-neutral-200 dark:border-[#303030] flex items-center justify-between text-[10.5px] shrink-0 select-none">
-                <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-200">
-                  <Database className="size-3 text-[#3ecf8e]" />
-                  <span>Workspace Records</span>
-                  <span className="font-mono text-neutral-400 font-normal">(F6)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateLayout((p) => ({ ...p, recordsOpen: false }))}
-                  className="p-0.5 rounded hover:bg-neutral-200 dark:hover:bg-[#343434] text-neutral-500 cursor-pointer"
-                  title="Close Workspace Records Dock"
-                >
-                  <X className="size-3" />
-                </button>
+        {/* 3. CONTEXTUAL BOTTOM PANEL (Closed by default; 3 tabs: Properties | Attribute Table | Processing) */}
+        {bottomTab && (
+          <section
+            aria-label="Contextual Workspace Panel"
+            className="h-64 shrink-0 flex flex-col min-h-0 border-t border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#171717] overflow-hidden"
+          >
+            <div className="h-9 px-3 bg-neutral-50 dark:bg-[#1d1d1d] border-b border-neutral-200 dark:border-[#2a2a2a] flex items-center justify-between shrink-0 select-none">
+              <div className="flex items-center gap-1">
+                {[
+                  { id: "properties", label: "Properties" },
+                  { id: "attributes", label: "Attribute Table" },
+                  { id: "processing", label: "Processing" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setBottomTab(t.id)}
+                    className={`px-2.5 py-1 rounded-[5px] text-xs font-medium cursor-pointer transition-colors ${
+                      bottomTab === t.id
+                        ? "bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] font-semibold"
+                        : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setBottomTab(null)}
+                className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-[#303030] text-neutral-500 cursor-pointer"
+                title="Close panel"
+                aria-label="Close bottom panel"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {bottomTab === "properties" && (
+                <div className="h-full overflow-y-auto p-3">
+                  {styleEditorLayer || activeGISLayer ? (
+                    <StyleEditorPanel
+                      layer={styleEditorLayer || activeGISLayer}
+                      onSaved={() => {
+                        setGisFeaturesRefreshKey((k) => k + 1)
+                        refreshGISLayers()
+                      }}
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-xs text-neutral-500">
+                      Select a layer in the Layers panel to view and edit its properties.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {bottomTab === "attributes" && (
                 <Suspense
                   fallback={
                     <div className="h-full flex items-center justify-center text-xs text-neutral-400">
-                      <Loader2 className="size-4 animate-spin mr-2" /> Loading Workspace Records…
+                      <Loader2 className="size-4 animate-spin mr-2" /> Loading Attribute Table…
                     </div>
                   }
                 >
@@ -1735,9 +1530,40 @@ export default function WorkspacePage() {
                     notify={notifyGIS}
                   />
                 </Suspense>
-              </div>
-            </section>
-          </>
+              )}
+
+              {bottomTab === "processing" && (
+                <Suspense
+                  fallback={
+                    <div className="h-full flex items-center justify-center text-xs text-neutral-400">
+                      <Loader2 className="size-4 animate-spin mr-2" /> Loading Processing Tools…
+                    </div>
+                  }
+                >
+                  <DockedProcessingToolbox
+                    activeLayer={activeGISLayer}
+                    datasets={effectiveManifest.members || []}
+                    activeTool={activeVectorTool}
+                    measureMode={measureMode}
+                    onSelectVectorTool={handleSelectTool}
+                    onToggleMeasure={(mode) => setMeasureMode((prev) => (prev === mode ? null : mode))}
+                    onOpenEnhance={(target, mode) => {
+                      const dsId = target?.dataset_id || target?.id
+                      if (dsId) {
+                        setEnhancementTarget({
+                          datasetId: dsId,
+                          name: target?.name || target?.layer_name || dsId,
+                          mode,
+                        })
+                      }
+                    }}
+                    onOpenGeoreference={(target) => handleGeoreferenceTarget(target)}
+                    onOpenAttributeTable={() => setBottomTab("attributes")}
+                  />
+                </Suspense>
+              )}
+            </div>
+          </section>
         )}
       </div>
 
@@ -1932,19 +1758,8 @@ export default function WorkspacePage() {
         open={Boolean(enhancementTarget)}
         datasetId={enhancementTarget?.datasetId}
         datasetName={enhancementTarget?.name}
+        initialMode={enhancementTarget?.mode}
         onClose={() => setEnhancementTarget(null)}
-        onUpdated={() => {
-          workspace.refreshManifest().catch(() => undefined)
-          setOverlayRefreshKey((k) => k + 1)
-        }}
-        onOpenAnnotations={(dsId, dsName) => setAnnotationTarget({ datasetId: dsId, name: dsName })}
-      />
-
-      <AnnotationReviewPanel
-        open={Boolean(annotationTarget)}
-        datasetId={annotationTarget?.datasetId}
-        datasetName={annotationTarget?.name}
-        onClose={() => setAnnotationTarget(null)}
         onUpdated={() => {
           workspace.refreshManifest().catch(() => undefined)
           setOverlayRefreshKey((k) => k + 1)

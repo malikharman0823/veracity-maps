@@ -28,8 +28,8 @@ func CalculateGeoreference(points []*models.ControlPoint, width, height int, req
 	if len(points) < 2 {
 		return nil, fmt.Errorf("INSUFFICIENT_CONTROL_POINTS: Add at least 2 complete control-point pairs")
 	}
-	if len(points) > 10 {
-		return nil, fmt.Errorf("TOO_MANY_CONTROL_POINTS: Visual georeferencer supports a maximum of 10 control points")
+	if len(points) > 20 {
+		return nil, fmt.Errorf("TOO_MANY_CONTROL_POINTS: Visual georeferencer supports a maximum of 20 control points")
 	}
 
 	transformation := "similarity"

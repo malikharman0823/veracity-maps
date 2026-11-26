@@ -1,292 +1,360 @@
-import React, { useMemo } from "react"
+import React, { useState, useRef, useEffect } from "react"
+import { Link } from "react-router-dom"
 import {
+  ChevronDown,
   Save,
-  Download,
+  FolderOpen,
+  Share2,
   Plus,
-  MousePointer,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Crosshair,
-  BookmarkPlus,
-  Info,
-  Database,
-  Table2,
-  MapPin,
-  Spline,
-  Pentagon,
-  Move,
+  Compass,
   Edit3,
-  Magnet,
+  Ruler,
+  Download,
+  Wrench,
+  Layers,
+  Table2,
+  SlidersHorizontal,
+  Cpu,
+  MousePointer2,
+  MapPin,
+  Minus,
+  Pentagon,
+  Trash2,
   Undo2,
   Redo2,
-  Trash2,
-  Ruler,
-  Scan,
-  Compass,
-  Globe,
-  Cpu,
-  PanelLeft,
-  PanelRight,
-  Keyboard,
+  Square,
+  Crosshair,
+  ArrowLeft,
+  Loader2,
 } from "lucide-react"
-import { DEFAULT_SHORTCUTS, formatShortcutForOS } from "../../lib/shortcutRegistry"
+import { SidebarTrigger, SidebarContext } from "@/components/ui/sidebar"
 
-function ToolBtn({
-  icon: Icon,
-  label,
-  shortcut = "",
-  active = false,
-  disabled = false,
-  danger = false,
-  onClick,
-  compact = false,
-}) {
-  const titleText = shortcut ? `${label} (${shortcut})` : label
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={titleText}
-      aria-label={titleText}
-      aria-pressed={active}
-      className={`h-7 ${compact ? "px-1.5" : "w-7"} rounded-[4px] flex items-center justify-center gap-1 transition-colors shrink-0 ${
-        disabled
-          ? "opacity-35 cursor-not-allowed text-neutral-500"
-          : active
-            ? "bg-[#3ecf8e] text-[#141414] shadow-2xs cursor-pointer"
-            : danger
-              ? "text-neutral-600 dark:text-neutral-300 hover:bg-red-500/15 hover:text-red-500 cursor-pointer"
-              : "text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-[#333333] cursor-pointer"
-      }`}
-    >
-      <Icon className="size-3.5 shrink-0" />
-    </button>
-  )
-}
-
-function Sep() {
-  return <div className="h-4 w-px bg-neutral-300 dark:bg-[#383838] mx-1 shrink-0" />
-}
-
+/**
+ * Unified, minimal Workspace Top Toolbar (replaces WorkspaceMenuBar + legacy multi-group toolbar).
+ * Primary actions only: Project menu, Add Data, Georeference, Edit, Measure, Export + compact Tools menu.
+ */
 export default function WorkspaceToolbar({
-  shortcuts = DEFAULT_SHORTCUTS,
+  projectName = "Workspace",
+  saving = false,
   activeTool = "select",
-  measureMode = null, // null | "distance" | "area"
-  snapEnabled = false,
+  measureMode = null,
   canUndo = false,
   canRedo = false,
-  hasSelection = false,
-  hasActiveLayer = false,
-  hasGeoreferenceableRaster = false,
-  isLockedByOther = false,
-  layout,
-  mapViews = [],
-  mapViewPrefs = {},
-  activeBaseLayer = null,
-  // Actions
+  layersOpen = true,
+  bottomTab = null, // null | "properties" | "attributes" | "processing"
   onSave,
-  onAddDataset,
-  onExport,
+  onOpenReopen,
+  onOpenShare,
+  onAddData,
+  onGeoreference,
   onSelectTool,
-  onZoomIn,
-  onZoomOut,
-  onZoomFullExtent,
-  onZoomToActiveLayer,
-  onAddBookmark,
-  onToggleRecords,
-  onOpenAttributeTable,
-  onToggleSnap,
   onUndo,
   onRedo,
-  onDeleteSelected,
   onToggleMeasure,
-  onGeoreferenceActive,
-  onSelectMapView,
-  onOpenBaseLayerModal,
-  onOpenCRSModal,
-  onToggleLeftDock,
-  onToggleRightDock,
-  onOpenShortcuts,
+  onOpenExport,
+  onToggleLayers,
+  onOpenBottomTab,
 }) {
-  const shortcutFor = useMemo(() => {
-    const m = new Map()
-    ;(shortcuts || DEFAULT_SHORTCUTS).forEach((s) => {
-      if (s?.tool_id && s?.shortcut) {
-        m.set(s.tool_id, formatShortcutForOS(s.shortcut))
-      }
-    })
-    return (id) => m.get(id) || ""
-  }, [shortcuts])
+  const hasSidebar = React.useContext(SidebarContext)
+  const [openMenu, setOpenMenu] = useState(null) // "project" | "edit" | "measure" | "tools" | null
+  const barRef = useRef(null)
 
-  const currentViewType = mapViewPrefs?.view_type || "world"
+  useEffect(() => {
+    if (!openMenu) return
+    const onDocClick = (e) => {
+      if (barRef.current && !barRef.current.contains(e.target)) {
+        setOpenMenu(null)
+      }
+    }
+    document.addEventListener("mousedown", onDocClick)
+    return () => document.removeEventListener("mousedown", onDocClick)
+  }, [openMenu])
+
+  const btnBase =
+    "inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
+  const btnGhost = `${btnBase} text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#262626]`
+  const btnActive = `${btnBase} bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] border border-[#3ecf8e]/35`
+
+  const isEditingTool = activeTool && activeTool !== "select"
 
   return (
-    <div
-      role="toolbar"
-      aria-label="Workspace GIS Toolbars"
-      className="shrink-0 min-h-9 px-2 py-1 bg-neutral-50 dark:bg-[#262626] border-b border-neutral-300 dark:border-[#343434] flex items-center gap-0.5 overflow-x-auto select-none z-30"
+    <header
+      ref={barRef}
+      className="h-12 px-3 border-b border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#171717] flex items-center justify-between gap-2 shrink-0 select-none z-40"
     >
-      {/* 1. Workspace Operations */}
-      <ToolBtn icon={Save} label="Save Workspace" onClick={onSave} disabled={isLockedByOther} />
-      <ToolBtn icon={Plus} label="Add Dataset (Vector / Raster / Base)" shortcut={shortcutFor("add_dataset")} onClick={onAddDataset} />
-      <ToolBtn icon={Download} label="Export Workspace" onClick={onExport} />
+      {/* Left: Sidebar trigger + Project Menu */}
+      <div className="flex items-center gap-2 min-w-0">
+        {hasSidebar && (
+          <SidebarTrigger className="text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#262626] rounded-[6px]" />
+        )}
 
-      <Sep />
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpenMenu((m) => (m === "project" ? null : "project"))}
+            className={`${btnGhost} font-semibold max-w-[200px]`}
+            title="Project menu"
+          >
+            <span className="truncate">{projectName}</span>
+            <ChevronDown className="size-3.5 text-neutral-400 shrink-0" />
+          </button>
 
-      {/* 2. Map Navigation */}
-      <ToolBtn
-        icon={MousePointer}
-        label="Select & Pan"
-        shortcut={shortcutFor("select")}
-        active={!measureMode && activeTool === "select"}
-        onClick={() => onSelectTool?.("select")}
-      />
-      <ToolBtn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} />
-      <ToolBtn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} />
-      <ToolBtn icon={Maximize2} label="Zoom to Full Extent" shortcut={shortcutFor("zoom_full")} onClick={onZoomFullExtent} />
-      <ToolBtn icon={Crosshair} label="Zoom to Active Layer" onClick={onZoomToActiveLayer} disabled={!hasActiveLayer} />
-      <ToolBtn icon={BookmarkPlus} label="Save Spatial Bookmark" onClick={onAddBookmark} />
-
-      <Sep />
-
-      {/* 3. Selection & Inspection */}
-      <ToolBtn
-        icon={Info}
-        label="Identify Feature"
-        shortcut={shortcutFor("identify")}
-        active={!measureMode && activeTool === "identify"}
-        onClick={() => onSelectTool?.("identify")}
-      />
-      <ToolBtn
-        icon={Database}
-        label="Workspace Records Table"
-        shortcut={shortcutFor("attribute_table")}
-        active={Boolean(layout?.recordsOpen)}
-        onClick={onToggleRecords}
-      />
-      <ToolBtn
-        icon={Table2}
-        label="Active Layer Attribute Table"
-        onClick={onOpenAttributeTable}
-        disabled={!hasActiveLayer}
-      />
-
-      <Sep />
-
-      {/* 4. Vector Editing */}
-      <ToolBtn
-        icon={MapPin}
-        label="Add Point Feature"
-        shortcut={shortcutFor("point")}
-        active={!measureMode && activeTool === "point"}
-        onClick={() => onSelectTool?.("point")}
-      />
-      <ToolBtn
-        icon={Spline}
-        label="Draw Line Feature"
-        shortcut={shortcutFor("line")}
-        active={!measureMode && activeTool === "line"}
-        onClick={() => onSelectTool?.("line")}
-      />
-      <ToolBtn
-        icon={Pentagon}
-        label="Draw Polygon Feature"
-        shortcut={shortcutFor("polygon")}
-        active={!measureMode && activeTool === "polygon"}
-        onClick={() => onSelectTool?.("polygon")}
-      />
-      <ToolBtn
-        icon={Move}
-        label="Move Feature"
-        shortcut={shortcutFor("move")}
-        active={!measureMode && activeTool === "move"}
-        onClick={() => onSelectTool?.("move")}
-      />
-      <ToolBtn
-        icon={Edit3}
-        label="Edit Vertices (Shift = Proportional Scale)"
-        shortcut={shortcutFor("vertex")}
-        active={!measureMode && activeTool === "vertex"}
-        onClick={() => onSelectTool?.("vertex")}
-      />
-      <ToolBtn
-        icon={Magnet}
-        label="Toggle Vertex Snapping"
-        shortcut={shortcutFor("snap")}
-        active={snapEnabled}
-        onClick={onToggleSnap}
-      />
-      <ToolBtn icon={Undo2} label="Undo Edit" shortcut={shortcutFor("undo")} onClick={onUndo} disabled={!canUndo} />
-      <ToolBtn icon={Redo2} label="Redo Edit" shortcut={shortcutFor("redo")} onClick={onRedo} disabled={!canRedo} />
-      <ToolBtn
-        icon={Trash2}
-        label="Delete Selected Features"
-        shortcut={shortcutFor("delete_selected")}
-        onClick={onDeleteSelected}
-        disabled={!hasSelection}
-        danger
-      />
-
-      <Sep />
-
-      {/* 5. Measurement */}
-      <ToolBtn
-        icon={Ruler}
-        label="Measure Distance (Geodesic)"
-        active={measureMode === "distance"}
-        onClick={() => onToggleMeasure?.("distance")}
-      />
-      <ToolBtn
-        icon={Scan}
-        label="Measure Area (Geodesic)"
-        active={measureMode === "area"}
-        onClick={() => onToggleMeasure?.("area")}
-      />
-
-      <Sep />
-
-      {/* 6. Georeferencing & CRS */}
-      <button
-        type="button"
-        onClick={onGeoreferenceActive}
-        disabled={!hasGeoreferenceableRaster}
-        title={
-          hasGeoreferenceableRaster
-            ? "Open Georeferencer for active raster"
-            : "Add or select a raster layer to georeference"
-        }
-        className="h-7 px-2 rounded-[4px] border border-neutral-300 dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] text-[11px] font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#323232] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 shrink-0 cursor-pointer"
-      >
-        <Crosshair className="size-3 text-[#3ecf8e]" />
-        <span className="hidden xl:inline">Georeference</span>
-      </button>
-      <ToolBtn icon={Globe} label="Coordinate System (CRS)" shortcut={shortcutFor("crs_manager")} onClick={onOpenCRSModal} />
-
-      {/* Right-aligned Dock Panel Toggles & Shortcuts */}
-      <div className="ml-auto flex items-center gap-0.5 pl-2 shrink-0">
-        <ToolBtn
-          icon={PanelLeft}
-          label="Toggle Left Panels (Browser & Layers)"
-          shortcut={shortcutFor("layer_manager")}
-          active={Boolean(layout?.leftOpen)}
-          onClick={onToggleLeftDock}
-        />
-        <ToolBtn
-          icon={Cpu}
-          label="Toggle Processing Toolbox"
-          shortcut={shortcutFor("processing_toolbox")}
-          active={Boolean(layout?.rightOpen)}
-          onClick={onToggleRightDock}
-        />
-        <ToolBtn
-          icon={Keyboard}
-          label="Keyboard Shortcuts"
-          shortcut={shortcutFor("shortcuts_help")}
-          onClick={onOpenShortcuts}
-        />
+          {openMenu === "project" && (
+            <div className="absolute left-0 mt-1 w-48 rounded-[8px] border border-neutral-200 dark:border-[#323232] bg-white dark:bg-[#1f1f1f] shadow-xl py-1 text-xs z-50">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setOpenMenu(null)
+                  onSave?.()
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+              >
+                {saving ? <Loader2 className="size-3.5 animate-spin text-[#3ecf8e]" /> : <Save className="size-3.5 text-[#3ecf8e]" />}
+                <span>Save Project</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null)
+                  onOpenReopen?.()
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+              >
+                <FolderOpen className="size-3.5 text-neutral-400" />
+                <span>Reopen Package (.zip)</span>
+              </button>
+              {onOpenShare && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null)
+                    onOpenShare?.()
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+                >
+                  <Share2 className="size-3.5 text-neutral-400" />
+                  <span>Share Project</span>
+                </button>
+              )}
+              <div className="my-1 border-t border-neutral-200 dark:border-[#2e2e2e]" />
+              <Link
+                to="/projects"
+                onClick={() => setOpenMenu(null)}
+                className="w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 text-neutral-600 dark:text-neutral-300"
+              >
+                <ArrowLeft className="size-3.5 text-neutral-400" />
+                <span>All Projects</span>
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Center: Core 5 Workflow Actions + Contextual Tools */}
+      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+        {/* 1. Add Data */}
+        <button type="button" onClick={onAddData} className={btnGhost} title="Upload or add raster, vector, CAD, or PDF data">
+          <Plus className="size-3.5 text-[#3ecf8e]" />
+          <span className="hidden sm:inline">Add Data</span>
+        </button>
+
+        {/* 2. Georeference */}
+        <button type="button" onClick={onGeoreference} className={btnGhost} title="Georeference active raster">
+          <Compass className="size-3.5 text-sky-500" />
+          <span className="hidden sm:inline">Georeference</span>
+        </button>
+
+        {/* 3. Edit dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpenMenu((m) => (m === "edit" ? null : "edit"))}
+            className={isEditingTool ? btnActive : btnGhost}
+            title="Vector editing tools"
+          >
+            <Edit3 className="size-3.5" />
+            <span className="hidden sm:inline">Edit</span>
+            <ChevronDown className="size-3 opacity-60" />
+          </button>
+
+          {openMenu === "edit" && (
+            <div className="absolute left-0 mt-1 w-44 rounded-[8px] border border-neutral-200 dark:border-[#323232] bg-white dark:bg-[#1f1f1f] shadow-xl py-1 text-xs z-50">
+              {[
+                { id: "select", label: "Select", icon: MousePointer2 },
+                { id: "point", label: "Add Point", icon: MapPin },
+                { id: "line", label: "Draw Line", icon: Minus },
+                { id: "polygon", label: "Draw Polygon", icon: Pentagon },
+                { id: "vertex", label: "Edit Vertices", icon: Edit3 },
+                { id: "delete", label: "Delete Features", icon: Trash2 },
+              ].map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    onSelectTool?.(id)
+                    setOpenMenu(null)
+                  }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center gap-2 cursor-pointer ${
+                    activeTool === id
+                      ? "bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] font-semibold"
+                      : "hover:bg-neutral-100 dark:hover:bg-[#2a2a2a]"
+                  }`}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{label}</span>
+                </button>
+              ))}
+              {(canUndo || canRedo) && (
+                <>
+                  <div className="my-1 border-t border-neutral-200 dark:border-[#2e2e2e]" />
+                  <div className="px-2 py-1 flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={!canUndo}
+                      onClick={() => {
+                        onUndo?.()
+                        setOpenMenu(null)
+                      }}
+                      className="flex-1 py-1 rounded hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer"
+                    >
+                      <Undo2 className="size-3" /> Undo
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canRedo}
+                      onClick={() => {
+                        onRedo?.()
+                        setOpenMenu(null)
+                      }}
+                      className="flex-1 py-1 rounded hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer"
+                    >
+                      <Redo2 className="size-3" /> Redo
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 4. Measure dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpenMenu((m) => (m === "measure" ? null : "measure"))}
+            className={measureMode ? btnActive : btnGhost}
+            title="Measurement tools"
+          >
+            <Ruler className="size-3.5" />
+            <span className="hidden sm:inline">Measure</span>
+            <ChevronDown className="size-3 opacity-60" />
+          </button>
+
+          {openMenu === "measure" && (
+            <div className="absolute left-0 mt-1 w-40 rounded-[8px] border border-neutral-200 dark:border-[#323232] bg-white dark:bg-[#1f1f1f] shadow-xl py-1 text-xs z-50">
+              {[
+                { id: "distance", label: "Distance", icon: Ruler },
+                { id: "area", label: "Area", icon: Square },
+                { id: "coordinates", label: "Coordinates", icon: Crosshair },
+              ].map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    onToggleMeasure?.(id)
+                    setOpenMenu(null)
+                  }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center gap-2 cursor-pointer ${
+                    measureMode === id
+                      ? "bg-[#3ecf8e]/15 text-[#24b47e] dark:text-[#3ecf8e] font-semibold"
+                      : "hover:bg-neutral-100 dark:hover:bg-[#2a2a2a]"
+                  }`}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 5. Contextual Tools dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpenMenu((m) => (m === "tools" ? null : "tools"))}
+            className={bottomTab ? btnActive : btnGhost}
+            title="Workspace panels & contextual tools"
+          >
+            <Wrench className="size-3.5" />
+            <span className="hidden md:inline">Tools</span>
+            <ChevronDown className="size-3 opacity-60" />
+          </button>
+
+          {openMenu === "tools" && (
+            <div className="absolute right-0 mt-1 w-48 rounded-[8px] border border-neutral-200 dark:border-[#323232] bg-white dark:bg-[#1f1f1f] shadow-xl py-1 text-xs z-50">
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleLayers?.()
+                  setOpenMenu(null)
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center justify-between cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <Layers className="size-3.5 text-neutral-400" /> Layers Panel
+                </span>
+                <span className="text-[10px] text-neutral-400">{layersOpen ? "On" : "Off"}</span>
+              </button>
+              <div className="my-1 border-t border-neutral-200 dark:border-[#2e2e2e]" />
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenBottomTab?.(bottomTab === "properties" ? null : "properties")
+                  setOpenMenu(null)
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+              >
+                <SlidersHorizontal className="size-3.5 text-neutral-400" /> Layer Properties
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenBottomTab?.(bottomTab === "attributes" ? null : "attributes")
+                  setOpenMenu(null)
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+              >
+                <Table2 className="size-3.5 text-neutral-400" /> Attribute Table
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenBottomTab?.(bottomTab === "processing" ? null : "processing")
+                  setOpenMenu(null)
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-[#2a2a2a] flex items-center gap-2 cursor-pointer"
+              >
+                <Cpu className="size-3.5 text-neutral-400" /> Processing Toolbox
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Right: Primary Export Action */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={onOpenExport}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3ecf8e] hover:bg-[#34b77c] text-[#141414] text-xs font-semibold cursor-pointer transition-colors"
+          title="Export Custom Web Tile or Custom Local Tiles"
+        >
+          <Download className="size-3.5" />
+          <span>Export</span>
+        </button>
+      </div>
+    </header>
   )
 }

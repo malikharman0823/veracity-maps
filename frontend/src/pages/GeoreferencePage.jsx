@@ -319,8 +319,8 @@ export default function GeoreferencePage() {
     if (!editing) return
     setError(null)
     setNotice(null)
-    if (points.length >= 10) {
-      setError({ message: "Too many control points were added.", details: "The visual georeferencer supports a maximum of 10 control points." })
+    if (points.length >= 20) {
+      setError({ message: "Too many control points were added.", details: "The visual georeferencer supports a maximum of 20 control points." })
       return
     }
     if (!controlPointPlacement) {
