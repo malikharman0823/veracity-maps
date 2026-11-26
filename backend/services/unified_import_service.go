@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/malikharman0823/veracity-maps/gis"
+	"github.com/malikharman0823/veracity-maps/models"
 	"github.com/malikharman0823/veracity-maps/repository"
 	"github.com/malikharman0823/veracity-maps/storage"
 )
@@ -66,6 +68,8 @@ type UnifiedLayer struct {
 	OwnerID              string               `json:"owner_id"`
 	ProjectID            string               `json:"project_id"`
 	DatasetID            string               `json:"dataset_id"`
+	GISLayerID           string               `json:"gis_layer_id,omitempty"`
+	SessionDatasetID     string               `json:"session_dataset_id,omitempty"`
 	Name                 string               `json:"name"`
 	LayerType            gis.UnifiedLayerType `json:"layer_type"` // raster | vector | image_overlay
 	SourceFormat         gis.UploadFormat     `json:"source_format"`
@@ -121,6 +125,7 @@ type UnifiedImportService struct {
 	mu               sync.RWMutex
 	privateStorage   *storage.PrivateStorage
 	sessionRepo      *repository.SessionRepository
+	gisService       *GISService
 	limits           gis.UploadLimits
 	uploads          map[string]*UnifiedUpload
 	datasets         map[string]*UnifiedDataset
@@ -129,6 +134,13 @@ type UnifiedImportService struct {
 	idempotencyIndex map[string]string // ownerID|uploadID|key -> jobID
 	activeJobsByUser map[string]int
 	jobCancels       map[string]context.CancelFunc
+}
+
+// SetGISService wires the active GISService so committed layers appear immediately in the Workspace Layers panel.
+func (s *UnifiedImportService) SetGISService(gs *GISService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gisService = gs
 }
 
 func NewUnifiedImportService(ps *storage.PrivateStorage, repo *repository.SessionRepository, limits gis.UploadLimits) *UnifiedImportService {
@@ -678,10 +690,141 @@ func (s *UnifiedImportService) runImportJob(ctx context.Context, job *UnifiedImp
 		CreatedAt:            now,
 	}
 
-	// Stage 8: Atomic commit of Dataset + all Layers + Job status.
+	// Stage 8a: Register committed layers into SessionRepository (for raster image serving & georeferencing)
+	// and GISService (for Workspace Layers panel & MapLibre rendering), with full atomic rollback on failure.
+	var createdGISLayerIDs []string
+	var createdSessionDatasets []struct{ sessionID, dsID string }
+	rollbackWorkspaceRegs := func() {
+		s.mu.RLock()
+		gs := s.gisService
+		s.mu.RUnlock()
+		if gs != nil && gs.GetGISRepo() != nil {
+			for _, gid := range createdGISLayerIDs {
+				_ = gs.GetGISRepo().DeleteLayer(context.Background(), gid)
+			}
+		}
+		if s.sessionRepo != nil {
+			for _, sd := range createdSessionDatasets {
+				_ = s.sessionRepo.DeleteDataset(sd.sessionID, sd.dsID)
+			}
+		}
+	}
+
+	s.mu.RLock()
+	activeGIS := s.gisService
+	s.mu.RUnlock()
+
+	if s.sessionRepo != nil || activeGIS != nil {
+		targetSessionID := strings.TrimSpace(req.SessionID)
+		if s.sessionRepo != nil {
+			if targetSessionID == "" {
+				sess := s.sessionRepo.CreateSession()
+				targetSessionID = sess.ID
+			} else if _, sErr := s.sessionRepo.GetSession(targetSessionID); sErr != nil {
+				sess := s.sessionRepo.CreateSession()
+				targetSessionID = sess.ID
+			}
+		}
+
+		for _, lyr := range layers {
+			if lyr.LayerType == gis.LayerTypeRaster || lyr.LayerType == gis.LayerTypeImageOverlay {
+				// 1. Register in SessionRepository so /datasets/{id}/source-image and /datasets/{id}/georeference work
+				sessionDSID := lyr.DatasetID
+				if s.sessionRepo != nil {
+					sessionDSID = newPrefixedID("ds")
+					ext := filepath.Ext(lyr.StorageKey)
+					if ext == "" {
+						ext = ".png"
+					}
+					contentType := "image/png"
+					if strings.EqualFold(ext, ".jpg") || strings.EqualFold(ext, ".jpeg") {
+						contentType = "image/jpeg"
+					}
+					georefStatus := "completed"
+					if lyr.RequiresGeoreference {
+						georefStatus = "pending"
+					}
+					var fSize int64
+					if st, stErr := os.Stat(lyr.StorageKey); stErr == nil {
+						fSize = st.Size()
+					}
+					sessionDS := &models.Dataset{
+						ID:                 sessionDSID,
+						SessionID:          targetSessionID,
+						Filename:           lyr.Name + ext,
+						FileSize:           fSize,
+						ContentType:        contentType,
+						StoragePath:        lyr.StorageKey,
+						ProcessedPath:      lyr.StorageKey,
+						GeoreferenceStatus: georefStatus,
+						TileStatus:         "pending",
+						ExtractedMetadata: map[string]interface{}{
+							"width":              lyr.Width,
+							"height":             lyr.Height,
+							"driver":             strings.ToUpper(string(lyr.SourceFormat)),
+							"is_georeferenced":   !lyr.RequiresGeoreference,
+							"unified_layer_type": string(lyr.LayerType),
+						},
+						CreatedAt: now,
+						UpdatedAt: now,
+					}
+					if addErr := s.sessionRepo.InsertDataset(targetSessionID, sessionDS); addErr != nil {
+						rollbackWorkspaceRegs()
+						failJob("registration", "SESSION_DATASET_REGISTER_FAILED", addErr.Error())
+						return
+					}
+					createdSessionDatasets = append(createdSessionDatasets, struct{ sessionID, dsID string }{targetSessionID, sessionDSID})
+					lyr.SessionDatasetID = sessionDSID
+				}
+
+				// 2. Register in GISService for Workspace Layers panel under Raster Layer
+				if activeGIS != nil && job.ProjectID != "" && job.ProjectID != "default" {
+					createdLyr, cErr := activeGIS.CreateLayer(ctx, job.OwnerID, models.CreateLayerRequest{
+						MapID:        job.ProjectID,
+						DatasetID:    sessionDSID,
+						LayerName:    lyr.Name,
+						LayerType:    "raster",
+						GeometryType: "Raster",
+						CRS:          lyr.CRS,
+						Bounds:       lyr.Extent,
+						Metadata: map[string]interface{}{
+							"source_dataset_id":       sessionDSID,
+							"session_id":              targetSessionID,
+							"unified_layer_id":        lyr.ID,
+							"unified_layer_type":      string(lyr.LayerType),
+							"source_format":           string(lyr.SourceFormat),
+							"requires_georeferencing": lyr.RequiresGeoreference,
+							"width":                   lyr.Width,
+							"height":                  lyr.Height,
+							"image_url":               fmt.Sprintf("/datasets/%s/source-image", sessionDSID),
+						},
+					})
+					if cErr != nil {
+						rollbackWorkspaceRegs()
+						failJob("registration", "GIS_LAYER_REGISTER_FAILED", cErr.Error())
+						return
+					}
+					if createdLyr != nil {
+						createdGISLayerIDs = append(createdGISLayerIDs, createdLyr.LayerID)
+						lyr.GISLayerID = createdLyr.LayerID
+					}
+				}
+			} else if lyr.LayerType == gis.LayerTypeVector && activeGIS != nil && job.ProjectID != "" && job.ProjectID != "default" {
+				// Parse validated GeoJSON and register layer + features atomically in GISService
+				if vErr := registerVectorLayerToGIS(ctx, activeGIS, job.OwnerID, job.ProjectID, lyr, &createdGISLayerIDs); vErr != nil {
+					rollbackWorkspaceRegs()
+					failJob("registration", "GIS_VECTOR_REGISTER_FAILED", vErr.Error())
+					return
+				}
+			}
+		}
+	}
+
+	// Stage 8b: Atomic commit of Dataset + all Layers + Job status.
 	s.mu.Lock()
 	if job.Status == "cancelled" {
 		s.mu.Unlock()
+		rollbackWorkspaceRegs()
 		cancelJob()
 		return
 	}
@@ -807,6 +950,102 @@ func (s *UnifiedImportService) DeleteDataset(ownerID, datasetID string) error {
 
 	for _, f := range filesToRemove {
 		_ = s.privateStorage.DeletePrivateFile(ownerID, f)
+	}
+	return nil
+}
+
+// registerVectorLayerToGIS reads a validated normalized GeoJSON file and registers the layer
+// and all its features into GISService so MapLibre & the Workspace Layers panel render it immediately.
+func registerVectorLayerToGIS(
+	ctx context.Context,
+	gisSvc *GISService,
+	ownerID string,
+	mapID string,
+	lyr *UnifiedLayer,
+	createdGISLayerIDs *[]string,
+) error {
+	raw, err := os.ReadFile(lyr.StorageKey)
+	if err != nil {
+		return fmt.Errorf("read normalized vector file: %w", err)
+	}
+	var fc struct {
+		Type     string `json:"type"`
+		Features []struct {
+			Type       string                  `json:"type"`
+			Geometry   *models.GeoJSONGeometry `json:"geometry"`
+			Properties map[string]interface{}  `json:"properties"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(raw, &fc); err != nil {
+		return fmt.Errorf("decode normalized geojson: %w", err)
+	}
+	primaryGeomType := "Polygon"
+	for _, f := range fc.Features {
+		if f.Geometry != nil && f.Geometry.Type != "" {
+			primaryGeomType = f.Geometry.Type
+			break
+		}
+	}
+
+	createdLyr, err := gisSvc.CreateLayer(ctx, ownerID, models.CreateLayerRequest{
+		MapID:        mapID,
+		DatasetID:    lyr.DatasetID,
+		LayerName:    lyr.Name,
+		LayerType:    "vector",
+		GeometryType: primaryGeomType,
+		CRS:          "EPSG:4326",
+		Bounds:       lyr.Extent,
+		Metadata: map[string]interface{}{
+			"unified_layer_id": lyr.ID,
+			"source_format":    string(lyr.SourceFormat),
+			"feature_count":    len(fc.Features),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if createdLyr == nil {
+		return errors.New("GISService returned nil layer")
+	}
+	*createdGISLayerIDs = append(*createdGISLayerIDs, createdLyr.LayerID)
+	lyr.GISLayerID = createdLyr.LayerID
+
+	gisRepo := gisSvc.GetGISRepo()
+	if gisRepo != nil && len(fc.Features) > 0 {
+		batchItems := make([]models.BatchFeatureItem, 0, len(fc.Features))
+		for _, f := range fc.Features {
+			if f.Geometry == nil {
+				continue
+			}
+			props := f.Properties
+			if props == nil {
+				props = map[string]interface{}{}
+			}
+			valRes, _ := gis.ValidateGeoJSONGeometry(*f.Geometry, "EPSG:4326")
+			wkt := ""
+			var bbox []float64
+			if valRes != nil {
+				wkt = valRes.WKT
+				bbox = valRes.BBox
+			}
+			batchItems = append(batchItems, models.BatchFeatureItem{
+				Request: models.CreateFeatureRequest{
+					LayerID:      createdLyr.LayerID,
+					Geometry:     *f.Geometry,
+					GeometryType: f.Geometry.Type,
+					CRS:          "EPSG:4326",
+					Properties:   props,
+				},
+				WKT:  wkt,
+				SRID: 4326,
+				BBox: bbox,
+			})
+		}
+		if len(batchItems) > 0 {
+			if _, err := gisRepo.CreateFeatureBatch(ctx, ownerID, batchItems); err != nil {
+				return fmt.Errorf("batch insert vector features: %w", err)
+			}
+		}
 	}
 	return nil
 }

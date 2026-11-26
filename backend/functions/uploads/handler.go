@@ -117,6 +117,9 @@ func (h *Handler) StartImport(w http.ResponseWriter, r *http.Request, user *mode
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	}
+	if req.SessionID == "" {
+		req.SessionID = strings.TrimSpace(r.Header.Get("X-Session-ID"))
+	}
 	job, err := h.svc.StartImport(user.ID, uploadID, req)
 	if err != nil {
 		writeUnifiedError(w, err)

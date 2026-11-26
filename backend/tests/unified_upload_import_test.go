@@ -18,6 +18,7 @@ import (
 
 	"github.com/malikharman0823/veracity-maps/gis"
 	"github.com/malikharman0823/veracity-maps/models"
+	"github.com/malikharman0823/veracity-maps/repository"
 	"github.com/malikharman0823/veracity-maps/services"
 	"github.com/malikharman0823/veracity-maps/storage"
 )
@@ -417,5 +418,105 @@ func TestUnifiedUploadAPI_HTTPAndCrossUserIsolation(t *testing.T) {
 	resDelA.Body.Close()
 	if resDelA.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 when User A deletes own dataset, got %d", resDelA.StatusCode)
+	}
+}
+
+// TestUnifiedUpload_AllFormatsVisibleInWorkspaceGISAndSession verifies that EVERY supported
+// format (PNG raster, JPG image_overlay, GeoJSON vector, GPKG multi-layer vector, PDF multipage
+// raster, DXF raster) is atomically registered into both GISService (for the Workspace Layers
+// panel) and SessionRepository (for raster image serving & georeferencing).
+func TestUnifiedUpload_AllFormatsVisibleInWorkspaceGISAndSession(t *testing.T) {
+	tempDir := t.TempDir()
+	ps, err := storage.NewPrivateStorage(filepath.Join(tempDir, "private"), 0)
+	if err != nil {
+		t.Fatalf("NewPrivateStorage: %v", err)
+	}
+	sessRepo := repository.NewSessionRepository()
+	gisRepo := repository.NewMemoryGISRepository()
+	gisSvc := services.NewGISService(gisRepo, nil, sessRepo)
+	svc := services.NewUnifiedImportService(ps, sessRepo, gis.DefaultUploadLimits())
+	svc.SetGISService(gisSvc)
+
+	sess := sessRepo.CreateSession()
+	mapID := "map_workspace_visibility_test"
+	ownerID := "user_vis_1"
+
+	fixturesDir := filepath.Join(tempDir, "fixtures")
+	_ = os.MkdirAll(fixturesDir, 0755)
+	gpkgPath, pdfMultiPath, _, dxfValidPath, _ := generateTestFixturesViaPython(t, fixturesDir)
+
+	uploadAndImport := func(cat gis.ImportCategory, fname string, data []byte, req services.StartImportRequest) *services.UnifiedImportJob {
+		upl, uErr := svc.UploadAndInspect(t.Context(), ownerID, mapID, cat, fname, bytes.NewReader(data))
+		if uErr != nil {
+			t.Fatalf("upload %s failed: %v", fname, uErr)
+		}
+		req.ProjectID = mapID
+		req.SessionID = sess.ID
+		req.ImportCategory = cat
+		req.Sync = true
+		job, jErr := svc.StartImport(ownerID, upl.ID, req)
+		if jErr != nil || job.Status != "ready" {
+			t.Fatalf("import %s failed: err=%v job=%+v", fname, jErr, job)
+		}
+		return job
+	}
+
+	// 1. PNG raster -> 1 raster GIS layer + 1 SessionRepository dataset
+	jobPNG := uploadAndImport(gis.ImportCategoryRaster, "aerial.png", makeValidPNGBytes(48, 32), services.StartImportRequest{})
+	if jobPNG.Layers[0].GISLayerID == "" || jobPNG.Layers[0].SessionDatasetID == "" {
+		t.Fatalf("PNG missing GISLayerID or SessionDatasetID: %+v", jobPNG.Layers[0])
+	}
+	if _, err := sessRepo.GetDataset(sess.ID, jobPNG.Layers[0].SessionDatasetID); err != nil {
+		t.Fatalf("PNG dataset missing from SessionRepository: %v", err)
+	}
+
+	// 2. JPG in vector category -> 1 image_overlay (registered as raster in GIS Layers panel) + 1 SessionRepository dataset
+	jobOverlay := uploadAndImport(gis.ImportCategoryVector, "overlay.jpg", makeValidJPGBytes(40, 30), services.StartImportRequest{})
+	if jobOverlay.Layers[0].LayerType != gis.LayerTypeImageOverlay || jobOverlay.Layers[0].GISLayerID == "" || jobOverlay.Layers[0].SessionDatasetID == "" {
+		t.Fatalf("JPG image_overlay not bridged to workspace: %+v", jobOverlay.Layers[0])
+	}
+
+	// 3. GeoJSON vector -> 1 vector GIS layer with features
+	gj := `{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"site":"A"},"geometry":{"type":"Point","coordinates":[77.21,28.61]}}]}`
+	jobGJ := uploadAndImport(gis.ImportCategoryVector, "points.geojson", []byte(gj), services.StartImportRequest{})
+	if jobGJ.Layers[0].GISLayerID == "" {
+		t.Fatalf("GeoJSON missing GISLayerID: %+v", jobGJ.Layers[0])
+	}
+	feats, fErr := gisRepo.GetFeatures(t.Context(), jobGJ.Layers[0].GISLayerID, nil)
+	if fErr != nil || len(feats) != 1 {
+		t.Fatalf("expected 1 GIS feature for GeoJSON layer, got len=%d err=%v", len(feats), fErr)
+	}
+
+	// 4. Multi-layer GeoPackage -> 2 vector GIS layers with features
+	gpkgBytes, _ := os.ReadFile(gpkgPath)
+	uploadAndImport(gis.ImportCategoryVector, "multi_layer.gpkg", gpkgBytes, services.StartImportRequest{
+		SelectedLayers: []string{"stations", "zones"},
+	})
+
+	// 5. 2-page PDF -> 2 raster GIS layers + 2 SessionRepository datasets
+	pdfBytes, _ := os.ReadFile(pdfMultiPath)
+	uploadAndImport(gis.ImportCategoryRaster, "site_plans.pdf", pdfBytes, services.StartImportRequest{
+		SelectedPages: []int{1, 2},
+	})
+
+	// 6. DXF CAD -> 1 raster GIS layer + 1 SessionRepository dataset
+	dxfBytes, _ := os.ReadFile(dxfValidPath)
+	uploadAndImport(gis.ImportCategoryRaster, "floorplan.dxf", dxfBytes, services.StartImportRequest{})
+
+	// Verify ALL 8 layers (5 raster + 3 vector) are immediately returned by GISRepo for this workspace!
+	allLayers, err := gisRepo.GetLayers(t.Context(), mapID)
+	if err != nil {
+		t.Fatalf("ListLayers failed: %v", err)
+	}
+	rasterCount, vectorCount := 0, 0
+	for _, l := range allLayers {
+		if l.LayerType == "raster" {
+			rasterCount++
+		} else if l.LayerType == "vector" {
+			vectorCount++
+		}
+	}
+	if rasterCount != 5 || vectorCount != 3 {
+		t.Fatalf("expected 5 raster and 3 vector layers in workspace GIS store, got raster=%d vector=%d (total=%d)", rasterCount, vectorCount, len(allLayers))
 	}
 }

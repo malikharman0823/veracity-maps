@@ -70,6 +70,9 @@ func (rt *Router) SetMapsHandler(mh *maps.Handler) {
 			rt.wsRegH.GetService().SetGISService(gisSvc)
 			rt.wsRegH.GetService().SetMapRepo(mh.GetMapRepo())
 		}
+		if rt.unifiedUploadsH != nil && rt.unifiedUploadsH.GetService() != nil {
+			rt.unifiedUploadsH.GetService().SetGISService(gisSvc)
+		}
 	}
 	if mh != nil && rt.baseLayerH != nil {
 		rt.baseLayerH.GetService().SetMapRepo(mh.GetMapRepo())
@@ -112,6 +115,9 @@ func (rt *Router) SetGISHandler(gh *gis.Handler) {
 		if rt.exportH != nil && rt.exportH.GetService() != nil {
 			rt.exportH.GetService().SetGISService(gh.GetService())
 		}
+		if rt.unifiedUploadsH != nil && rt.unifiedUploadsH.GetService() != nil {
+			rt.unifiedUploadsH.GetService().SetGISService(gh.GetService())
+		}
 	}
 }
 
@@ -142,6 +148,7 @@ func NewRouter(
 	defaultWSRegService := services.NewWorkspaceRegistryService(repository.NewMemoryWorkspaceRegistryRepository(), defaultGISService, repo, nil)
 	defaultPrivateStorage, _ := storage.NewPrivateStorage("", 0)
 	defaultUnifiedImportSvc := services.NewUnifiedImportService(defaultPrivateStorage, repo, gislib.DefaultUploadLimits())
+	defaultUnifiedImportSvc.SetGISService(defaultGISService)
 	router := &Router{
 		repo:            repo,
 		authRepo:        authRepo,

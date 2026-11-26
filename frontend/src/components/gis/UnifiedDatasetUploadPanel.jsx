@@ -188,18 +188,19 @@ export default function UnifiedDatasetUploadPanel({
 
       const job = await startUnifiedImport(item.uploadId, payload)
       if (job?.status === "ready") {
+        const layers = job.layers || []
         updateItem(item.localId, {
           status: "ready",
           jobId: job.id,
           importedDataset: job.dataset || null,
-          importedLayers: job.layers || [],
+          importedLayers: layers,
           error: "",
         })
-        return
+        return layers
       }
       if (job?.status === "cancelled") {
         updateItem(item.localId, { status: "cancelled", jobId: job.id, error: "Import cancelled." })
-        return
+        return []
       }
       if (job?.status === "failed") {
         updateItem(item.localId, {
@@ -207,7 +208,7 @@ export default function UnifiedDatasetUploadPanel({
           jobId: job.id,
           error: job.error_message || "Import failed during processing.",
         })
-        return
+        return []
       }
 
       // Poll if backend returned async job
@@ -217,19 +218,20 @@ export default function UnifiedDatasetUploadPanel({
           await new Promise((r) => setTimeout(r, 800))
           const current = await getUnifiedJob(job.id)
           if (current?.status === "ready") {
+            const layers = current.layers || []
             updateItem(item.localId, {
               status: "ready",
               importedDataset: current.dataset || null,
-              importedLayers: current.layers || [],
+              importedLayers: layers,
             })
-            return
+            return layers
           }
           if (current?.status === "failed" || current?.status === "cancelled") {
             updateItem(item.localId, {
               status: current.status,
               error: current.error_message || `Job ${current.status}.`,
             })
-            return
+            return []
           }
         }
       }
@@ -239,6 +241,7 @@ export default function UnifiedDatasetUploadPanel({
         error: errorText(err, `Import failed for "${item.name}".`),
       })
     }
+    return []
   }
 
   const handleCancelJob = async (item) => {
@@ -275,13 +278,43 @@ export default function UnifiedDatasetUploadPanel({
     }
   }
 
-  const handleFinish = () => {
-    const addedLayers = readyItems.flatMap((it) => it.importedLayers || [])
-    onComplete?.({
-      addedVectorLayers: addedLayers.filter((l) => l.layer_type === "vector"),
-      addedRasterLayers: addedLayers.filter((l) => l.layer_type === "raster" || l.layer_type === "image_overlay"),
-      addedLayers,
-    })
+  const [finishing, setFinishing] = useState(false)
+
+  const handleFinish = async () => {
+    if (finishing) return
+    setFinishing(true)
+    try {
+      // Auto-confirm any validated files still waiting in "uploaded" status so nothing is silently skipped
+      const newlyImported = []
+      for (const item of pendingConfirmItems) {
+        const layers = await handleConfirmImport(item)
+        if (Array.isArray(layers) && layers.length > 0) {
+          newlyImported.push(...layers)
+        }
+      }
+      const addedLayers = [...readyItems.flatMap((it) => it.importedLayers || []), ...newlyImported]
+      const addedVectorLayers = addedLayers.filter((l) => l.layer_type === "vector")
+      const addedRasterLayers = addedLayers.filter(
+        (l) => l.layer_type === "raster" || l.layer_type === "image_overlay"
+      )
+      const rasterItems = addedRasterLayers.map((l) => ({
+        datasetId: l.session_dataset_id || l.dataset_id,
+        filename: l.name,
+        width: l.width || 0,
+        height: l.height || 0,
+        crs: l.crs || "",
+        isGeoreferenced: !l.requires_georeferencing,
+        layerType: l.layer_type,
+      }))
+      onComplete?.({
+        addedVectorLayers,
+        addedRasterLayers,
+        addedLayers,
+        rasterItems,
+      })
+    } finally {
+      setFinishing(false)
+    }
   }
 
   return (

@@ -847,9 +847,16 @@ export default function WorkspacePage() {
           })
           .catch(() => {})
       }
-      if (result?.rasterItems?.length > 0) {
-        for (const r of result.rasterItems) {
-          if (!activeDatasetId && r.isGeoreferenced) {
+      const rasterList =
+        result?.rasterItems?.length > 0
+          ? result.rasterItems
+          : (result?.addedRasterLayers || []).map((l) => ({
+              datasetId: l.session_dataset_id || l.dataset_id,
+              isGeoreferenced: !l.requires_georeferencing,
+            }))
+      if (rasterList.length > 0) {
+        for (const r of rasterList) {
+          if (!activeDatasetId && r.datasetId) {
             setActiveDatasetId(r.datasetId)
           } else if (activeDatasetId && r.datasetId && r.datasetId !== activeDatasetId) {
             await workspace.attachDataset(r.datasetId).catch(() => undefined)
