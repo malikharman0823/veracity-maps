@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Installs and builds Veracity Maps as a full-fledged local/LAN application on Windows.
 .DESCRIPTION

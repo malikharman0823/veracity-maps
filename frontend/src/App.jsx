@@ -14,8 +14,6 @@ const WorkspaceSetupPage = lazy(() => import("./pages/WorkspaceSetupPage"))
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const RegisterPage = lazy(() => import("./pages/RegisterPage"))
 const DashboardPage = lazy(() => import("./pages/DashboardPage"))
-const ProjectsPage = lazy(() => import("./pages/ProjectsPage"))
-const SettingsPage = lazy(() => import("./pages/SettingsPage"))
 const ProfilePage = lazy(() => import("./pages/ProfilePage"))
 const PublishedMapViewerPage = lazy(() => import("./pages/PublishedMapViewerPage"))
 
@@ -66,13 +64,10 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 >
-                  <Route path="/dashboard" element={<Navigate to="/upload" replace />} />
-                  <Route path="/projects" element={<ProjectsPage />} />
-                  <Route path="/shared" element={<Navigate to="/projects" replace />} />
-                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/" element={<HomePage />} />
-                  <Route path="/upload" element={<HomePage />} />
+                  <Route path="/upload" element={<Navigate to="/" replace />} />
 
                   {/* Canonical Shared Workspace Map Editor & Unified Upload Setup Routes */}
                   <Route path="/maps/:mapId/setup" element={<WorkspaceSetupPage />} />

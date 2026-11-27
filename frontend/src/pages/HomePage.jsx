@@ -1,263 +1,659 @@
-import React, { useEffect, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { Plus, Clock, FolderOpen, ArrowRight, Loader2, X, Layers } from "lucide-react"
+import React, { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import {
+  listDatasets,
+  deleteDataset,
+  readableApiError,
+  importProjectFolder,
+  importDatasetZip,
+  uploadDataset,
+  listMaps,
+  deleteMap,
+  ensureActiveSession,
+} from "../api"
+import UploadBox, { ACCEPTED_FORMATS } from "../components/UploadBox"
+import UploadStatus from "../components/UploadStatus"
+import DatasetCard from "../components/DatasetCard"
 import TopHeader from "../components/TopHeader"
-import UnifiedDatasetUploadPanel from "../components/gis/UnifiedDatasetUploadPanel"
-import { listMaps, createMap } from "../api"
-
-function formatDate(val) {
-  if (!val) return "—"
-  const d = new Date(val)
-  if (isNaN(d.getTime()) || d.getFullYear() <= 1) return "—"
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-}
-
-function resolveProjectId(item) {
-  return item?.map_id || item?.id || ""
-}
-
-function resolveProjectName(item, byIdMap) {
-  const id = resolveProjectId(item)
-  const matched = id ? byIdMap.get(id) : null
-  const raw = item?.name || item?.map_name || item?.title || matched?.name || matched?.title || ""
-  return String(raw).trim() || "Untitled Project"
-}
+import ImportPdfModal from "../components/ImportPdfModal"
+import FilePreviewDialog from "../components/FilePreviewDialog"
+import ReopenProjectModal from "../components/ReopenProjectModal"
+import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  FolderOpen,
+  Archive,
+  Loader2,
+  Sliders,
+  Globe2,
+  FileCheck2,
+  MapPinned,
+  Database,
+  X,
+  AlertCircle,
+  Layers,
+  Bookmark,
+  Trash2,
+  ArrowUpRight,
+} from "lucide-react"
+import { loadSessionResources } from "../lib/sessionLoading"
+import { canDeleteSavedMap, resolveSavedMaps } from "../lib/savedMaps"
+import { useAuth } from "../context/AuthContext"
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const replacementInputRef = useRef(null)
 
-  const [myMaps, setMyMaps] = useState([])
-  const [recentMaps, setRecentMaps] = useState([])
-  const [loadingProjects, setLoadingProjects] = useState(true)
-  const [projectError, setProjectError] = useState("")
+  // Upload state
+  const [file, setFile] = useState(null)
+  const [state, setState] = useState("idle")
+  const [progress, setProgress] = useState(0)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+  const [pdfInspection, setPdfInspection] = useState(null)
+  const [filePreviewOpen, setFilePreviewOpen] = useState(false)
+  const [reopenModalOpen, setReopenModalOpen] = useState(false)
+  const [reopenInitialFile, setReopenInitialFile] = useState(null)
 
-  const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName] = useState("")
-  const [creating, setCreating] = useState(false)
+  // Session dataset catalog state
+  const [datasets, setDatasets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [savedMaps, setSavedMaps] = useState([])
+  const [mapToDelete, setMapToDelete] = useState(null)
+  const [deletingMap, setDeletingMap] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [datasetToDelete, setDatasetToDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
-  const fetchProjects = async () => {
-    setLoadingProjects(true)
-    setProjectError("")
-    try {
-      const data = await listMaps()
-      const my = data?.my_maps || []
-      const recent = data?.recent_maps || []
-      setMyMaps(my)
-      setRecentMaps(recent)
-      window.dispatchEvent(
-        new CustomEvent("veracity:maps-updated", { detail: { myMaps: my, sharedWithMe: [] } })
-      )
-    } catch {
-      setProjectError("Unable to load your recent projects.")
-    } finally {
-      setLoadingProjects(false)
-    }
+  const loadDatasets = () => {
+    setLoading(true)
+    return listDatasets()
+      .then(setDatasets)
+      .catch((err) => {
+        if (err.code !== "ERR_CANCELED") {
+          console.warn("Unable to load workspace datasets:", err)
+        }
+      })
+      .finally(() => setLoading(false))
+  }
+
+  const loadSavedMaps = () => {
+    return listMaps()
+      .then((data) => setSavedMaps(resolveSavedMaps(data)))
+      .catch((err) => {
+        console.warn("Unable to load saved maps:", err)
+      })
   }
 
   useEffect(() => {
-    fetchProjects()
+    loadSessionResources({
+      ensureSession: ensureActiveSession,
+      loadResources: [loadDatasets, loadSavedMaps],
+    }).catch((err) => {
+      console.warn("Unable to initialize the session dashboard:", err)
+    })
   }, [])
 
-  const handleCreateProject = async (e) => {
-    e.preventDefault()
-    if (!newName.trim() || creating) return
-    setCreating(true)
+  async function handleDeleteMap(mapItem) {
+    if (!mapItem || deletingMap) return
+    setDeletingMap(true)
     try {
-      const res = await createMap(newName.trim(), "")
-      const created = res?.map || res
-      setNewName("")
-      setShowCreate(false)
-      await fetchProjects()
-      if (created?.id) navigate(`/maps/${encodeURIComponent(created.id)}/edit`)
-    } catch {
-      setProjectError("Failed to create project.")
+      await deleteMap(mapItem.id)
+      setSavedMaps((prev) => prev.filter((item) => item.id !== mapItem.id))
+      setMapToDelete(null)
+    } catch (err) {
+      console.error("Failed to delete saved map:", err)
     } finally {
-      setCreating(false)
+      setDeletingMap(false)
     }
   }
 
-  const resolveOrCreateProjectId = async (suggestedName = "") => {
-    if (myMaps.length > 0 && myMaps[0]?.id) {
-      return myMaps[0].id
+  function selectFile(nextFile) {
+    const lowerName = String(nextFile?.name || "").toLowerCase()
+    if (lowerName.endsWith(".mbtiles")) {
+      setReopenInitialFile(nextFile)
+      setReopenModalOpen(true)
+      return
     }
+    setFile(nextFile)
+    setState("selected")
+    setProgress(0)
+    setResult(null)
+    setError(null)
+    setFilePreviewOpen(true)
+  }
+
+  function removeFile() {
+    setFile(null)
+    setState("idle")
+    setProgress(0)
+    setFilePreviewOpen(false)
+  }
+
+  async function upload() {
+    if (!file) return
+    setState("uploading")
+    setProgress(0)
+    setError(null)
     try {
-      const clean = String(suggestedName || "").trim() || `Workspace ${new Date().toLocaleDateString()}`
-      const res = await createMap(clean, "")
-      const created = res?.map || res
-      if (created?.id) {
-        setMyMaps((prev) => [created, ...prev])
-        return created.id
+      const isZip = (file.name || "").toLowerCase().endsWith(".zip")
+      const uploadFn = isZip ? importDatasetZip : uploadDataset
+      const uploaded = await uploadFn(file, (event) => {
+        if (event.total) setProgress(Math.round((event.loaded / event.total) * 100))
+      })
+
+      if (uploaded && (uploaded.type === "pdf_pending" || uploaded.status === "pdf_pending")) {
+        setPdfInspection(uploaded)
+        setFile(null)
+        setState("idle")
+        return
       }
-    } catch {}
-    return "default"
-  }
 
-  const handleUploadComplete = async (result) => {
-    const targetId = result?.projectId || (myMaps.length > 0 ? myMaps[0]?.id : "")
-    if (targetId && targetId !== "default") {
-      navigate(`/maps/${encodeURIComponent(targetId)}/edit`)
-      return
+      setResult(uploaded)
+      setFile(null)
+      loadDatasets()
+
+      if (uploaded.is_georeferenced) {
+        navigate(`/datasets/${uploaded.id}/workspace?view=map`)
+        return
+      }
+      setState("success")
+    } catch (requestError) {
+      setError(readableApiError(requestError, "Unable to upload the file."))
+      setState("error")
     }
-    const createdId = await resolveOrCreateProjectId()
-    if (createdId && createdId !== "default") {
-      navigate(`/maps/${encodeURIComponent(createdId)}/edit`)
-      return
+  }
+
+  function continueAfterUpload() {
+    if (!result) return
+    if (result.is_georeferenced) {
+      navigate(`/datasets/${result.id}/workspace?view=map`)
+    } else {
+      navigate(`/datasets/${result.id}/workspace?view=database`)
     }
-    navigate("/projects")
   }
 
-  // Build lookup map so recent_maps entries always resolve their real project name
-  const byIdMap = new Map()
-  for (const m of myMaps) {
-    if (m?.id) byIdMap.set(m.id, m)
+  const handleImportFolder = async (event) => {
+    const files = Array.from(event.target.files)
+    if (!files.length) return
+    setImporting(true)
+    setError(null)
+    try {
+      const res = await importProjectFolder(files)
+      navigate(`/datasets/${res.dataset_id}`)
+    } catch (err) {
+      setError(readableApiError(err, "Failed to import project folder."))
+    } finally {
+      setImporting(false)
+      event.target.value = ""
+    }
   }
 
-  // Deduplicate recent projects by map_id / id, falling back cleanly to myMaps
-  const seen = new Set()
-  const recentList = []
-  for (const item of [...recentMaps, ...myMaps]) {
-    const pid = resolveProjectId(item)
-    if (!pid || seen.has(pid)) continue
-    seen.add(pid)
-    recentList.push({
-      id: pid,
-      name: resolveProjectName(item, byIdMap),
-      date: item.updated_at || item.last_opened_at || item.created_at || byIdMap.get(pid)?.updated_at || byIdMap.get(pid)?.created_at,
-    })
-    if (recentList.length >= 8) break
+  const handleDeleteConfirm = async () => {
+    if (!datasetToDelete) return
+    setDeleting(true)
+    try {
+      await deleteDataset(datasetToDelete.id)
+      setDatasets((prev) => prev.filter((d) => d.id !== datasetToDelete.id))
+      setDatasetToDelete(null)
+    } catch (err) {
+      setError(readableApiError(err, "Failed to delete dataset."))
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-neutral-50 dark:bg-[#141414]">
-      <TopHeader
-        title="Upload Dataset"
-        breadcrumbs={[{ label: "Upload Dataset" }]}
-        actions={
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#34b77c] text-[#141414] text-xs font-semibold cursor-pointer transition-colors"
-          >
-            <Plus className="size-3.5" />
-            <span>Create Project</span>
-          </button>
-        }
-      />
+    <div className="flex flex-col min-h-screen bg-white dark:bg-[#1c1c1c] text-neutral-900 dark:text-white transition-colors">
+      <TopHeader breadcrumbs={[{ label: "Upload Dataset" }]} />
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-6">
-        {/* Unified Dataset Upload Panel */}
-        <section className="rounded-lg border border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#1b1b1b] p-5">
-          <UnifiedDatasetUploadPanel
-            workspaceId={myMaps[0]?.id || ""}
-            workspaceName={myMaps[0]?.name || "Private Workspace"}
-            primaryActionLabel="Open Workspace"
-            showBackButton={false}
-            autoAddToWorkspace
-            resolveProjectId={resolveOrCreateProjectId}
-            onComplete={handleUploadComplete}
-          />
-        </section>
-
-        {/* Recent Projects (Shown on the Same Upload Dataset Page) */}
-        <section className="rounded-lg border border-neutral-200 dark:border-[#2a2a2a] bg-white dark:bg-[#1b1b1b] overflow-hidden">
-          <div className="px-4 py-3 border-b border-neutral-200 dark:border-[#262626] flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-semibold text-neutral-900 dark:text-white">
-              <Clock className="size-3.5 text-[#3ecf8e]" />
-              <span>Recent Projects</span>
+      <main className="flex-1 pb-16">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 flex flex-col gap-8">
+          {/* Header Section */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-neutral-200 dark:border-[#2e2e2e]">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1">
+                <span>Spatial Workspace</span>
+                <span>•</span>
+                <span className="text-[#24b47e] dark:text-[#3ecf8e]">New Dataset</span>
+              </div>
+              <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 dark:text-white">
+                Upload Dataset
+              </h1>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1.5 max-w-xl">
+                Upload GeoTIFF/TIFF, PNG, JPG, PDF, CAD (.dxf, .dwg, .svf), standalone MBTiles (.mbtiles), or Veracity Maps project packages (.zip).
+              </p>
             </div>
-            <Link
-              to="/projects"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#24b47e] dark:text-[#3ecf8e] hover:underline"
-            >
-              All projects <ArrowRight className="size-3" />
-            </Link>
+
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReopenInitialFile(null)
+                  setReopenModalOpen(true)
+                }}
+                disabled={importing}
+                className="h-9 rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs text-neutral-800 dark:text-neutral-200 cursor-pointer font-medium shadow-xs"
+              >
+                <Archive className="size-3.5 mr-1.5 text-[#24b47e] dark:text-[#3ecf8e]" />
+                <span>Reopen Project (.mbtiles / .zip)</span>
+              </Button>
+
+              <input
+                type="file"
+                multiple
+                webkitdirectory=""
+                directory=""
+                onChange={handleImportFolder}
+                className="hidden"
+                id="import-folder-input"
+                disabled={importing}
+              />
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs text-neutral-800 dark:text-neutral-200 cursor-pointer shadow-xs"
+              >
+                <label htmlFor="import-folder-input">
+                  {importing ? (
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin text-[#3ecf8e]" />
+                  ) : (
+                    <FolderOpen className="size-3.5 mr-1.5 text-neutral-400" />
+                  )}
+                  <span>{importing ? "Importing…" : "Open Project Folder"}</span>
+                </label>
+              </Button>
+
+              <div className="flex items-center gap-2 bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] px-3.5 py-1.5 rounded-[6px] shadow-xs">
+                <span className="size-2 rounded-full bg-[#3ecf8e] animate-pulse"></span>
+                <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Ready</span>
+              </div>
+            </div>
           </div>
 
-          {projectError && (
-            <div className="m-4 p-3 rounded-[6px] bg-red-500/10 border border-red-500/30 text-xs text-red-600 dark:text-red-400">
-              {projectError}
+          {/* Global Error Alert */}
+          {error && (
+            <div className="rounded-[12px] border border-red-500/30 bg-red-500/10 p-4 flex items-center gap-3">
+              <AlertCircle className="size-5 text-red-500 shrink-0" />
+              <div className="text-xs">
+                <p className="font-semibold text-red-500 dark:text-red-400">{error.message || "An error occurred"}</p>
+                {error.details && <p className="text-red-400/80 mt-0.5">{error.details}</p>}
+              </div>
             </div>
           )}
 
-          {loadingProjects ? (
-            <div className="py-10 flex items-center justify-center gap-2 text-xs text-neutral-500">
-              <Loader2 className="size-4 animate-spin text-[#3ecf8e]" />
-              <span>Loading recent projects…</span>
+          {/* Main Upload Area */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column: Dropzone & Upload Box (7 Cols) */}
+            <div className="lg:col-span-7 flex flex-col gap-6">
+              {state === "idle" ? (
+                <UploadBox disabled={false} onSelect={selectFile} />
+              ) : (
+                <UploadStatus
+                  state={state}
+                  file={file}
+                  progress={progress}
+                  result={result}
+                  error={error}
+                  onRemove={removeFile}
+                  onReplace={() => replacementInputRef.current?.click()}
+                  onUpload={upload}
+                  onRetry={() => setState(file ? "selected" : "idle")}
+                  onOpen={continueAfterUpload}
+                />
+              )}
             </div>
-          ) : recentList.length === 0 ? (
-            <div className="p-8 text-center text-xs text-neutral-500 space-y-2">
-              <FolderOpen className="size-6 mx-auto text-neutral-400" />
-              <div>No projects yet. Upload a dataset above or create your first project.</div>
-            </div>
-          ) : (
-            <div className="divide-y divide-neutral-200 dark:divide-[#262626]">
-              {recentList.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => navigate(`/maps/${encodeURIComponent(p.id)}/edit`)}
-                  className="w-full px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-[#222222] flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                >
-                  <span className="flex items-center gap-2.5 min-w-0">
-                    <Layers className="size-3.5 text-[#3ecf8e] shrink-0" />
-                    <span className="text-xs font-medium text-neutral-900 dark:text-white truncate">
-                      {p.name}
+
+            {/* Right Column: Ingestion Parameters (5 Cols) */}
+            <div className="lg:col-span-5 flex flex-col gap-4">
+              <div className="border border-neutral-200 dark:border-[#2e2e2e] rounded-[12px] bg-white dark:bg-[#202020] p-6 space-y-5 shadow-xs">
+                <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-[#2e2e2e]">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
+                    <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                      Ingestion Parameters
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400 px-2 py-0.5 rounded-[4px] bg-neutral-100 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+                    Auto
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-neutral-800 dark:text-neutral-200 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Globe2 className="size-3.5 text-neutral-400" />
+                      Georeference detection
                     </span>
-                  </span>
-                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400 shrink-0">
-                    {formatDate(p.date)}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-[10px] text-[#24b47e] dark:text-[#3ecf8e] font-mono font-semibold uppercase">
+                      Automatic
+                    </span>
+                  </label>
+                  <div className="w-full bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] rounded-[6px] py-2 px-3 text-xs text-neutral-900 dark:text-white font-mono flex items-center justify-between">
+                    <span>Raster metadata + sidecars</span>
+                    <FileCheck2 className="size-3.5 text-[#3ecf8e]" />
+                  </div>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    Georeferenced rasters open directly on the map. Raw rasters allow point-based georeferencing.
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-neutral-200 dark:border-[#2e2e2e] space-y-3">
+                  <div className="flex items-start justify-between gap-3 p-3 rounded-[8px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e]">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
+                        Auto-Tiling Pipeline
+                      </div>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                        Rasters are automatically processed and converted into Slippy tiles.
+                      </p>
+                    </div>
+                    <span className="size-2 rounded-full bg-[#3ecf8e] mt-1 shrink-0"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Persistent saved maps (if any exist) */}
+          {savedMaps.length > 0 && (
+            <div className="pt-8 border-t border-neutral-200 dark:border-[#2e2e2e] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
+                  <h2 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-white">
+                    Saved Maps ({savedMaps.length})
+                  </h2>
+                </div>
+                <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Reopen your saved map layouts, camera views, and floor layers
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {savedMaps.map((cfg) => (
+                  <div
+                    key={cfg.id}
+                    className="group relative bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] hover:border-[#3ecf8e] dark:hover:border-[#3ecf8e] rounded-[12px] p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="size-7 rounded-[6px] bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e] flex items-center justify-center shrink-0 border border-[#3ecf8e]/30">
+                            <Bookmark className="size-3.5" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-semibold text-neutral-900 dark:text-white line-clamp-1" title={cfg.name}>
+                              {cfg.name}
+                            </h3>
+                            <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                              {cfg.asset_count || 0} asset(s) attached
+                            </span>
+                          </div>
+                        </div>
+                        {canDeleteSavedMap(cfg, user) && (
+                          <button
+                            type="button"
+                            onClick={() => setMapToDelete(cfg)}
+                            className="size-7 rounded-[4px] text-neutral-400 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                            title="Delete saved map"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-2 py-2 px-2.5 rounded-[6px] bg-neutral-50 dark:bg-[#171717] border border-neutral-200 dark:border-[#2e2e2e] text-[11px] text-neutral-500 dark:text-neutral-400 space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span>Revision:</span>
+                          <span className="font-mono text-neutral-800 dark:text-neutral-200 text-[10px]">{cfg.revision_number || 1}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-[#2e2e2e] flex items-center justify-between">
+                      <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                        {cfg.created_at ? new Date(cfg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recent"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/maps/${cfg.id}/edit?view=map`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#24b47e] text-[#171717] text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                      >
+                        <span>Open Map</span>
+                        <ArrowUpRight className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-        </section>
+
+          {/* Active Datasets in this Session (if any exist) */}
+          {datasets.length > 0 && (
+            <div className="pt-8 border-t border-neutral-200 dark:border-[#2e2e2e] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="size-4 text-[#24b47e] dark:text-[#3ecf8e]" />
+                  <h2 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-white">
+                    Active Workspace Datasets ({datasets.length})
+                  </h2>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {datasets.map((dataset) => (
+                  <DatasetCard
+                    key={dataset.id}
+                    dataset={dataset}
+                    viewMode="grid"
+                    onDeleteClick={setDatasetToDelete}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <input
+          ref={replacementInputRef}
+          type="file"
+          accept={ACCEPTED_FORMATS}
+          className="sr-only"
+          onChange={(event) => {
+            const [nextFile] = event.target.files
+            if (nextFile) selectFile(nextFile)
+          }}
+        />
       </main>
 
-      {/* Create Project Dialog */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <form
-            onSubmit={handleCreateProject}
-            className="w-full max-w-sm rounded-lg border border-neutral-200 dark:border-[#2e2e2e] bg-white dark:bg-[#1b1b1b] p-5 space-y-4 shadow-2xl"
+      {/* Un-georeferenced Dialog */}
+      {state === "success" && result && !result.is_georeferenced && (
+        <div className="workspace-dialog-backdrop" role="presentation">
+          <section
+            className="workspace-dialog bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white rounded-[12px]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="upload-route-title"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Create Project</h2>
+            <button
+              type="button"
+              className="workspace-dialog-close text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+              onClick={() => setState("idle")}
+              aria-label="Close"
+            >
+              <X />
+            </button>
+            <div className="workspace-dialog-icon bg-[#3ecf8e]/10 text-[#24b47e] dark:text-[#3ecf8e]">
+              <MapPinned />
+            </div>
+            <h2 id="upload-route-title" className="text-neutral-900 dark:text-white font-bold">This raster is not georeferenced</h2>
+            <p className="text-neutral-500 dark:text-neutral-400">The dataset is safely stored. Choose where you want to continue.</p>
+            <div className="workspace-dialog-actions workspace-dialog-actions-stacked">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
-                className="text-neutral-400 hover:text-white cursor-pointer"
+                className="workspace-primary-button rounded-[6px]"
+                onClick={() =>
+                  navigate(
+                    `/datasets/${result.id}/georeference?returnTo=${encodeURIComponent(
+                      `/datasets/${result.id}/workspace?view=database`
+                    )}`
+                  )
+                }
               >
-                <X className="size-4" />
+                <MapPinned /> Open georeferencer
               </button>
-            </div>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Project name"
-              className="w-full h-9 px-3 rounded-[6px] border border-neutral-300 dark:border-[#363636] bg-white dark:bg-[#141414] text-xs outline-none focus:border-[#3ecf8e]"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
-                className="px-3 py-1.5 rounded-[6px] text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-[#262626] cursor-pointer"
+                className="workspace-secondary-button rounded-[6px]"
+                onClick={() => navigate(`/datasets/${result.id}/workspace?view=database`)}
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!newName.trim() || creating}
-                className="px-3 py-1.5 rounded-[6px] bg-[#3ecf8e] hover:bg-[#34b77c] text-[#141414] text-xs font-semibold disabled:opacity-40 cursor-pointer"
-              >
-                {creating ? "Creating…" : "Create"}
+                <Database /> Inspect database first
               </button>
             </div>
-          </form>
+          </section>
         </div>
       )}
+
+      {/* Delete Dataset Confirmation Dialog */}
+      <AlertDialog
+        open={Boolean(datasetToDelete)}
+        onOpenChange={(open) => !open && setDatasetToDelete(null)}
+      >
+        <AlertDialogContent className="rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white shadow-xl max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-semibold text-neutral-900 dark:text-white">
+              Delete Dataset?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+              Are you sure you want to delete{" "}
+              <strong className="text-neutral-900 dark:text-white">
+                {datasetToDelete?.name || datasetToDelete?.filename}
+              </strong>
+              ? This action will permanently remove all associated rasters, vector caches, and tilesets.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel
+              disabled={deleting}
+              className="rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs text-neutral-700 dark:text-neutral-300"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="rounded-[6px] bg-red-600 hover:bg-red-500 text-white text-xs font-medium cursor-pointer"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <span>Delete Permanently</span>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Saved Map Confirmation Dialog */}
+      <AlertDialog
+		open={Boolean(mapToDelete)}
+		onOpenChange={(open) => !open && setMapToDelete(null)}
+      >
+        <AlertDialogContent className="rounded-[12px] bg-white dark:bg-[#202020] border border-neutral-200 dark:border-[#2e2e2e] text-neutral-900 dark:text-white shadow-xl max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-semibold text-neutral-900 dark:text-white">
+			  Delete Saved Map?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+              Are you sure you want to remove{" "}
+              <strong className="text-neutral-900 dark:text-white">
+				{mapToDelete?.name}
+              </strong>
+              ? This removes its persistent revision history. Temporary session datasets are unaffected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel
+			disabled={deletingMap}
+              className="rounded-[6px] border-neutral-300 dark:border-[#2e2e2e] bg-white dark:bg-[#202020] hover:bg-neutral-100 dark:hover:bg-[#282828] text-xs text-neutral-700 dark:text-neutral-300"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+			onClick={() => handleDeleteMap(mapToDelete)}
+			disabled={deletingMap}
+              className="rounded-[6px] bg-red-600 hover:bg-red-500 text-white text-xs font-medium cursor-pointer"
+            >
+			  {deletingMap ? (
+                <>
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <span>Delete Map</span>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {pdfInspection && (
+        <ImportPdfModal
+          pdfInspection={pdfInspection}
+          onClose={() => setPdfInspection(null)}
+          onImportSuccess={(importRes) => {
+            setPdfInspection(null)
+            loadDatasets()
+            if (importRes.first_dataset_id) {
+              navigate(`/datasets/${importRes.first_dataset_id}/workspace?view=map`)
+            } else if (importRes.datasets?.length > 0) {
+              navigate(`/datasets/${importRes.datasets[0].id}/workspace?view=map`)
+            }
+          }}
+        />
+      )}
+
+      <FilePreviewDialog
+        file={file}
+        open={filePreviewOpen}
+        onCancel={removeFile}
+        onConfirm={() => setFilePreviewOpen(false)}
+      />
+
+      <ReopenProjectModal
+        open={reopenModalOpen}
+        initialFile={reopenInitialFile}
+        onClose={() => {
+          setReopenModalOpen(false)
+          setReopenInitialFile(null)
+        }}
+        onReopened={(restored) => {
+          setReopenModalOpen(false)
+          setReopenInitialFile(null)
+          loadDatasets()
+          if (restored?.id) {
+            navigate(`/datasets/${restored.id}/workspace?view=map`)
+          }
+        }}
+      />
     </div>
   )
 }

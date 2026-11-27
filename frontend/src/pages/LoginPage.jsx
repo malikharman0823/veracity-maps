@@ -25,9 +25,9 @@ export default function LoginPage() {
 
   const redirectParam = searchParams.get("redirect") || ""
   const fromState = location.state?.from
-    ? `${location.state.from.pathname || "/upload"}${location.state.from.search || ""}`
+    ? `${location.state.from.pathname || "/dashboard"}${location.state.from.search || ""}`
     : ""
-  const from = redirectParam || fromState || "/upload"
+  const from = redirectParam || fromState || "/dashboard"
   const initialEmail = searchParams.get("email") || ""
 
   const [step, setStep] = useState("email") // "email" | "otp"

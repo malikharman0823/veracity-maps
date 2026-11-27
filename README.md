@@ -7,15 +7,10 @@
 ## Key Capabilities
 
 - **Full-Fledged Single-Server Application**: The compiled Go server serves the production React UI, REST API, local MapLibre GL assets, and live XYZ raster/vector/composite PNG tiles from a single port (`:8000`) with zero external CDN dependencies on LAN.
-- **Private User-Isolated Workspaces & MSSQL 22 Row-Level Security (RLS)**:
-  - Each registered account operates in an independent private workspace (no cross-user sharing or collaboration surfaces).
-  - SQL Server 2022 RLS policy ([`019_rls_user_isolation.sql`](backend/migrations/019_rls_user_isolation.sql)) enforces `FILTER` + `BLOCK` predicates (`AFTER INSERT`, `BEFORE UPDATE`, `AFTER UPDATE`, `BEFORE DELETE`) via `SESSION_CONTEXT(N'user_id')` across all 12 user-owned tables, paired with pooled connection cleanup in [`backend/db/rls.go`](backend/db/rls.go).
-  - Per-user private file storage ([`backend/storage/private_storage.go`](backend/storage/private_storage.go)) isolates files under `storage/private/<owner_id>/projects/<project_id>/{uploads,processed,exports,assets,maps}` with path traversal protection and per-user storage quotas.
 - **Universal GIS Ingestion**: Upload rasters (`PNG`, `JPG`, `GeoTIFF`), vector datasets (`GeoPackage .gpkg`, `GeoJSON`, `Shapefile .zip`, `KML`), multi-page `PDF` floorplans, `CAD (.dxf)` drawings, `MBTiles`, and multi-dataset `.zip` archives.
-- **Interactive Georeferencing & Multi-Floor Management**: Place up to 20 ground control points (GCPs) with 2-point similarity or 3–20-point affine least-squares transforms, apply 4 essential raster enhancements, manage multi-floor buildings, and place custom geographic icon markers.
-- **Dynamic Custom Web Tile Publishing & Local XYZ Tile ZIP Export**:
+- **Interactive Georeferencing & Multi-Floor Management**: Place ground control points (GCPs) with 2-point similarity or 3–10-point affine least-squares transforms, manage multi-floor buildings, and place custom geographic icon markers.
+- **Dynamic Custom Web Tile Publishing (Viewscape Compatible)**:
   - Publish any combination of rasters and vector layers (polygons, lines, and points) into live `256×256` composite PNG tiles (`z0–z18+`) via `GET /tiles/{map_id}/composite/{z}/{x}/{y}.png`.
-  - Export offline `p3_webtiles_xyz`-compatible XYZ tile ZIP packages via `POST /api/export/custom-local-tiles`.
   - Automatically generates Viewscape-ready URLs using `{0}/{1}/{2}` placeholders and your machine's LAN IP:
     ```text
     http://<your-lan-ip>:8000/tiles/<map_id>/composite/{0}/{1}/{2}.png
