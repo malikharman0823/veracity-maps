@@ -32,6 +32,7 @@ import {
   updateGISLayerOpacity,
   duplicateGISLayer,
 } from "../../api"
+import LayerRasterToolsPanel from "./LayerRasterToolsPanel"
 
 export default function ThreeGroupLayersPanel({
   mapId,
@@ -58,6 +59,7 @@ export default function ThreeGroupLayersPanel({
   onOpenAddRaster,
   onOpenChangeBaseLayer,
   onChangeBasePrefs,
+  onRasterImageUpdated,
   onCollapse,
   notify,
 }) {
@@ -110,7 +112,11 @@ export default function ThreeGroupLayersPanel({
           visible: l.is_visible !== false,
           opacity: typeof l.opacity === "number" ? l.opacity : 1.0,
           bounds: l.bounds || null,
-          isGeoreferenced: Boolean(Array.isArray(l.bounds) && l.bounds.length === 4),
+          isGeoreferenced: Boolean(
+            (Array.isArray(l.bounds) && l.bounds.length === 4) ||
+            l.metadata?.is_georeferenced ||
+            l.metadata?.georeference_status === "completed"
+          ),
           raw: l,
         })
       })
@@ -558,7 +564,7 @@ export default function ThreeGroupLayersPanel({
                           setOpacityOpenId(showOp ? null : `v:${layer.layer_id}`)
                         }}
                         className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Opacity"
+                        title="Layer Settings (Opacity, Background Clearing, AI Upscaling)"
                       >
                         <SlidersHorizontal className="size-3" />
                       </button>
@@ -573,19 +579,27 @@ export default function ThreeGroupLayersPanel({
                     </div>
 
                     {showOp && (
-                      <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
-                        <span>Opacity</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={Math.round((layer.opacity ?? 1) * 100)}
-                          onChange={(e) => handleVectorOpacity(layer, e.target.value)}
-                          className="flex-1 accent-[#3ecf8e] h-1"
+                      <div className="px-4 pb-2 pt-1 space-y-1 text-[10px] text-neutral-500">
+                        <div className="flex items-center gap-2">
+                          <span>Opacity</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={Math.round((layer.opacity ?? 1) * 100)}
+                            onChange={(e) => handleVectorOpacity(layer, e.target.value)}
+                            className="flex-1 accent-[#3ecf8e] h-1"
+                          />
+                          <span className="font-mono w-7 text-right">
+                            {Math.round((layer.opacity ?? 1) * 100)}%
+                          </span>
+                        </div>
+                        <LayerRasterToolsPanel
+                          datasetId={layer.dataset_id}
+                          isVectorOnly={!layer.dataset_id || layer.layer_type === "vector"}
+                          onRasterImageUpdated={onRasterImageUpdated}
+                          notify={notify}
                         />
-                        <span className="font-mono w-7 text-right">
-                          {Math.round((layer.opacity ?? 1) * 100)}%
-                        </span>
                       </div>
                     )}
                   </div>
@@ -683,19 +697,24 @@ export default function ThreeGroupLayersPanel({
                       </div>
 
                       {!entry.isGeoreferenced && (
-                        <span
-                          className="px-1 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 shrink-0"
-                          title="Not georeferenced yet"
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onGeoreferenceMember?.(entry)
+                          }}
+                          className="px-1 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 cursor-pointer shrink-0"
+                          title="Not georeferenced yet — click to open Georeferencer"
                         >
                           Unref
-                        </span>
+                        </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => setOpacityOpenId(showOp ? null : `r:${entry.id}`)}
                         className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                        title="Raster Opacity"
+                        title="Layer Settings (Opacity, Background Clearing, AI Upscaling)"
                       >
                         <SlidersHorizontal className="size-3" />
                       </button>
@@ -710,19 +729,26 @@ export default function ThreeGroupLayersPanel({
                     </div>
 
                     {showOp && (
-                      <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-neutral-500">
-                        <span>Opacity</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={Math.round(entry.opacity * 100)}
-                          onChange={(e) => handleRasterOpacity(entry, e.target.value)}
-                          className="flex-1 accent-sky-500 h-1"
+                      <div className="px-4 pb-2 pt-1 space-y-1 text-[10px] text-neutral-500">
+                        <div className="flex items-center gap-2">
+                          <span>Opacity</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={Math.round(entry.opacity * 100)}
+                            onChange={(e) => handleRasterOpacity(entry, e.target.value)}
+                            className="flex-1 accent-sky-500 h-1"
+                          />
+                          <span className="font-mono w-7 text-right">
+                            {Math.round(entry.opacity * 100)}%
+                          </span>
+                        </div>
+                        <LayerRasterToolsPanel
+                          datasetId={entry.entryKind === "member" ? entry.id : entry.raw?.dataset_id || entry.dataset_id}
+                          onRasterImageUpdated={onRasterImageUpdated}
+                          notify={notify}
                         />
-                        <span className="font-mono w-7 text-right">
-                          {Math.round(entry.opacity * 100)}%
-                        </span>
                       </div>
                     )}
                   </div>

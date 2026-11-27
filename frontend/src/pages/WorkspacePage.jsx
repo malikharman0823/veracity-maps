@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   AlertCircle,
   ArrowLeft,
@@ -76,7 +76,6 @@ import {
   saveSpatialBookmarks,
 } from "../lib/workspaceLayout"
 
-const WorkspaceBrowserPanel = lazy(() => import("../components/workspace/WorkspaceBrowserPanel"))
 const DockedProcessingToolbox = lazy(() => import("../components/workspace/DockedProcessingToolbox"))
 const UnifiedDatasetUploadPanel = lazy(() => import("../components/gis/UnifiedDatasetUploadPanel"))
 const WorkspaceRecordsView = lazy(() => import("../components/gis/WorkspaceRecordsView"))
@@ -88,7 +87,9 @@ export default function WorkspacePage() {
   const activeContainerId = mapId || mapspaceId || paramProjectId || ""
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const requestedView = searchParams.get("view")
+  const handledGeorefFitRef = useRef(null)
 
   // QGIS-Inspired Resizable Dock Layout (persisted per user)
   const [layout, setLayout] = useState(() => loadWorkspaceLayout(user?.id))
@@ -176,6 +177,7 @@ export default function WorkspacePage() {
   const [activeGISLayer, setActiveGISLayer] = useState(null)
   const [selectedFeatureIds, setSelectedFeatureIds] = useState([])
   const [gisFeaturesRefreshKey, setGisFeaturesRefreshKey] = useState(0)
+  const [rasterImageRevisions, setRasterImageRevisions] = useState({})
   const [attributeTableLayer, setAttributeTableLayer] = useState(null)
   const [styleEditorLayer, setStyleEditorLayer] = useState(null)
   const [crsModalOpen, setCrsModalOpen] = useState(false)
@@ -438,6 +440,18 @@ export default function WorkspacePage() {
     refreshGISLayers()
   }, [refreshGISLayers])
 
+  const handleRasterImageUpdated = useCallback(
+    (datasetId) => {
+      if (datasetId) {
+        setRasterImageRevisions((prev) => ({ ...prev, [datasetId]: Date.now() }))
+      }
+      workspace.refreshManifest().catch(() => undefined)
+      refreshGISLayers()
+      setRecordsRefreshKey((k) => k + 1)
+    },
+    [workspace, refreshGISLayers]
+  )
+
   // Custom Base Layer & Multiple Map Views State
   const [mapViews, setMapViews] = useState(DEFAULT_MAP_VIEWS)
   const [customBaseLayers, setCustomBaseLayers] = useState([])
@@ -569,6 +583,37 @@ export default function WorkspacePage() {
     },
     [mapInstance]
   )
+
+  // Automatically fit the workspace camera to a newly georeferenced raster when returning from GeoreferencePage
+  useEffect(() => {
+    const geoDsId = location.state?.georeferencedDatasetId
+    if (!geoDsId || !mapInstance || handledGeorefFitRef.current === geoDsId) return
+
+    let targetBounds = null
+    const stateBounds = location.state?.georeferencedBounds
+    if (Array.isArray(stateBounds) && stateBounds.length === 4) {
+      targetBounds = stateBounds
+    } else if (stateBounds && typeof stateBounds === "object") {
+      const w = stateBounds.min_x ?? stateBounds.west
+      const s = stateBounds.min_y ?? stateBounds.south
+      const e = stateBounds.max_x ?? stateBounds.east
+      const n = stateBounds.max_y ?? stateBounds.north
+      if ([w, s, e, n].every((v) => Number.isFinite(Number(v)))) {
+        targetBounds = [Number(w), Number(s), Number(e), Number(n)]
+      }
+    }
+    if (!targetBounds) {
+      const matched = gisLayers.find(
+        (l) => l.layer_type === "raster" && l.dataset_id === geoDsId && Array.isArray(l.bounds) && l.bounds.length === 4
+      )
+      if (matched) targetBounds = matched.bounds
+    }
+
+    if (targetBounds && fitMapBounds(targetBounds)) {
+      handledGeorefFitRef.current = geoDsId
+      notifyGIS("Georeferenced raster displayed at saved location.")
+    }
+  }, [location.state, mapInstance, gisLayers, fitMapBounds, notifyGIS])
 
   const handleZoomToGISFeature = (feature) => {
     if (!mapInstance || !feature?.geometry) return
@@ -861,9 +906,36 @@ export default function WorkspacePage() {
 
       const addedVec = result?.addedVectorLayers || []
       const addedRas = result?.addedRasterLayers || []
+      const unrefRasterItem =
+        (result?.rasterItems || []).find((r) => r.datasetId && !r.isGeoreferenced) ||
+        addedRas.find(
+          (l) =>
+            (l.source_dataset_id || l.dataset_id) &&
+            !(Array.isArray(l.extent) && l.extent.length === 4) &&
+            !(Array.isArray(l.bounds) && l.bounds.length === 4)
+        )
+      if (unrefRasterItem && addedVec.length === 0) {
+        const targetId =
+          unrefRasterItem.datasetId || unrefRasterItem.source_dataset_id || unrefRasterItem.dataset_id
+        if (targetId) {
+          const returnTo = mapId
+            ? `/maps/${encodeURIComponent(mapId)}/edit`
+            : mapspaceId
+              ? `/mapspaces/${encodeURIComponent(mapspaceId)}`
+              : id
+                ? `/datasets/${encodeURIComponent(id)}/workspace`
+                : `/datasets/${encodeURIComponent(targetId)}/workspace`
+          const wsQuery = gisMapId ? `&workspaceId=${encodeURIComponent(gisMapId)}` : ""
+          navigate(
+            `/datasets/${encodeURIComponent(targetId)}/georeference?returnTo=${encodeURIComponent(returnTo)}${wsQuery}`
+          )
+          return
+        }
+      }
+
       if (addedVec.length > 0 || addedRas.length > 0) {
         notifyGIS(`Added ${addedVec.length} vector and ${addedRas.length} raster layer(s)`)
-        const layerWithBounds = addedVec.find(
+        const layerWithBounds = [...addedVec, ...addedRas].find(
           (l) =>
             (Array.isArray(l.extent) && l.extent.length === 4) ||
             (Array.isArray(l.bounds) && l.bounds.length === 4)
@@ -872,7 +944,7 @@ export default function WorkspacePage() {
         if (firstBounds) setTimeout(() => fitMapBounds(firstBounds), 250)
       }
     },
-    [activeDatasetId, workspace, refreshGISLayers, notifyGIS, fitMapBounds]
+    [activeDatasetId, workspace, refreshGISLayers, notifyGIS, fitMapBounds, mapId, mapspaceId, id, gisMapId, navigate]
   )
 
   function handleDetach(member) {
@@ -930,22 +1002,9 @@ export default function WorkspacePage() {
   const handleTogglePanel = useCallback(
     (which) => {
       updateLayout((prev) => {
-        if (which === "browser") {
-          const nextBrowser = !(prev.leftOpen && prev.browserOpen)
-          return { ...prev, leftOpen: nextBrowser || prev.layersOpen, browserOpen: nextBrowser }
-        }
-        if (which === "layers") {
-          const nextLayers = !(prev.leftOpen && prev.layersOpen)
-          return { ...prev, leftOpen: nextLayers || prev.browserOpen, layersOpen: nextLayers }
-        }
-        if (which === "left") {
-          const nextLeft = !prev.leftOpen
-          return {
-            ...prev,
-            leftOpen: nextLeft,
-            browserOpen: nextLeft ? prev.browserOpen || !prev.layersOpen : prev.browserOpen,
-            layersOpen: nextLeft ? prev.layersOpen || !prev.browserOpen : prev.layersOpen,
-          }
+        if (which === "layers" || which === "left") {
+          const nextOpen = !(prev.leftOpen && prev.layersOpen)
+          return { ...prev, leftOpen: nextOpen, layersOpen: nextOpen }
         }
         if (which === "right") return { ...prev, rightOpen: !prev.rightOpen }
         if (which === "records") return { ...prev, recordsOpen: !prev.recordsOpen }
@@ -974,8 +1033,6 @@ export default function WorkspacePage() {
       const initLeft = layout.leftWidth
       const initRight = layout.rightWidth
       const initRecords = layout.recordsHeight
-      const initSplit = layout.browserSplitRatio
-      const leftRect = leftDockRef.current?.getBoundingClientRect()
 
       const onMove = (ev) => {
         if (kind === "left") {
@@ -991,13 +1048,6 @@ export default function WorkspacePage() {
             LAYOUT_LIMITS.recordsMax
           )
           updateLayout((p) => ({ ...p, recordsHeight: next }))
-        } else if (kind === "left-split" && leftRect && leftRect.height > 100) {
-          const ratio = clamp(
-            initSplit + (ev.clientY - startY) / leftRect.height,
-            LAYOUT_LIMITS.splitMin,
-            LAYOUT_LIMITS.splitMax
-          )
-          updateLayout((p) => ({ ...p, browserSplitRatio: ratio }))
         }
       }
 
@@ -1008,7 +1058,7 @@ export default function WorkspacePage() {
         document.body.style.userSelect = ""
       }
 
-      document.body.style.cursor = kind === "records" || kind === "left-split" ? "row-resize" : "col-resize"
+      document.body.style.cursor = kind === "records" ? "row-resize" : "col-resize"
       document.body.style.userSelect = "none"
       window.addEventListener("mousemove", onMove)
       window.addEventListener("mouseup", onUp)
@@ -1220,7 +1270,7 @@ export default function WorkspacePage() {
 
   const workspaceDisplayName = currentMap?.name || effectiveManifest.name || "Untitled Workspace"
   const activeCRS = activeGISLayer?.crs || activeBaseLayer?.crs || "EPSG:4326"
-  const showLeftDock = layout.leftOpen && (layout.browserOpen || layout.layersOpen)
+  const showLeftDock = layout.leftOpen && layout.layersOpen
   const hasGeorefRaster =
     (effectiveManifest.members?.length || 0) > 0 ||
     gisLayers.some((l) => l.layer_type === "raster" && l.dataset_id)
@@ -1391,63 +1441,10 @@ export default function WorkspacePage() {
             <>
               <aside
                 ref={leftDockRef}
-                aria-label="Left GIS Dock (Browser and Layers)"
+                aria-label="Left GIS Dock (Layers)"
                 style={{ width: layout.leftWidth }}
                 className="shrink-0 flex flex-col min-h-0 border-r border-neutral-300 dark:border-[#323232] bg-white dark:bg-[#1e1e1e] overflow-hidden"
               >
-                {layout.browserOpen && (
-                  <div
-                    style={{
-                      height: layout.layersOpen ? `${Math.round(layout.browserSplitRatio * 100)}%` : "100%",
-                    }}
-                    className="min-h-0 overflow-hidden flex flex-col"
-                  >
-                    <Suspense
-                      fallback={
-                        <div className="p-3 text-[11px] text-neutral-400 flex items-center gap-1.5">
-                          <Loader2 className="size-3 animate-spin" /> Loading Browser…
-                        </div>
-                      }
-                    >
-                      <WorkspaceBrowserPanel
-                        workspaceId={gisMapId}
-                        userId={user?.id}
-                        customBaseLayers={customBaseLayers}
-                        mapViews={mapViews}
-                        bookmarks={bookmarks}
-                        onAddBookmark={handleAddBookmark}
-                        onSelectBookmark={handleSelectBookmark}
-                        onDeleteBookmark={handleDeleteBookmark}
-                        onSelectMapView={handleSelectMapView}
-                        onSelectCustomBaseLayer={handleSelectCustomBaseLayer}
-                        onOpenSavedMap={(m) => {
-                          if (m?.id && confirmDiscard()) navigate(`/maps/${m.id}/edit`)
-                        }}
-                        onLayersAdded={(addedLayers) => {
-                          refreshGISLayers()
-                          setGisFeaturesRefreshKey((k) => k + 1)
-                          setRecordsRefreshKey((k) => k + 1)
-                          const b = addedLayers?.find((l) => Array.isArray(l.bounds) && l.bounds.length === 4)?.bounds
-                          if (b) setTimeout(() => fitMapBounds(b), 250)
-                        }}
-                        onOpenUpload={() => openUnifiedAddModal(null)}
-                        onCollapse={() => handleTogglePanel("browser")}
-                        notify={notifyGIS}
-                      />
-                    </Suspense>
-                  </div>
-                )}
-
-                {layout.browserOpen && layout.layersOpen && (
-                  <div
-                    role="separator"
-                    aria-orientation="horizontal"
-                    aria-label="Resize Browser and Layers split"
-                    onMouseDown={(e) => startDrag("left-split", e)}
-                    className="h-1.5 shrink-0 cursor-row-resize bg-neutral-200 dark:bg-[#2c2c2c] hover:bg-[#3ecf8e]/60 transition-colors"
-                  />
-                )}
-
                 {layout.layersOpen && (
                   <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                     <ThreeGroupLayersPanel
@@ -1494,6 +1491,7 @@ export default function WorkspacePage() {
                         setBaseLayerModalOpen(true)
                       }}
                       onChangeBasePrefs={handleChangeMapViewPrefs}
+                      onRasterImageUpdated={handleRasterImageUpdated}
                       onCollapse={() => handleTogglePanel("layers")}
                       notify={notifyGIS}
                     />
@@ -1584,6 +1582,7 @@ export default function WorkspacePage() {
                   selectedFeatureIds={selectedFeatureIds}
                   onSelectFeatures={setSelectedFeatureIds}
                   featuresRefreshKey={gisFeaturesRefreshKey}
+                  rasterImageRevisions={rasterImageRevisions}
                   onFeaturesMutated={() => {
                     setGisFeaturesRefreshKey((k) => k + 1)
                     setRecordsRefreshKey((k) => k + 1)

@@ -147,7 +147,6 @@ export default function WorkspaceMenuBar({
         { label: "Zoom to Full Extent", shortcut: shortcutFor("zoom_full"), action: () => run(onZoomFullExtent) },
         { label: "Zoom to Active Layer", action: () => run(onZoomToActiveLayer), disabled: !hasActiveLayer },
         { type: "sep" },
-        { label: "Browser Panel", checked: Boolean(layout?.leftOpen && layout?.browserOpen), action: () => run(() => onTogglePanel?.("browser")) },
         { label: "Layers Panel", shortcut: shortcutFor("layer_manager"), checked: Boolean(layout?.leftOpen && layout?.layersOpen), action: () => run(() => onTogglePanel?.("layers")) },
         { label: "Processing Toolbox", shortcut: shortcutFor("processing_toolbox"), checked: Boolean(layout?.rightOpen), action: () => run(() => onTogglePanel?.("right")) },
         { label: "Workspace Records", shortcut: shortcutFor("attribute_table"), checked: Boolean(layout?.recordsOpen), action: () => run(() => onTogglePanel?.("records")) },

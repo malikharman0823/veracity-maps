@@ -272,20 +272,38 @@ func (r *SessionRepository) GetDataset(sessionID, datasetID string) (*models.Dat
 }
 
 func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, string, error) {
+	pickBetter := func(bestDS *models.Dataset, bestSess string, candDS *models.Dataset, candSess string) (*models.Dataset, string) {
+		if candDS == nil {
+			return bestDS, bestSess
+		}
+		if bestDS == nil {
+			return candDS, candSess
+		}
+		candGeo := strings.EqualFold(candDS.GeoreferenceStatus, "completed") || candDS.MapLayer != nil
+		bestGeo := strings.EqualFold(bestDS.GeoreferenceStatus, "completed") || bestDS.MapLayer != nil
+		if candGeo && !bestGeo {
+			return candDS, candSess
+		}
+		return bestDS, bestSess
+	}
+
 	r.mu.RLock()
+	var foundDS *models.Dataset
+	var foundSess string
 	for sessID, sess := range r.sessions {
 		if ds, exists := sess.Datasets[datasetID]; exists {
-			r.mu.RUnlock()
-			return ds, sessID, nil
+			foundDS, foundSess = pickBetter(foundDS, foundSess, ds, sessID)
 		}
 		if proj, pExists := sess.MapProjects[datasetID]; pExists && proj != nil {
 			if ds, dExists := sess.Datasets[proj.DatasetID]; dExists {
-				r.mu.RUnlock()
-				return ds, sessID, nil
+				foundDS, foundSess = pickBetter(foundDS, foundSess, ds, sessID)
 			}
 		}
 	}
 	r.mu.RUnlock()
+	if foundDS != nil {
+		return foundDS, foundSess, nil
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -293,13 +311,16 @@ func (r *SessionRepository) FindDataset(datasetID string) (*models.Dataset, stri
 	// Double check under write lock
 	for sessID, sess := range r.sessions {
 		if ds, exists := sess.Datasets[datasetID]; exists {
-			return ds, sessID, nil
+			foundDS, foundSess = pickBetter(foundDS, foundSess, ds, sessID)
 		}
 		if proj, pExists := sess.MapProjects[datasetID]; pExists && proj != nil {
 			if ds, dExists := sess.Datasets[proj.DatasetID]; dExists {
-				return ds, sessID, nil
+				foundDS, foundSess = pickBetter(foundDS, foundSess, ds, sessID)
 			}
 		}
+	}
+	if foundDS != nil {
+		return foundDS, foundSess, nil
 	}
 
 	if r.storageDir != "" {
@@ -616,6 +637,47 @@ func (r *SessionRepository) UpdateDataset(sessionID string, dataset *models.Data
 	sess.LastActiveAt = time.Now()
 	r.saveDatasetLocked(sessionID, dataset)
 	return nil
+}
+
+// SyncDatasetAcrossSessions propagates georeference state and processed paths
+// for datasetID to every active session that holds a copy of the dataset.
+func (r *SessionRepository) SyncDatasetAcrossSessions(updated *models.Dataset) {
+	if updated == nil || updated.ID == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	for sessID, sess := range r.sessions {
+		if sess == nil {
+			continue
+		}
+		existing, ok := sess.Datasets[updated.ID]
+		if !ok || existing == nil || existing == updated {
+			continue
+		}
+		existing.GeoreferenceStatus = updated.GeoreferenceStatus
+		existing.GeoreferencedPath = updated.GeoreferencedPath
+		existing.ProcessedPath = updated.ProcessedPath
+		if updated.MapLayer != nil {
+			copiedMapLayer := make(map[string]interface{}, len(updated.MapLayer))
+			for k, v := range updated.MapLayer {
+				copiedMapLayer[k] = v
+			}
+			existing.MapLayer = copiedMapLayer
+		}
+		if updated.ExtractedMetadata != nil {
+			if existing.ExtractedMetadata == nil {
+				existing.ExtractedMetadata = make(map[string]interface{}, len(updated.ExtractedMetadata))
+			}
+			for k, v := range updated.ExtractedMetadata {
+				existing.ExtractedMetadata[k] = v
+			}
+		}
+		existing.UpdatedAt = now
+		r.saveDatasetLocked(sessID, existing)
+	}
 }
 
 func (r *SessionRepository) DeleteDataset(sessionID, datasetID string) error {

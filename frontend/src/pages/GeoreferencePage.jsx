@@ -641,7 +641,13 @@ export default function GeoreferencePage() {
         }
       }
       setNotice("Georeference saved and published to the main map.")
-      navigate(returnTo, { replace: true })
+      navigate(returnTo, {
+        replace: true,
+        state: {
+          georeferencedDatasetId: id,
+          georeferencedBounds: result?.bounds || null,
+        },
+      })
     } catch (requestError) {
       setError(readableApiError(requestError, "Unable to save and publish the georeference."))
     } finally {

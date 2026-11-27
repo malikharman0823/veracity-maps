@@ -142,6 +142,7 @@ func main() {
 	mapsHandler := maps.NewHandler(mapRepo, mailer, cfg.AppPublicURL)
 	mapsHandler.SetConfigurationService(services.NewMapConfigurationService(mapRepo, cfg.UploadDir, cfg.SessionStorageDir))
 	gisService := services.NewGISService(gisRepo, mapRepo, repo)
+	georefService.SetGISRepo(gisRepo)
 	gisHandler := gisFn.NewHandler(gisService)
 	procService := services.NewProcessingService(procRepo, gisService, mapRepo, repo, cfg.ProcessedDir)
 	procHandler := procFn.NewHandler(procService)

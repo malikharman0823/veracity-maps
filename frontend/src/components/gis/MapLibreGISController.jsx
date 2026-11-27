@@ -64,6 +64,7 @@ export default function MapLibreGISController({
   selectedFeatureIds = [],
   onSelectFeatures,
   featuresRefreshKey = 0,
+  rasterImageRevisions = {},
   onFeaturesMutated,
   onControllerActionsReady,
   onOpenInRecords,
@@ -93,6 +94,7 @@ export default function MapLibreGISController({
   const draftCoordsRef = useRef(draftCoords)
   const editingFeatureRef = useRef(editingFeature)
   const selectedIdsRef = useRef(selectedFeatureIds)
+  const loadedRasterRevRef = useRef({})
 
   useEffect(() => {
     activeToolRef.current = activeTool
@@ -180,38 +182,64 @@ export default function MapLibreGISController({
           }
         }
 
-        if (layer.dataset_id && Array.isArray(layer.bounds) && layer.bounds.length === 4) {
+        const rawCoords = layer.metadata?.coordinates
+        const validCornerCoords =
+          Array.isArray(rawCoords) &&
+          rawCoords.length === 4 &&
+          rawCoords.every(
+            (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))
+          )
+            ? rawCoords.map((pt) => [Number(pt[0]), Number(pt[1])])
+            : null
+
+        let imageCoords = validCornerCoords
+        if (!imageCoords && Array.isArray(layer.bounds) && layer.bounds.length === 4) {
           const [west, south, east, north] = layer.bounds.map(Number)
-          if ([west, south, east, north].every(Number.isFinite)) {
-            const rSrcId = `gis-raster-src-${layer.layer_id}`
-            const rLyrId = `gis-raster-lyr-${layer.layer_id}`
-            if (!map.getSource(rSrcId)) {
-              map.addSource(rSrcId, {
-                type: "image",
-                url: datasetSourceImageUrl(layer.dataset_id),
-                coordinates: [
-                  [west, north],
-                  [east, north],
-                  [east, south],
-                  [west, south],
-                ],
-              })
-            }
-            if (!map.getLayer(rLyrId)) {
-              map.addLayer({
-                id: rLyrId,
-                type: "raster",
-                source: rSrcId,
-                minzoom: minZ,
-                maxzoom: maxZ,
-                layout: { visibility: vis },
-                paint: { "raster-opacity": op },
-              })
-            } else {
-              map.setLayoutProperty(rLyrId, "visibility", vis)
-              map.setLayerZoomRange(rLyrId, minZ, maxZ)
-              map.setPaintProperty(rLyrId, "raster-opacity", op)
-            }
+          if ([west, south, east, north].every(Number.isFinite) && east > west && north > south) {
+            imageCoords = [
+              [west, north],
+              [east, north],
+              [east, south],
+              [west, south],
+            ]
+          }
+        }
+
+        if (layer.dataset_id && imageCoords) {
+          const rSrcId = `gis-raster-src-${layer.layer_id}`
+          const rLyrId = `gis-raster-lyr-${layer.layer_id}`
+          const rev = rasterImageRevisions?.[layer.dataset_id] || 0
+          const existingSrc = map.getSource(rSrcId)
+          if (!existingSrc) {
+            map.addSource(rSrcId, {
+              type: "image",
+              url: datasetSourceImageUrl(layer.dataset_id, { bust: rev || Date.now() }),
+              coordinates: imageCoords,
+            })
+            loadedRasterRevRef.current[rSrcId] = rev
+          } else if (rev && loadedRasterRevRef.current[rSrcId] !== rev && typeof existingSrc.updateImage === "function") {
+            existingSrc.updateImage({
+              url: datasetSourceImageUrl(layer.dataset_id, { bust: rev }),
+              coordinates: imageCoords,
+            })
+            loadedRasterRevRef.current[rSrcId] = rev
+          } else if (typeof existingSrc.setCoordinates === "function") {
+            existingSrc.setCoordinates(imageCoords)
+          }
+          if (!map.getLayer(rLyrId)) {
+            map.addLayer({
+              id: rLyrId,
+              type: "raster",
+              source: rSrcId,
+              minzoom: minZ,
+              maxzoom: maxZ,
+              layout: { visibility: vis },
+              paint: { "raster-opacity": op },
+            })
+          } else {
+            map.setLayoutProperty(rLyrId, "visibility", vis)
+            map.setLayerZoomRange(rLyrId, minZ, maxZ)
+            map.setPaintProperty(rLyrId, "raster-opacity", op)
           }
         }
         return
@@ -557,7 +585,7 @@ export default function MapLibreGISController({
       }
     })
     ;[DRAFT_FILL_LAYER, DRAFT_LINE_LAYER, DRAFT_MIDPOINT_LAYER, DRAFT_VERTEX_LAYER].forEach(safeMoveToTop)
-  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision, layerOrder, layerStack])
+  }, [map, gisLayers, featuresByLayer, selectedFeatureIds, styleRevision, layerOrder, layerStack, rasterImageRevisions])
 
   // Helper to build GeoJSON FeatureCollection for draft/vertex overlay
   const buildDraftFeatureCollection = (coords, tool, geomType) => {

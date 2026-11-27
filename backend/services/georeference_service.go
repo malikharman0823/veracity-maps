@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -22,6 +23,7 @@ import (
 type GeoreferenceService struct {
 	repo    *repository.SessionRepository
 	storage *storage.StorageManager
+	gisRepo repository.GISRepo
 }
 
 func NewGeoreferenceService(repo *repository.SessionRepository, sm *storage.StorageManager) *GeoreferenceService {
@@ -29,6 +31,10 @@ func NewGeoreferenceService(repo *repository.SessionRepository, sm *storage.Stor
 		repo:    repo,
 		storage: sm,
 	}
+}
+
+func (s *GeoreferenceService) SetGISRepo(gisRepo repository.GISRepo) {
+	s.gisRepo = gisRepo
 }
 
 func (s *GeoreferenceService) ListControlPoints(sessionID, datasetID string) ([]*models.ControlPoint, error) {
@@ -266,6 +272,16 @@ func (s *GeoreferenceService) Georeference(sessionID, datasetID, action, transfo
 	dataset.GeoreferenceStatus = "completed"
 	ProjectDatasetVectorsAndAnnotations(s.storage, dataset)
 	_ = s.repo.UpdateDataset(sessionID, dataset)
+	s.repo.SyncDatasetAcrossSessions(dataset)
+
+	if s.gisRepo != nil {
+		geoMeta := map[string]interface{}{
+			"georeference_status": "completed",
+			"is_georeferenced":    true,
+			"coordinates":         coordinates,
+		}
+		_ = s.gisRepo.UpdateLayerGeoreferenceByDatasetID(context.Background(), datasetID, crsStr, result.MapLibreBounds, geoMeta)
+	}
 
 	// Update or initialize layers
 	layers, _ := s.repo.ListLayers(sessionID, datasetID)

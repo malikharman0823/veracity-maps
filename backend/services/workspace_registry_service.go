@@ -429,6 +429,16 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 		if isRaster {
 			// Register as raster layer in GIS layer manager & workspace_rasters
 			if s.gisService != nil {
+				rasterMeta := map[string]interface{}{}
+				if ds.GeoreferenceStatus != "" {
+					rasterMeta["georeference_status"] = ds.GeoreferenceStatus
+				}
+				if strings.EqualFold(ds.GeoreferenceStatus, "completed") || len(layerBounds) == 4 {
+					rasterMeta["is_georeferenced"] = true
+				}
+				if ds.MapLayer != nil && ds.MapLayer["coordinates"] != nil {
+					rasterMeta["coordinates"] = ds.MapLayer["coordinates"]
+				}
 				createdLyr, cErr := s.gisService.CreateLayer(ctx, userID, models.CreateLayerRequest{
 					MapID:        workspaceID,
 					DatasetID:    ds.ID,
@@ -436,6 +446,8 @@ func (s *WorkspaceRegistryService) AddDatasetLayers(ctx context.Context, userID,
 					LayerType:    "raster",
 					GeometryType: "Raster",
 					CRS:          info.CRS,
+					Bounds:       layerBounds,
+					Metadata:     rasterMeta,
 				})
 				if cErr == nil && createdLyr != nil {
 					gisLayerID = createdLyr.LayerID
@@ -1313,6 +1325,29 @@ func (s *WorkspaceRegistryService) aggregateAllWorkspaceRecords(ctx context.Cont
 	wsRasters, _ := s.repo.ListWorkspaceRasters(ctx, workspaceID)
 	for _, rst := range wsRasters {
 		seenRasterDS[rst.DatasetID] = true
+		bounds := rst.Bounds
+		crs := rst.SourceCRS
+		status := rst.Status
+		if s.sessionRepo != nil && rst.DatasetID != "" {
+			if ds, _, fErr := s.sessionRepo.FindDataset(rst.DatasetID); fErr == nil && ds != nil {
+				if ds.MapLayer != nil {
+					if b, ok := parseBoundsInterface(ds.MapLayer["bounds"]); ok {
+						bounds = b
+					}
+				}
+				if len(bounds) != 4 && ds.ExtractedMetadata != nil {
+					if b, ok := parseBoundsInterface(ds.ExtractedMetadata["bounds"]); ok {
+						bounds = b
+					}
+				}
+				if liveCRS := extractCRSFromDataset(ds); liveCRS != "" {
+					crs = liveCRS
+				}
+				if liveStatus := rasterStatusString(ds); liveStatus == "georeferenced" {
+					status = liveStatus
+				}
+			}
+		}
 		resStr := ""
 		if rst.ResolutionX != nil && rst.ResolutionY != nil {
 			resStr = fmt.Sprintf("%.4g × %.4g", *rst.ResolutionX, *rst.ResolutionY)
@@ -1326,11 +1361,11 @@ func (s *WorkspaceRegistryService) aggregateAllWorkspaceRecords(ctx context.Cont
 			DatasetID:        rst.DatasetID,
 			DisplayName:      rst.DisplayName,
 			GeometryType:     "Raster",
-			Bounds:           rst.Bounds,
-			CRS:              rst.SourceCRS,
+			Bounds:           bounds,
+			CRS:              crs,
 			Visibility:       rst.Visibility,
 			SourceReference:  rst.RasterPath,
-			Status:           rst.Status,
+			Status:           status,
 			Width:            rst.Width,
 			Height:           rst.Height,
 			Resolution:       resStr,

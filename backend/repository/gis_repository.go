@@ -31,6 +31,7 @@ type GISRepo interface {
 	UpdateLayerGroup(ctx context.Context, groupID string, req models.UpdateLayerGroupRequest) (*models.LayerGroup, error)
 	DeleteLayerGroup(ctx context.Context, groupID string) error
 	CountLayersByDatasetID(ctx context.Context, datasetID string) (int, error)
+	UpdateLayerGeoreferenceByDatasetID(ctx context.Context, datasetID, crs string, bounds []float64, metadata map[string]interface{}) error
 
 	// Module B — Vector Editing
 	CreateFeature(ctx context.Context, userID string, req models.CreateFeatureRequest, wkt string, srid int, bbox []float64) (*models.VectorFeature, error)
@@ -476,6 +477,34 @@ func (r *MemoryGISRepository) CountLayersByDatasetID(ctx context.Context, datase
 		}
 	}
 	return count, nil
+}
+
+func (r *MemoryGISRepository) UpdateLayerGeoreferenceByDatasetID(ctx context.Context, datasetID, crs string, bounds []float64, metadata map[string]interface{}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now().UTC()
+	for _, l := range r.layers {
+		if l.DatasetID != datasetID {
+			continue
+		}
+		if strings.TrimSpace(crs) != "" {
+			l.CRS = strings.TrimSpace(crs)
+		}
+		if len(bounds) == 4 {
+			l.Bounds = append([]float64{}, bounds...)
+		}
+		if len(metadata) > 0 {
+			if l.Metadata == nil {
+				l.Metadata = make(map[string]interface{})
+			}
+			for k, v := range metadata {
+				l.Metadata[k] = v
+			}
+		}
+		l.UpdatedAt = now
+	}
+	return nil
 }
 
 func (r *MemoryGISRepository) CreateFeature(ctx context.Context, userID string, req models.CreateFeatureRequest, wkt string, srid int, bbox []float64) (*models.VectorFeature, error) {
@@ -1321,6 +1350,68 @@ func (r *MSSQLGISRepository) CountLayersByDatasetID(ctx context.Context, dataset
 	var cnt int
 	err := r.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM dbo.map_layers WHERE dataset_id = @p1;`, datasetID).Scan(&cnt)
 	return cnt, err
+}
+
+func (r *MSSQLGISRepository) UpdateLayerGeoreferenceByDatasetID(ctx context.Context, datasetID, crs string, bounds []float64, metadata map[string]interface{}) error {
+	if strings.TrimSpace(datasetID) == "" {
+		return nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT layer_id, ISNULL(crs, 'EPSG:4326'), ISNULL(bounds_json, ''), ISNULL(metadata_json, '') FROM dbo.map_layers WHERE dataset_id = @p1;`, datasetID)
+	if err != nil {
+		return err
+	}
+	type rowData struct {
+		layerID  string
+		crs      string
+		bounds   string
+		metaJSON string
+	}
+	var targets []rowData
+	for rows.Next() {
+		var rd rowData
+		if scanErr := rows.Scan(&rd.layerID, &rd.crs, &rd.bounds, &rd.metaJSON); scanErr == nil {
+			targets = append(targets, rd)
+		}
+	}
+	_ = rows.Close()
+
+	now := time.Now().UTC()
+	for _, rd := range targets {
+		nextCRS := rd.crs
+		if strings.TrimSpace(crs) != "" {
+			nextCRS = strings.TrimSpace(crs)
+		}
+		nextBoundsJSON := rd.bounds
+		if len(bounds) == 4 {
+			if b, mErr := json.Marshal(bounds); mErr == nil {
+				nextBoundsJSON = string(b)
+			}
+		}
+		mergedMeta := make(map[string]interface{})
+		if rd.metaJSON != "" {
+			_ = json.Unmarshal([]byte(rd.metaJSON), &mergedMeta)
+		}
+		for k, v := range metadata {
+			mergedMeta[k] = v
+		}
+		nextMetaJSON := ""
+		if len(mergedMeta) > 0 {
+			if b, mErr := json.Marshal(mergedMeta); mErr == nil {
+				nextMetaJSON = string(b)
+			}
+		}
+		if _, err := r.db.ExecContext(ctx, `
+			UPDATE dbo.map_layers
+			SET crs = @p1,
+			    bounds_json = NULLIF(@p2, ''),
+			    metadata_json = NULLIF(@p3, ''),
+			    updated_at = @p4
+			WHERE layer_id = @p5;
+		`, nextCRS, nextBoundsJSON, nextMetaJSON, now, rd.layerID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *MSSQLGISRepository) CreateFeature(ctx context.Context, userID string, req models.CreateFeatureRequest, wkt string, srid int, bbox []float64) (*models.VectorFeature, error) {

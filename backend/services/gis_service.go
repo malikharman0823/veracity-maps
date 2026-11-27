@@ -107,6 +107,9 @@ func (s *GISService) GetLayers(ctx context.Context, mapID, userID string) ([]*mo
 	if layers == nil {
 		layers = []*models.MapLayer{}
 	}
+	for _, lyr := range layers {
+		s.enrichRasterLayerFromSession(lyr)
+	}
 	if groups == nil {
 		groups = []*models.LayerGroup{}
 	}
@@ -114,7 +117,134 @@ func (s *GISService) GetLayers(ctx context.Context, mapID, userID string) ([]*mo
 }
 
 func (s *GISService) GetLayer(ctx context.Context, layerID, userID string) (*models.MapLayer, error) {
-	return s.checkLayerAccess(ctx, layerID, userID, false, false)
+	lyr, err := s.checkLayerAccess(ctx, layerID, userID, false, false)
+	if err != nil {
+		return nil, err
+	}
+	s.enrichRasterLayerFromSession(lyr)
+	return lyr, nil
+}
+
+func (s *GISService) enrichRasterLayerFromSession(layer *models.MapLayer) {
+	if layer == nil || s.sessionRepo == nil || !strings.EqualFold(layer.LayerType, "raster") || layer.DatasetID == "" {
+		return
+	}
+	ds, sessID, err := s.sessionRepo.FindDataset(layer.DatasetID)
+	if err != nil || ds == nil {
+		return
+	}
+
+	var liveBounds []float64
+	if ds.MapLayer != nil {
+		if b, ok := extractMapLibreBoundsFromAny(ds.MapLayer["bounds"]); ok {
+			liveBounds = b
+		}
+	}
+	if len(liveBounds) != 4 && ds.ExtractedMetadata != nil {
+		if b, ok := extractMapLibreBoundsFromAny(ds.ExtractedMetadata["bounds"]); ok {
+			liveBounds = b
+		}
+	}
+	if len(liveBounds) != 4 && sessID != "" {
+		if dsLayers, lErr := s.sessionRepo.ListLayers(sessID, ds.ID); lErr == nil {
+			for _, dl := range dsLayers {
+				if dl != nil && len(dl.Bounds) == 4 && dl.Bounds[2] > dl.Bounds[0] && dl.Bounds[3] > dl.Bounds[1] {
+					liveBounds = append([]float64{}, dl.Bounds...)
+					break
+				}
+			}
+		}
+	}
+
+	if len(liveBounds) == 4 {
+		layer.Bounds = liveBounds
+	}
+	if ds.ExtractedMetadata != nil {
+		if crs, ok := ds.ExtractedMetadata["crs"].(string); ok && strings.TrimSpace(crs) != "" {
+			layer.CRS = strings.TrimSpace(crs)
+		}
+	}
+
+	isGeo := strings.EqualFold(ds.GeoreferenceStatus, "completed") || len(layer.Bounds) == 4
+	if isGeo || ds.GeoreferenceStatus != "" || (ds.MapLayer != nil && ds.MapLayer["coordinates"] != nil) {
+		if layer.Metadata == nil {
+			layer.Metadata = make(map[string]interface{})
+		}
+		if ds.GeoreferenceStatus != "" {
+			layer.Metadata["georeference_status"] = ds.GeoreferenceStatus
+		} else if isGeo {
+			layer.Metadata["georeference_status"] = "completed"
+		}
+		if isGeo {
+			layer.Metadata["is_georeferenced"] = true
+		}
+		if ds.MapLayer != nil && ds.MapLayer["coordinates"] != nil {
+			layer.Metadata["coordinates"] = ds.MapLayer["coordinates"]
+		}
+	}
+}
+
+func extractMapLibreBoundsFromAny(raw interface{}) ([]float64, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	toFloat := func(v interface{}) (float64, bool) {
+		switch n := v.(type) {
+		case float64:
+			return n, true
+		case float32:
+			return float64(n), true
+		case int:
+			return float64(n), true
+		case int64:
+			return float64(n), true
+		default:
+			return 0, false
+		}
+	}
+	switch v := raw.(type) {
+	case []float64:
+		if len(v) == 4 && v[2] > v[0] && v[3] > v[1] {
+			return append([]float64{}, v...), true
+		}
+	case []interface{}:
+		if len(v) == 4 {
+			out := make([]float64, 4)
+			for i := 0; i < 4; i++ {
+				f, ok := toFloat(v[i])
+				if !ok {
+					return nil, false
+				}
+				out[i] = f
+			}
+			if out[2] > out[0] && out[3] > out[1] {
+				return out, true
+			}
+		}
+	case map[string]float64:
+		w, s, e, n := v["min_x"], v["min_y"], v["max_x"], v["max_y"]
+		if w == 0 && s == 0 && e == 0 && n == 0 {
+			w, s, e, n = v["west"], v["south"], v["east"], v["north"]
+		}
+		if e > w && n > s {
+			return []float64{w, s, e, n}, true
+		}
+	case map[string]interface{}:
+		w, _ := toFloat(v["min_x"])
+		s, _ := toFloat(v["min_y"])
+		e, _ := toFloat(v["max_x"])
+		n, _ := toFloat(v["max_y"])
+		if w == 0 && s == 0 && e == 0 && n == 0 {
+			w, _ = toFloat(v["west"])
+			s, _ = toFloat(v["south"])
+			e, _ = toFloat(v["east"])
+			n, _ = toFloat(v["north"])
+		}
+		if e > w && n > s {
+			return []float64{w, s, e, n}, true
+		}
+	}
+	return nil, false
 }
 
 func (s *GISService) UpdateLayer(ctx context.Context, layerID, userID string, req models.UpdateLayerRequest) (*models.MapLayer, error) {
